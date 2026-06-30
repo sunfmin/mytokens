@@ -24,10 +24,25 @@ targets:
         INFOPLIST_KEY_LSUIElement: "YES"
         MARKETING_VERSION: "0.1.0"
         CURRENT_PROJECT_VERSION: "1"
+  MyTokensTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: Sources/Core
+      - path: Tests
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.sunfmin.mytokens.tests
+        GENERATE_INFOPLIST_FILE: "YES"
+        CODE_SIGNING_ALLOWED: "NO"
 schemes:
   MyTokens:
     build:
       targets:
-        MyTokens: all
+        MyTokens: [run, profile, archive, analyze]
+        MyTokensTests: [test]
+    test:
+      targets:
+        - MyTokensTests
     run:
       config: Release

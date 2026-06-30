@@ -7,7 +7,7 @@ BIN          := $(BIN_DIR)/mytokens
 DERIVED      := build
 PRODUCT      := $(DERIVED)/Build/Products/Release/$(BUNDLE)
 
-.PHONY: project build install selftest verify clean
+.PHONY: project build test install selftest verify clean
 
 project:
 	xcodegen generate
@@ -15,6 +15,9 @@ project:
 build: project
 	xcodebuild -project $(PROJECT) -scheme $(APP) -configuration Release \
 		-derivedDataPath $(DERIVED) -allowProvisioningUpdates build
+
+test: project
+	xcodebuild -project $(PROJECT) -scheme $(APP) -derivedDataPath $(DERIVED) test
 
 install: build
 	rm -rf "$(INSTALL_DIR)/$(BUNDLE)"

@@ -14,7 +14,7 @@ struct PopupSecretInput: SecretInput {
     func promptForSecret(service: String, account: String) -> String? {
         let app = NSApplication.shared
         app.setActivationPolicy(.regular)
-        app.activate(ignoringOtherApps: true)
+        installEditMenu(app)   // wire up ⌘X/⌘C/⌘V/⌘A so paste works in the field
 
         let alert = NSAlert()
         alert.messageText = "Store secret for \(service)/\(account)"
@@ -24,10 +24,32 @@ struct PopupSecretInput: SecretInput {
         alert.accessoryView = field
         alert.addButton(withTitle: "Store")
         alert.addButton(withTitle: "Cancel")
-        alert.window.initialFirstResponder = field
+
+        // CLI-launched apps aren't frontmost; force the window up and focused.
+        let window = alert.window
+        window.initialFirstResponder = field
+        window.level = .floating
+        app.activate(ignoringOtherApps: true)
+        window.makeKeyAndOrderFront(nil)
+        window.orderFrontRegardless()
 
         let response = alert.runModal()
         guard response == .alertFirstButtonReturn else { return nil }
         return field.stringValue
+    }
+
+    /// A minimal Edit menu so standard editing key-equivalents reach the field
+    /// editor via the responder chain (nil target). Without it, ⌘V is dead.
+    private func installEditMenu(_ app: NSApplication) {
+        let mainMenu = NSMenu()
+        let editHolder = NSMenuItem()
+        mainMenu.addItem(editHolder)
+        let editMenu = NSMenu(title: "Edit")
+        editHolder.submenu = editMenu
+        editMenu.addItem(withTitle: "Cut", action: #selector(NSText.cut(_:)), keyEquivalent: "x")
+        editMenu.addItem(withTitle: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
+        editMenu.addItem(withTitle: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
+        editMenu.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
+        app.mainMenu = mainMenu
     }
 }

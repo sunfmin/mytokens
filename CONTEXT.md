@@ -8,9 +8,19 @@ API token at call time without the value ever touching the conversation transcri
 
 **Secret**:
 A machine-usable credential — an API token, API key, or connection string — that
-Claude retrieves and injects into a shell command at call time. In scope for this
-skill.
+Claude retrieves and injects into a shell command at call time. A Secret has one or
+more named **Fields**; the common case is a single Field (a lone token), which behaves
+as one value. A Secret is stored as one keychain item and rotated, listed, and removed
+as a unit. In scope for this skill.
 _Avoid_: Password (reserve that word for human-facing web logins, which are out of scope).
+
+**Field**:
+A labeled value inside a Secret. Most Secrets have exactly one (the token itself);
+composite credentials have several that belong together and rotate as a unit — e.g.
+AWS *Access Key ID* + *Secret Access Key*, or a database *Username* + *Password*. A
+Field is addressed by its **label** (the label is the key), and is masked on input
+unless explicitly revealed for paste-verification.
+_Avoid_: sub-secret, key/value pair (a Field's label is its identity, not an arbitrary key).
 
 **Service**:
 A target API or tool that a Secret authenticates to, identified by a stable slug

@@ -9,6 +9,10 @@ final class CommandsTests: XCTestCase {
         Dependencies(store: store, input: CannedSecretInput(value: input))
     }
 
+    private func mdeps(_ store: InMemorySecretStore, values: [String: String]?) -> Dependencies {
+        Dependencies(store: store, input: CannedSecretInput(values: values))
+    }
+
     func testAddThenGetRoundtrip() {
         let store = InMemorySecretStore()
         let add = runCommand(["add", "cloudflare"], deps(store, input: "tok-123"))
@@ -80,5 +84,80 @@ final class CommandsTests: XCTestCase {
         let add = runCommand(["add", "cloudflare"], deps(store, input: "x"))
         XCTAssertNotEqual(add.exitCode, 0)
         XCTAssertTrue(add.stderr.contains("locked"))
+    }
+
+    // ── Multi-field Secrets (ADR-0005) ─────────────────────────────────────────
+
+    private let awsValues = ["Access Key ID": "AKIA123", "Secret Access Key": "sshhh"]
+
+    func testMultiFieldAddGetByFieldAndJSON() {
+        let store = InMemorySecretStore()
+        let add = runCommand(["add", "aws", "--fields", "Access Key ID,Secret Access Key"],
+                             mdeps(store, values: awsValues))
+        XCTAssertEqual(add.exitCode, 0)
+
+        // Each field is retrievable on its own as a raw value.
+        XCTAssertEqual(runCommand(["get", "aws", "--field", "Secret Access Key"], mdeps(store, values: nil)).stdout, "sshhh")
+        XCTAssertEqual(runCommand(["get", "aws", "--field", "Access Key ID"], mdeps(store, values: nil)).stdout, "AKIA123")
+
+        // --json dumps the whole object.
+        let json = runCommand(["get", "aws", "--json"], mdeps(store, values: nil))
+        XCTAssertEqual(json.exitCode, 0)
+        XCTAssertTrue(json.stdout.contains("AKIA123") && json.stdout.contains("sshhh"))
+    }
+
+    func testMultiFieldBareGetErrorsAndListsFields() {
+        let store = InMemorySecretStore()
+        _ = runCommand(["add", "aws", "--fields", "Access Key ID,Secret Access Key"], mdeps(store, values: awsValues))
+        let bare = runCommand(["get", "aws"], mdeps(store, values: nil))
+        XCTAssertNotEqual(bare.exitCode, 0)
+        XCTAssertEqual(bare.stdout, "")                                  // never dumps a value by accident
+        XCTAssertTrue(bare.stderr.contains("Access Key ID") && bare.stderr.contains("Secret Access Key"))
+    }
+
+    func testListShowsFieldLabelsNotValues() {
+        let store = InMemorySecretStore()
+        _ = runCommand(["add", "aws", "--fields", "Access Key ID,Secret Access Key"], mdeps(store, values: awsValues))
+        let list = runCommand(["list"], mdeps(store, values: nil))
+        XCTAssertTrue(list.stdout.contains("fields: Access Key ID, Secret Access Key"))
+        XCTAssertFalse(list.stdout.contains("AKIA123"))
+        XCTAssertFalse(list.stdout.contains("sshhh"))
+    }
+
+    func testGetUnknownFieldErrors() {
+        let store = InMemorySecretStore()
+        _ = runCommand(["add", "aws", "--fields", "Access Key ID,Secret Access Key"], mdeps(store, values: awsValues))
+        let g = runCommand(["get", "aws", "--field", "Nope"], mdeps(store, values: nil))
+        XCTAssertNotEqual(g.exitCode, 0)
+        XCTAssertEqual(g.stdout, "")
+    }
+
+    func testGetFieldOnSingleSecretErrors() {
+        let store = InMemorySecretStore()
+        _ = runCommand(["add", "gh"], deps(store, input: "tok"))
+        XCTAssertNotEqual(runCommand(["get", "gh", "--field", "whatever"], deps(store, input: nil)).exitCode, 0)
+    }
+
+    func testParentCannotCombineWithFields() {
+        let store = InMemorySecretStore()
+        let add = runCommand(["add", "aws", "--kind", "parent", "--fields", "a,b"], mdeps(store, values: ["a": "1", "b": "2"]))
+        XCTAssertNotEqual(add.exitCode, 0)
+        XCTAssertTrue(add.stderr.contains("parent"))
+        XCTAssertTrue(store.items.isEmpty)
+    }
+
+    func testShowMustReferenceAField() {
+        let store = InMemorySecretStore()
+        let add = runCommand(["add", "aws", "--fields", "Access Key ID", "--show", "Nope"], mdeps(store, values: ["Access Key ID": "x"]))
+        XCTAssertNotEqual(add.exitCode, 0)
+        XCTAssertTrue(store.items.isEmpty)              // rejected before prompting
+    }
+
+    func testAnyEmptyFieldStoresNothing() {
+        let store = InMemorySecretStore()
+        let add = runCommand(["add", "aws", "--fields", "Access Key ID,Secret Access Key"],
+                             mdeps(store, values: ["Access Key ID": "AKIA123", "Secret Access Key": ""]))
+        XCTAssertNotEqual(add.exitCode, 0)
+        XCTAssertTrue(store.items.isEmpty)              // all-or-nothing
     }
 }

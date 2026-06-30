@@ -7,6 +7,15 @@ struct SecretRecord {
     var account: String
     var kind: String        // "static" | "parent"
     var meta: String?       // compact JSON, or nil
+    var fields: [String]?   // ordered field labels for a multi-field Secret, else nil
+}
+
+// What `get` reads back: the stored value plus, for a multi-field Secret, its
+// ordered field schema. `value` is the raw secret for a single-field Secret, or a
+// compact JSON object {label: value} for a multi-field one (ADR-0005).
+struct StoredSecret {
+    var value: String
+    var fields: [String]?   // nil for a single bare-value Secret
 }
 
 enum StoreError: Error, CustomStringConvertible {
@@ -30,8 +39,8 @@ enum StoreError: Error, CustomStringConvertible {
 /// The lowest-level seam for stored Secrets. The real impl talks to the
 /// data-protection (iCloud) keychain; tests use an in-memory fake.
 protocol SecretStore {
-    func upsert(service: String, account: String, value: String, kind: String, meta: Any?) throws
-    func get(service: String, account: String) throws -> String?   // nil if absent
+    func upsert(service: String, account: String, value: String, kind: String, meta: Any?, fields: [String]?) throws
+    func get(service: String, account: String) throws -> StoredSecret?   // nil if absent
     func list() throws -> [SecretRecord]
     func delete(service: String, account: String) throws -> Bool   // false if absent
 }
@@ -60,8 +69,8 @@ struct KeychainSecretStore: SecretStore {
         s == errSecInteractionNotAllowed ? .locked : .keychain(s)
     }
 
-    func upsert(service: String, account: String, value: String, kind: String, meta: Any?) throws {
-        let comment = try CommentCodec.encode(kind: kind, meta: meta)
+    func upsert(service: String, account: String, value: String, kind: String, meta: Any?, fields: [String]?) throws {
+        let comment = try CommentCodec.encode(kind: kind, meta: meta, fields: fields)
         let changes: [String: Any] = [
             kSecValueData as String: Data(value.utf8),
             kSecAttrComment as String: comment,
@@ -79,15 +88,19 @@ struct KeychainSecretStore: SecretStore {
         guard added == errSecSuccess else { throw mapErr(added) }
     }
 
-    func get(service: String, account: String) throws -> String? {
+    func get(service: String, account: String) throws -> StoredSecret? {
         var q = itemQuery(service, account)
         q[kSecReturnData as String] = true
+        q[kSecReturnAttributes as String] = true   // also read the comment for the field schema
         var out: CFTypeRef?
         let s = SecItemCopyMatching(q as CFDictionary, &out)
         if s == errSecItemNotFound { return nil }
-        guard s == errSecSuccess, let data = out as? Data, let str = String(data: data, encoding: .utf8)
+        guard s == errSecSuccess, let attrs = out as? [String: Any],
+              let data = attrs[kSecValueData as String] as? Data,
+              let str = String(data: data, encoding: .utf8)
         else { throw mapErr(s) }
-        return str
+        let (_, _, fields) = CommentCodec.decode(attrs[kSecAttrComment as String] as? String)
+        return StoredSecret(value: str, fields: fields)
     }
 
     func list() throws -> [SecretRecord] {
@@ -110,8 +123,8 @@ struct KeychainSecretStore: SecretStore {
             // Defense-in-depth: only our own items carry this label prefix.
             let label = attrs[kSecAttrLabel as String] as? String
             guard label?.hasPrefix(mytokensLabelPrefix) == true else { return nil }
-            let (kind, meta) = CommentCodec.decode(attrs[kSecAttrComment as String] as? String)
-            return SecretRecord(service: service, account: account, kind: kind, meta: meta)
+            let (kind, meta, fields) = CommentCodec.decode(attrs[kSecAttrComment as String] as? String)
+            return SecretRecord(service: service, account: account, kind: kind, meta: meta, fields: fields)
         }
     }
 
@@ -123,25 +136,29 @@ struct KeychainSecretStore: SecretStore {
     }
 }
 
-// kind + arbitrary user meta are packed into the keychain comment attribute as
-// one JSON object: {"kind": "...", "meta": <json|null>}.
+// kind + arbitrary user meta + (for a multi-field Secret) the ordered field-label
+// schema are packed into the keychain comment attribute as one JSON object:
+// {"kind": "...", "meta": <json|null>, "fields": [<label>, …]?}. The "fields" key
+// is omitted for a single bare-value Secret, so existing items decode unchanged.
 enum CommentCodec {
-    static func encode(kind: String, meta: Any?) throws -> String {
+    static func encode(kind: String, meta: Any?, fields: [String]?) throws -> String {
         var obj: [String: Any] = ["kind": kind]
         obj["meta"] = (meta == nil || meta is NSNull) ? NSNull() : meta!
+        if let fields, !fields.isEmpty { obj["fields"] = fields }
         guard let data = try? JSONSerialization.data(withJSONObject: obj, options: [.sortedKeys]),
               let s = String(data: data, encoding: .utf8)
         else { throw StoreError.encoding }
         return s
     }
 
-    static func decode(_ comment: String?) -> (kind: String, meta: String?) {
+    static func decode(_ comment: String?) -> (kind: String, meta: String?, fields: [String]?) {
         guard let comment, let data = comment.data(using: .utf8),
               let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
-        else { return ("static", nil) }
+        else { return ("static", nil, nil) }
         let kind = (obj["kind"] as? String) ?? "static"
-        if let m = obj["meta"], !(m is NSNull) { return (kind, JSONUtil.compact(m)) }
-        return (kind, nil)
+        let fields = obj["fields"] as? [String]
+        if let m = obj["meta"], !(m is NSNull) { return (kind, JSONUtil.compact(m), fields) }
+        return (kind, nil, fields)
     }
 }
 

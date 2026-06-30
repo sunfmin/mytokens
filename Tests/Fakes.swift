@@ -2,20 +2,20 @@ import Foundation
 
 // In-memory SecretStore for tests — never touches the real keychain.
 final class InMemorySecretStore: SecretStore {
-    struct Entry { var value: String; var kind: String; var meta: Any? }
+    struct Entry { var value: String; var kind: String; var meta: Any?; var fields: [String]? }
     private(set) var items: [String: Entry] = [:]
     var locked = false
 
     private func key(_ s: String, _ a: String) -> String { "\(s)\u{1}\(a)" }
 
-    func upsert(service: String, account: String, value: String, kind: String, meta: Any?) throws {
+    func upsert(service: String, account: String, value: String, kind: String, meta: Any?, fields: [String]?) throws {
         if locked { throw StoreError.locked }
-        items[key(service, account)] = Entry(value: value, kind: kind, meta: meta)
+        items[key(service, account)] = Entry(value: value, kind: kind, meta: meta, fields: fields)
     }
 
-    func get(service: String, account: String) throws -> String? {
+    func get(service: String, account: String) throws -> StoredSecret? {
         if locked { throw StoreError.locked }
-        return items[key(service, account)]?.value
+        return items[key(service, account)].map { StoredSecret(value: $0.value, fields: $0.fields) }
     }
 
     func list() throws -> [SecretRecord] {
@@ -26,7 +26,8 @@ final class InMemorySecretStore: SecretStore {
                 service: String(parts[0]),
                 account: parts.count > 1 ? String(parts[1]) : "",
                 kind: e.kind,
-                meta: e.meta.flatMap(JSONUtil.compact)
+                meta: e.meta.flatMap(JSONUtil.compact),
+                fields: e.fields
             )
         }
     }
@@ -38,6 +39,12 @@ final class InMemorySecretStore: SecretStore {
 }
 
 struct CannedSecretInput: SecretInput {
-    var value: String?
-    func promptForSecret(service: String, account: String) -> String? { value }
+    var values: [String: String]?   // nil == cancelled (Store not pressed)
+
+    /// Single bare value, keyed by the empty-string label (today's add path).
+    init(value: String?) { self.values = value.map { ["": $0] } }
+    /// Multi-field: label → value, exactly as the popup would return.
+    init(values: [String: String]?) { self.values = values }
+
+    func promptForSecret(service: String, account: String, fields: [Field]) -> [String: String]? { values }
 }

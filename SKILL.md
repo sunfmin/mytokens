@@ -28,6 +28,8 @@ If the Service has a Secret, use it. If `get` exits non-zero, the Secret isn't s
 
 ```sh
 mytokens add <service> [--account <label>] [--kind static|parent] [--meta '<json>']
+# A credential with several parts (key + secret, user + password) → one popup:
+mytokens add aws --fields "Access Key ID","Secret Access Key" --show "Access Key ID"
 ```
 
 ## Consent contract
@@ -48,12 +50,33 @@ The value is plaintext once `get` returns it (acceptable on this trusted machine
 | Command | Purpose |
 |---|---|
 | `mytokens add <service> [--account L] [--kind static\|parent] [--meta JSON]` | Popup → store. Collects only the value. |
+| `mytokens add <service> --fields "<A>","<B>" [--show "<A>"]` | One popup, one row per field; masked unless `--show`. All required. |
 | `mytokens get <service> [--account L]` | Raw value to stdout; non-zero exit if absent. |
-| `mytokens list` | Stored services/accounts/kind/meta; never values. |
-| `mytokens rm <service> [--account L]` | Delete. Re-`add` overwrites (rotation). |
+| `mytokens get <service> --field "<A>"` / `--json` | One field's raw value / the whole field object as JSON. |
+| `mytokens list` | Stored services/accounts/kind/fields/meta; never values. |
+| `mytokens rm <service> [--account L]` | Delete the whole Secret. Re-`add` overwrites (rotation). |
 | `mytokens selftest` | Real-keychain round-trip sanity check. |
 
 `--account` lets one Service hold several Secrets (`cloudflare/personal` vs `cloudflare/work`).
+
+### Multi-field credentials (ADR-0005)
+
+Some credentials are several values used together — AWS *Access Key ID* + *Secret Access
+Key*, a DB *Username* + *Password*. You know the parts (you know the Service), so pass the
+field **labels** at `add` time; they're collected in **one** popup and stored as **one**
+Secret that rotates and deletes as a unit.
+
+- **Add**: `mytokens add aws --fields "Access Key ID","Secret Access Key" --show "Access Key ID"`.
+  Labels are comma-separated; every field is required; `--show` reveals non-secret fields
+  (identifiers) so the user can verify a paste — everything else is masked. `--kind parent`
+  is single-value and can't be combined with `--fields`.
+- **Get one field**: `mytokens get aws --field "Secret Access Key"` → that field's raw value
+  (the label is the key — quote the spaces). Consume inline, e.g.
+  `AWS_SECRET_ACCESS_KEY=$(mytokens get aws --field "Secret Access Key")`.
+- **Bare `get`** returns the raw value for a single-field Secret, but **errors** for a
+  multi-field one and lists the field labels — use `--field`, or `--json` to dump the whole
+  `{label: value}` object.
+- **`list`** shows the field labels (never values).
 
 ## Minting short-lived tokens — Cloudflare as the worked example
 

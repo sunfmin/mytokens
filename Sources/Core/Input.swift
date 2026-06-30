@@ -1,41 +1,66 @@
 import Foundation
 import AppKit
 
-/// How `add` collects a secret value. The real impl pops a native secure field;
-/// tests inject a canned value. The value is returned only to the Helper process
-/// — never to the caller's shell.
-protocol SecretInput {
-    func promptForSecret(service: String, account: String) -> String?  // nil if cancelled
+/// One field to prompt for: a display label and whether its input is masked
+/// (ADR-0005). An empty label is the single bare-secret case (today's look).
+struct Field {
+    let label: String
+    let masked: Bool
 }
 
-/// Native masked popup. Runs modally on the main thread; the process exits
-/// right after, so the temporary GUI activation is harmless.
+/// How `add` collects a secret. The real impl pops native fields; tests inject
+/// canned values. Returns label → value for the given fields (the single bare
+/// case uses the empty-string label), or nil if cancelled. Values are returned
+/// only to the Helper process — never to the caller's shell.
+protocol SecretInput {
+    func promptForSecret(service: String, account: String, fields: [Field]) -> [String: String]?
+}
+
+/// Native masked popup. Builds `SecretPromptView`, hosts it in a modal window,
+/// and runs it on the main thread; the process exits right after, so the
+/// temporary GUI activation is harmless. The view-building lives in
+/// `SecretPromptView` so the render test exercises the exact same UI.
 struct PopupSecretInput: SecretInput {
-    func promptForSecret(service: String, account: String) -> String? {
+    func promptForSecret(service: String, account: String, fields: [Field]) -> [String: String]? {
         let app = NSApplication.shared
         app.setActivationPolicy(.regular)
         installEditMenu(app)   // wire up ⌘X/⌘C/⌘V/⌘A so paste works in the field
 
-        let alert = NSAlert()
-        alert.messageText = "Store secret for \(service)/\(account)"
-        alert.informativeText = "Paste or type the value. It is written straight to the Keychain and never shown."
-        let field = NSSecureTextField(frame: NSRect(x: 0, y: 0, width: 320, height: 24))
-        field.placeholderString = "secret value"
-        alert.accessoryView = field
-        alert.addButton(withTitle: "Store")
-        alert.addButton(withTitle: "Cancel")
+        let card = SecretPromptView.make(service: service, account: account, fields: fields)
+
+        // A titled, chrome-free window: the card supplies all the visuals, and a
+        // real titled window (unlike a borderless one) can become key so the
+        // secure field accepts typing and paste.
+        let window = NSWindow(contentRect: card.bounds,
+                              styleMask: [.titled, .fullSizeContentView],
+                              backing: .buffered, defer: false)
+        window.titlebarAppearsTransparent = true
+        window.titleVisibility = .hidden
+        window.isMovableByWindowBackground = true
+        for button in [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton] {
+            window.standardWindowButton(button)?.isHidden = true
+        }
+        window.contentView = card
+        window.level = .floating
+
+        // Buttons end the modal session; map their codes back to Store / Cancel.
+        let ender = ModalEnder()
+        card.storeButton.target = ender
+        card.storeButton.action = #selector(ModalEnder.store)
+        card.cancelButton.target = ender
+        card.cancelButton.action = #selector(ModalEnder.cancel)
 
         // CLI-launched apps aren't frontmost; force the window up and focused.
-        let window = alert.window
-        window.initialFirstResponder = field
-        window.level = .floating
+        window.initialFirstResponder = card.firstField
         app.activate(ignoringOtherApps: true)
+        window.center()
         window.makeKeyAndOrderFront(nil)
         window.orderFrontRegardless()
 
-        let response = alert.runModal()
-        guard response == .alertFirstButtonReturn else { return nil }
-        return field.stringValue
+        let response = app.runModal(for: window)
+        window.orderOut(nil)
+        guard response == .OK else { return nil }
+        return card.values
     }
 
     /// A minimal Edit menu so standard editing key-equivalents reach the field
@@ -52,4 +77,11 @@ struct PopupSecretInput: SecretInput {
         editMenu.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
         app.mainMenu = mainMenu
     }
+}
+
+/// Tiny target the dialog's buttons message to end the modal session. Kept alive
+/// by the local reference in `promptForSecret` for the duration of the run loop.
+private final class ModalEnder: NSObject {
+    @objc func store()  { NSApp.stopModal(withCode: .OK) }
+    @objc func cancel() { NSApp.stopModal(withCode: .cancel) }
 }

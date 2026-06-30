@@ -69,6 +69,7 @@ private func usage() -> CommandResult {
     fail("""
     usage:
       mytokens add <service> [--account <label>] [--kind static|parent] [--meta <json>]
+                             [--description "<text>"]
                              [--fields "<Label>","<Label>" [--show "<Label>",…]]
       mytokens get <service> [--account <label>] [--field "<Label>" | --json]
       mytokens list
@@ -85,6 +86,9 @@ private func runAdd(_ argv: [String], _ deps: Dependencies) -> CommandResult {
     guard kind == "static" || kind == "parent" else {
         return fail("--kind must be 'static' or 'parent'\n", 64)
     }
+
+    // Agent's purpose note (ADR-0006). Optional here; SKILL.md mandates the agent set it.
+    let description = args.flags["description"].flatMap { $0.isEmpty ? nil : $0 }
 
     // Multi-field shape (ADR-0005). No --fields ⇒ the single bare-value path.
     let fieldLabels = args.flags["fields"].map(splitCSV) ?? []
@@ -107,7 +111,8 @@ private func runAdd(_ argv: [String], _ deps: Dependencies) -> CommandResult {
         ? [Field(label: "", masked: true)]
         : fieldLabels.map { Field(label: $0, masked: !showLabels.contains($0)) }
 
-    guard let values = deps.input.promptForSecret(service: service, account: account, fields: promptFields) else {
+    guard let values = deps.input.promptForSecret(service: service, account: account,
+                                                  description: description, fields: promptFields) else {
         return fail("cancelled; nothing stored\n", 1)
     }
     // Every field is required (ADR-0005) — the popup enforces it; double-check here.
@@ -132,7 +137,7 @@ private func runAdd(_ argv: [String], _ deps: Dependencies) -> CommandResult {
 
     do {
         try deps.store.upsert(service: service, account: account, value: storeValue,
-                              kind: kind, meta: meta, fields: storeFields)
+                              kind: kind, meta: meta, fields: storeFields, description: description)
         return ok("stored \(service)/\(account)\n")
     } catch {
         return fail("\(error)\n", 1)
@@ -184,6 +189,7 @@ private func runList(_ argv: [String], _ deps: Dependencies) -> CommandResult {
         if records.isEmpty { return CommandResult(stdout: "", stderr: "no secrets stored\n", exitCode: 0) }
         let rows = records.map { r -> String in
             var line = "\(r.service)/\(r.account)\t\(r.kind)"
+            if let description = r.description { line += "  — " + description }
             if let fields = r.fields, !fields.isEmpty { line += "  fields: " + fields.joined(separator: ", ") }
             if let meta = r.meta { line += "  " + meta }
             return line
@@ -217,7 +223,7 @@ private func runSelftest() -> CommandResult {
     let service = "mytokens.selftest", account = "selftest"
     _ = try? store.delete(service: service, account: account)  // clear any leftover
     do {
-        try store.upsert(service: service, account: account, value: "SELFTEST-OK", kind: "static", meta: ["probe": true], fields: nil)
+        try store.upsert(service: service, account: account, value: "SELFTEST-OK", kind: "static", meta: ["probe": true], fields: nil, description: nil)
         let roundtripped = try store.get(service: service, account: account)?.value == "SELFTEST-OK"
         let listed = try store.list().contains { $0.service == service && $0.account == account }
         let deleted = try store.delete(service: service, account: account)

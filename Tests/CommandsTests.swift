@@ -160,4 +160,27 @@ final class CommandsTests: XCTestCase {
         XCTAssertNotEqual(add.exitCode, 0)
         XCTAssertTrue(store.items.isEmpty)              // all-or-nothing
     }
+
+    // ── Description (ADR-0006) ──────────────────────────────────────────────────
+
+    func testDescriptionShownInListButNotInGet() {
+        let store = InMemorySecretStore()
+        XCTAssertEqual(runCommand(["add", "gh", "--description", "CI release tagging"], deps(store, input: "tok")).exitCode, 0)
+
+        let list = runCommand(["list"], deps(store, input: nil))
+        XCTAssertTrue(list.stdout.contains("CI release tagging"))     // purpose visible in list
+        XCTAssertFalse(list.stdout.contains("tok"))                   // value still hidden
+
+        XCTAssertEqual(runCommand(["get", "gh"], deps(store, input: nil)).stdout, "tok")  // get unchanged
+    }
+
+    func testDescriptionAlongsideFields() {
+        let store = InMemorySecretStore()
+        _ = runCommand(["add", "aws", "--description", "CI deploy: S3 uploads", "--fields", "Access Key ID,Secret Access Key"],
+                       mdeps(store, values: awsValues))
+        let list = runCommand(["list"], mdeps(store, values: nil))
+        XCTAssertTrue(list.stdout.contains("CI deploy: S3 uploads"))
+        XCTAssertTrue(list.stdout.contains("fields: Access Key ID, Secret Access Key"))
+        XCTAssertFalse(list.stdout.contains("AKIA123"))
+    }
 }

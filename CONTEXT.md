@@ -22,6 +22,19 @@ Field is addressed by its **label** (the label is the key), and is masked on inp
 unless explicitly revealed for paste-verification.
 _Avoid_: sub-secret, key/value pair (a Field's label is its identity, not an arbitrary key).
 
+**Description**:
+An agent-authored, human-readable note of what a Secret is *for* (e.g. "CI deploy: S3
+bucket uploads"), set at `add` time and shown by `list` and in the input popup. Its
+audience is a *later* agent run recalling a Secret's purpose; the human sees it as the
+reason the popup appeared. Optional in the Helper, but the skill mandates the agent always
+set one. Distinct from **Meta** (below).
+_Avoid_: comment (that is the keychain attribute it happens to be stored in), label.
+
+**Meta**:
+Optional structured (JSON) data attached to a Secret for *machine* use — e.g. a Cloudflare
+`account_id`, or a `default_ttl_seconds` honored when minting. Set via `--meta`. Distinct
+from **Description**, which is prose intent for a reader, not data for a program.
+
 **Service**:
 A target API or tool that a Secret authenticates to, identified by a stable slug
 (`cloudflare`, `github`, `openai`, …). The slug is how Claude looks a Secret up. The Helper

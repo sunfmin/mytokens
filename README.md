@@ -7,7 +7,7 @@ Claude calls an external API — without the values living in dotfiles or being 
 - Domain glossary: [`CONTEXT.md`](./CONTEXT.md)
 - Decisions: [`docs/adr/`](./docs/adr/) — why iCloud Keychain via a signed helper (0001),
   why `get` returns the raw value (0002), why a `.app` (0003), how minting works (0004),
-  multi-field Secrets (0005)
+  multi-field Secrets (0005), per-Secret description (0006)
 - Skill behavior for Claude: [`SKILL.md`](./SKILL.md)
 
 The Helper is **service-agnostic** — it only stores and returns secrets. Service-specific
@@ -45,19 +45,23 @@ npx skills add sunfmin/mytokens     # or your skill manager's equivalent; skillP
 ## Usage
 
 ```sh
-mytokens add cloudflare              # secure popup → stores the value (you only type the value)
+mytokens add cloudflare --description "purge CDN cache after deploy"  # secure popup → stores the value
 mytokens add cloudflare --account work --kind parent --meta '{"account_id":"<id>"}'
 mytokens get cloudflare              # raw value to stdout; non-zero exit if absent
-mytokens list                        # services / accounts / kind / fields / meta — never values
+mytokens list                        # services / accounts / kind / description / fields / meta — never values
 mytokens rm cloudflare               # delete; re-add to rotate
 
 # Multi-field credentials (ADR-0005): several values, one popup, one Secret.
-mytokens add aws --fields "Access Key ID","Secret Access Key" --show "Access Key ID"
+mytokens add aws --description "CI deploy: S3 uploads" \
+                 --fields "Access Key ID","Secret Access Key" --show "Access Key ID"
 mytokens get aws --field "Secret Access Key"   # one field's raw value (label is the key)
 mytokens get aws --json                        # the whole {label: value} object
 ```
 
-Run tests with `make test` (20 tests: command behavior driven through the `Dependencies`
+`--description` (ADR-0006) is a short note of what a Secret is for; the skill has the agent
+set it on every `add` so a later run reading `list` knows each Secret's purpose.
+
+Run tests with `make test` (23 tests: command behavior driven through the `Dependencies`
 seam with in-memory fakes, plus offscreen renders of the input dialog — no real keychain,
 no app launch).
 

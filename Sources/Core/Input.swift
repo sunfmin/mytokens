@@ -9,11 +9,12 @@ struct Field {
 }
 
 /// How `add` collects a secret. The real impl pops native fields; tests inject
-/// canned values. Returns label → value for the given fields (the single bare
-/// case uses the empty-string label), or nil if cancelled. Values are returned
-/// only to the Helper process — never to the caller's shell.
+/// canned values. `description` is the agent's purpose note shown to the human
+/// (ADR-0006). Returns label → value for the given fields (the single bare case
+/// uses the empty-string label), or nil if cancelled. Values are returned only
+/// to the Helper process — never to the caller's shell.
 protocol SecretInput {
-    func promptForSecret(service: String, account: String, fields: [Field]) -> [String: String]?
+    func promptForSecret(service: String, account: String, description: String?, fields: [Field]) -> [String: String]?
 }
 
 /// Native masked popup. Builds `SecretPromptView`, hosts it in a modal window,
@@ -21,12 +22,12 @@ protocol SecretInput {
 /// temporary GUI activation is harmless. The view-building lives in
 /// `SecretPromptView` so the render test exercises the exact same UI.
 struct PopupSecretInput: SecretInput {
-    func promptForSecret(service: String, account: String, fields: [Field]) -> [String: String]? {
+    func promptForSecret(service: String, account: String, description: String?, fields: [Field]) -> [String: String]? {
         let app = NSApplication.shared
         app.setActivationPolicy(.regular)
         installEditMenu(app)   // wire up ⌘X/⌘C/⌘V/⌘A so paste works in the field
 
-        let card = SecretPromptView.make(service: service, account: account, fields: fields)
+        let card = SecretPromptView.make(service: service, account: account, description: description, fields: fields)
 
         // A titled, chrome-free window: the card supplies all the visuals, and a
         // real titled window (unlike a borderless one) can become key so the

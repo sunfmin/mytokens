@@ -42,6 +42,9 @@ final class SecretPromptView: NSView, NSTextFieldDelegate {
     private let fields: [Field]
     private let service: String
     private let account: String
+    private let purposeNote: String?   // the agent's description; shown in place of the instruction
+                                       // (named `purposeNote`, not `description`, so it doesn't
+                                       // shadow NSObject.description)
 
     // Background frames painted in draw(_:); kept here so the fills line up exactly
     // with the subviews laid over them.
@@ -52,13 +55,15 @@ final class SecretPromptView: NSView, NSTextFieldDelegate {
     private var cancelRect = NSRect.zero
 
     static func make(service: String, account: String,
+                     description: String? = nil,
                      fields: [Field] = [Field(label: "", masked: true)]) -> SecretPromptView {
-        SecretPromptView(service: service, account: account, fields: fields)
+        SecretPromptView(service: service, account: account, description: description, fields: fields)
     }
 
-    init(service: String, account: String, fields: [Field]) {
+    init(service: String, account: String, description: String?, fields: [Field]) {
         self.service = service
         self.account = account
+        self.purposeNote = description
         self.fields = fields.isEmpty ? [Field(label: "", masked: true)] : fields
         super.init(frame: .zero)
         build()
@@ -89,15 +94,26 @@ final class SecretPromptView: NSView, NSTextFieldDelegate {
         chip.setFrameOrigin(NSPoint(x: chipRect.minX + 9, y: chipRect.midY - chip.frame.height / 2))
         addSubview(chip)
 
-        // ── Instruction ───────────────────────────────────────────────────────
+        // ── The agent's purpose note when given (why this popup appeared);
+        //    otherwise the generic instruction ─────────────────────────────────
         let multi = fields.count > 1
-        let subtitle = label(multi ? "Paste or type each value below." : "Paste or type the value below.",
-                             size: 13, weight: .regular, color: Palette.slate)
-        subtitle.frame = NSRect(x: pad, y: 83, width: contentW, height: 18)
-        addSubview(subtitle)
+        let subtitleTop: CGFloat = 83
+        var cursor: CGFloat
+        if let purposeNote, !purposeNote.isEmpty {
+            let note = wrappingLabel(purposeNote, size: 13, weight: .regular,
+                                     color: Palette.ink, maxWidth: contentW)
+            note.setFrameOrigin(NSPoint(x: pad, y: subtitleTop))
+            addSubview(note)
+            cursor = subtitleTop + note.frame.height + 14
+        } else {
+            let instruction = label(multi ? "Paste or type each value below." : "Paste or type the value below.",
+                                    size: 13, weight: .regular, color: Palette.slate)
+            instruction.frame = NSRect(x: pad, y: subtitleTop, width: contentW, height: 18)
+            addSubview(instruction)
+            cursor = subtitleTop + 18 + 11
+        }
 
         // ── One row per field ───────────────────────────────────────────────────
-        var cursor: CGFloat = 112
         for field in fields {
             if !field.label.isEmpty {
                 let caption = label(field.label, size: 11, weight: .semibold, color: Palette.slate)
@@ -201,6 +217,20 @@ final class SecretPromptView: NSView, NSTextFieldDelegate {
         let l = NSTextField(labelWithString: s)
         l.font = .systemFont(ofSize: size, weight: weight)
         l.textColor = color
+        return l
+    }
+
+    /// A multi-line label sized to its wrapped height at `maxWidth` — used for the
+    /// purpose note, which may run past one line.
+    private func wrappingLabel(_ s: String, size: CGFloat, weight: NSFont.Weight,
+                               color: NSColor, maxWidth: CGFloat) -> NSTextField {
+        let l = NSTextField(wrappingLabelWithString: s)
+        l.font = .systemFont(ofSize: size, weight: weight)
+        l.textColor = color
+        l.isSelectable = false
+        let bounds = NSRect(x: 0, y: 0, width: maxWidth, height: .greatestFiniteMagnitude)
+        let h = ceil(l.cell?.cellSize(forBounds: bounds).height ?? size + 4)
+        l.frame = NSRect(x: 0, y: 0, width: maxWidth, height: h)
         return l
     }
 

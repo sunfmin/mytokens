@@ -71,6 +71,22 @@ final class SecretPromptRenderTests: XCTestCase {
         print("rendered →", path.path)
     }
 
+    func testRendersPromptWithDescription() {
+        let (path, view) = renderToImage("secret-prompt-description") {
+            SecretPromptView.make(service: "cloudflare", account: "default",
+                                  description: "Purge the CDN cache after a deploy.")
+        }
+
+        let texts = view.allSubviews.compactMap { ($0 as? NSTextField)?.stringValue }
+        XCTAssertTrue(texts.contains("cloudflare / default"))
+        XCTAssertTrue(texts.contains("Purge the CDN cache after a deploy."))  // the agent's note rendered
+        // When a description is shown, it stands in for the generic instruction line.
+        XCTAssertFalse(texts.contains("Paste or type the value below."))
+
+        XCTAssertTrue(FileManager.default.fileExists(atPath: path.path))
+        print("rendered →", path.path)
+    }
+
     func testStoreDisabledUntilAllFieldsFilled() {
         let card = SecretPromptView.make(service: "aws", account: "default", fields: [
             Field(label: "Access Key ID", masked: false),

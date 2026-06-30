@@ -27,10 +27,12 @@ mytokens get <service>        # the raw value on stdout; non-zero exit if absent
 If the Service has a Secret, use it. If `get` exits non-zero, the Secret isn't stored yet — offer to add it (this pops a secure popup; the value never passes through you):
 
 ```sh
-mytokens add <service> [--account <label>] [--kind static|parent] [--meta '<json>']
+mytokens add <service> --description "<what it's for>" [--account <label>] [--kind static|parent] [--meta '<json>']
 # A credential with several parts (key + secret, user + password) → one popup:
-mytokens add aws --fields "Access Key ID","Secret Access Key" --show "Access Key ID"
+mytokens add aws --description "CI deploy: S3 uploads" --fields "Access Key ID","Secret Access Key" --show "Access Key ID"
 ```
+
+**Always pass `--description`** — a short note of what the Secret is for. A *later* run sees it in `list` and knows the Secret's purpose, and the human sees it in the popup as the reason the dialog appeared.
 
 ## Consent contract
 
@@ -49,15 +51,16 @@ The value is plaintext once `get` returns it (acceptable on this trusted machine
 
 | Command | Purpose |
 |---|---|
-| `mytokens add <service> [--account L] [--kind static\|parent] [--meta JSON]` | Popup → store. Collects only the value. |
+| `mytokens add <service> --description "<text>" [--account L] [--kind static\|parent] [--meta JSON]` | Popup → store. Collects only the value. |
 | `mytokens add <service> --fields "<A>","<B>" [--show "<A>"]` | One popup, one row per field; masked unless `--show`. All required. |
 | `mytokens get <service> [--account L]` | Raw value to stdout; non-zero exit if absent. |
 | `mytokens get <service> --field "<A>"` / `--json` | One field's raw value / the whole field object as JSON. |
-| `mytokens list` | Stored services/accounts/kind/fields/meta; never values. |
+| `mytokens list` | Stored services/accounts/kind/description/fields/meta; never values. |
 | `mytokens rm <service> [--account L]` | Delete the whole Secret. Re-`add` overwrites (rotation). |
 | `mytokens selftest` | Real-keychain round-trip sanity check. |
 
 `--account` lets one Service hold several Secrets (`cloudflare/personal` vs `cloudflare/work`).
+`--description` records what a Secret is for (shown by `list` and in the popup) — **always set it** when you `add`; it's how a later run recalls the Secret's purpose. It's prose for a reader, distinct from `--meta` (structured machine data like a Cloudflare `account_id`).
 
 ### Multi-field credentials (ADR-0005)
 

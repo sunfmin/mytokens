@@ -1,28 +1,39 @@
-# Minting: Claude infers scopes, Child tokens expire in 1 day, best-effort revoke
+# Minting is a runtime pattern over a service-agnostic Helper, not a Helper feature
 
-When Claude needs Cloudflare access, the Helper mints a Child token from the stored Parent.
-Claude **infers the Child's policy** (permission groups + zone/account scope) per task; the
-default **`expires_on` is 24 hours**, configurable in the Parent's metadata; cleanup is a
-**best-effort `mytokens cloudflare revoke <id>`** with expiry as the guaranteed backstop.
+The Helper stays **service-agnostic**: it only stores and returns Secrets (generic
+`add`/`get`/`list`/`rm` plus optional `--kind`/`--meta`). It contains **no Cloudflare code
+and no network capability**. Minting a Cloudflare Child token is a **pattern Claude performs
+at runtime** — documented in `SKILL.md` as a worked example — not a Helper command.
 
 ## Context
 
-The user prioritizes frictionless daily use over minimal blast radius. Cloudflare enforces
-that a Child can never exceed the Parent, so the Parent's own permissions are a hard ceiling
-regardless of what Claude infers.
+Cloudflare is just one example Service. An earlier draft of this ADR put
+`cloudflare mint/permissions/revoke` commands inside the signed Helper, which special-cases
+one service and bloats the signed binary with network + API logic.
 
-## Why this still buys security
+## Decision
 
-Even a broad, 24-hour Child is safer than using the Parent directly: the Parent holds the
-**token-creation** permission (privilege escalation — it can mint more tokens), and an
-inferred Child won't. So minting prevents escalation even when scope/time are loose.
+- The Helper does generic secret storage only.
+- To mint, Claude: `mytokens get cloudflare` → calls Cloudflare's create-token API (via
+  `curl`/`wrangler`) → uses the Child → best-effort revokes it.
+- The **pattern** is preserved: Claude infers minimal scopes (bounded by the Parent's
+  ceiling, which Cloudflare enforces), defaults the Child to a **24h** `expires_on`
+  (configurable), and relies on expiry as the cleanup backstop.
+- Adding another mintable Service later is "write a recipe in the skill," not "ship Helper code."
+
+## Why this is better
+
+- The signed app stays minimal → smaller attack surface, simpler signing/maintenance, no
+  network entitlements.
+- No special-casing: every Service is treated uniformly by the Helper.
+- `get` already returns the raw value (ADR-0002), so Claude has everything it needs to mint,
+  verify, and enrich at runtime.
 
 ## Consequences
 
-- A Child may be broadly scoped and live a full day, and per ADR-0002 its value can surface
-  in the transcript. Accepted under the trusted-machine threat model.
-- The Helper exposes `mytokens cloudflare permissions` (Cloudflare's `permission_groups`
-  catalog, fetched via the Parent) so Claude can resolve permission-group GUIDs when building
-  a policy.
-- Scope inference is unaudited by construction; the 24h expiry + best-effort revoke are the
-  only cleanup mechanisms. Revisit if a tighter posture is ever wanted.
+- Verification/enrichment also moves to runtime: after `add`, Claude can `get` the token and
+  call the Service's verify endpoint to confirm it and discover metadata (e.g. Cloudflare
+  `account_id`). The value passes through Claude at that point — consistent with ADR-0002's
+  trusted-machine model.
+- Why minting still buys security: a minted Child lacks the Parent's token-creation
+  permission, so even a broad 24h Child cannot escalate by minting more tokens.

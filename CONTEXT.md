@@ -14,7 +14,9 @@ _Avoid_: Password (reserve that word for human-facing web logins, which are out 
 
 **Service**:
 A target API or tool that a Secret authenticates to, identified by a stable slug
-(`cloudflare`, `github`, `openai`, …). The slug is how Claude looks a Secret up.
+(`cloudflare`, `github`, `openai`, …). The slug is how Claude looks a Secret up. The Helper
+treats every Service uniformly — service-specific behavior (e.g. Cloudflare minting) lives in
+Claude's runtime usage and the skill's recipes, **not** in the Helper (ADR-0004).
 
 **Parent token**:
 A stored Secret that holds permission to *create other tokens* on its Service (e.g. a

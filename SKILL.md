@@ -109,7 +109,9 @@ curl -s -X DELETE -H "Authorization: Bearer $PARENT" "$API/user/tokens/$CHILD_ID
 ```
 
 Notes:
-- For an **account-owned** Parent, swap every `/user/tokens…` above for `/accounts/$ACCOUNT_ID/tokens…`.
+- For an **account-owned** Parent, swap every `/user/tokens…` above for `/accounts/$ACCOUNT_ID/tokens…`,
+  read the catalog from `/accounts/$ACCOUNT_ID/tokens/permission_groups`, and scope the child to the
+  account resource `{"com.cloudflare.api.account.$ACCOUNT_ID":"*"}` (verified working end-to-end).
 - Infer the **minimal** permission groups the task needs; the Parent's permissions are the hard ceiling.
 - Default Child lifetime is **24h**; honor a `default_ttl_seconds` in the Parent's `--meta` if present.
 - Always best-effort `revoke` when done; the short `expires_on` cleans up if you don't.

@@ -61,19 +61,30 @@ This is a **runtime pattern, not a Helper feature**. The same shape applies to a
 whose API can create scoped tokens: *get the parent → call the service's token API → use the
 child → revoke it.* Cloudflare is just the example.
 
-A **Parent token** (`--kind parent`) can create other tokens. Don't use it for tasks
-directly — mint a narrowly-scoped, short-lived **Child** instead. Cloudflare enforces that a
-Child can never exceed the Parent.
+A **Parent token** must actually be able to *create* tokens — don't trust the `--kind parent`
+label or the dashboard name. Detect it. Cloudflare has two flavors, on different endpoints:
+
+- **User-owned** token with permission **`User → API Tokens → Edit`** → uses `/user/tokens/*`.
+  **Recommended** — this is the standard "create additional tokens" path.
+- **Account-owned** token with account API-token **write** → uses `/accounts/{account_id}/tokens/*`.
+
+**Detect mint-capability first (learned the hard way):** an account-scoped *read* token can list
+`/accounts` and look like a parent but cannot mint. Probe before relying on it:
 
 ```sh
-PARENT="$(mytokens get cloudflare)"          # parent token; never echo it
+PARENT="$(mytokens get cloudflare)"          # never echo it
 API=https://api.cloudflare.com/client/v4
 
-# (once) confirm the token + discover the account_id, then cache it on the record:
+# Is it a USER token? success:true (with id+status) means yes; "Invalid API Token" / code 9109
+# means it is account-scoped — switch the paths below to /accounts/$ACCOUNT_ID/tokens.
 curl -s -H "Authorization: Bearer $PARENT" "$API/user/tokens/verify"
-# mytokens add cloudflare --kind parent --meta '{"account_id":"<ACCOUNT_ID>"}'
 
-# pick minimal permission groups for the task:
+# Can it CREATE? An empty-policy POST returns 400 (CAN create) vs 403/code 9109 (CANNOT).
+curl -s -o /dev/null -w '%{http_code}\n' -X POST -H "Authorization: Bearer $PARENT" \
+  -H "Content-Type: application/json" "$API/user/tokens" --data '{"name":"probe","policies":[]}'
+# 403 → NOT a mint-capable Parent. Tell the user to make a USER token with "API Tokens: Edit".
+
+# pick minimal permission groups for the task (needs API Tokens *Read*):
 curl -s -H "Authorization: Bearer $PARENT" "$API/user/tokens/permission_groups"
 
 # ANNOUNCE: "minting a 24h DNS-edit child for zone <ZONE_ID>", then mint:
@@ -98,6 +109,7 @@ curl -s -X DELETE -H "Authorization: Bearer $PARENT" "$API/user/tokens/$CHILD_ID
 ```
 
 Notes:
+- For an **account-owned** Parent, swap every `/user/tokens…` above for `/accounts/$ACCOUNT_ID/tokens…`.
 - Infer the **minimal** permission groups the task needs; the Parent's permissions are the hard ceiling.
 - Default Child lifetime is **24h**; honor a `default_ttl_seconds` in the Parent's `--meta` if present.
 - Always best-effort `revoke` when done; the short `expires_on` cleans up if you don't.

@@ -1,0 +1,61 @@
+# mytokens
+
+A Claude Code skill for securely storing **machine-usable secrets** on macOS and
+auto-injecting them into CLI/API calls — so Claude can, e.g., fetch a Cloudflare
+API token at call time without the value ever touching the conversation transcript.
+
+## Language
+
+**Secret**:
+A machine-usable credential — an API token, API key, or connection string — that
+Claude retrieves and injects into a shell command at call time. In scope for this
+skill.
+_Avoid_: Password (reserve that word for human-facing web logins, which are out of scope).
+
+**Service**:
+A target API or tool that a Secret authenticates to, identified by a stable slug
+(`cloudflare`, `github`, `openai`, …). The slug is how Claude looks a Secret up.
+
+**Parent token**:
+A stored Secret that holds permission to *create other tokens* on its Service (e.g. a
+Cloudflare token with "API Tokens: Edit"). Never used to perform tasks directly — only to
+mint Child tokens. Parent-ness is **detected** from the token's actual permissions when it
+is added, not declared by hand.
+_Avoid_: root token, master token.
+
+**Child token**:
+A short-lived, narrowly-scoped token minted on demand from a Parent token for a single
+unit of work. Never stored; deleted or expired right after use.
+_Avoid_: scoped token (use as adjective only).
+
+**Mint**:
+To create a Child token from a Parent token by calling the Service's token-creation API.
+
+**Password (out of scope)**:
+A human-facing web login (username + website + password) of the kind Passwords.app
+autofills in a browser. Explicitly NOT managed by this skill.
+
+## Storage
+
+**iCloud Keychain**:
+The macOS data-protection keychain that syncs across a user's Apple devices and backs
+Apple Passwords. mytokens stores every Secret here, under its **own access group**, via
+the Helper. Items therefore sync across the user's Macs (where the Helper is installed)
+but do NOT appear in the Passwords.app list (see ADR-0001).
+_Avoid_: "the keychain" (ambiguous), "Apple Passwords vault" (we are not in its list).
+
+**Helper**:
+The code-signed Swift binary (Apple Developer identity + `keychain-access-groups`
+entitlement) that is the **sole** read/write path to the iCloud Keychain for this skill.
+The `/usr/bin/security` CLI and unsigned scripts cannot substitute — they get
+`errSecMissingEntitlement` (-34018) or cannot see the iCloud Keychain at all.
+_Avoid_: "the script", "the CLI" (reserve "CLI" for the user-facing `mytokens` command).
+
+**Login keychain (not used)**:
+The legacy, local-only `login.keychain-db` that `/usr/bin/security` reads/writes. Does
+not sync. mytokens deliberately does NOT use it (ADR-0001).
+
+**Passwords.app (not a storage target)**:
+Apple's GUI vault. mytokens Secrets are NOT listed here — making third-party tokens
+appear there would require Associated Domains + an AASA file on each service's domain,
+which we don't control (ADR-0001).

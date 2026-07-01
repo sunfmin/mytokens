@@ -11,10 +11,11 @@ ARCHIVE      := $(DERIVED)/$(APP).xcarchive
 EXPORT       := $(DERIVED)/export
 DIST_ZIP     := $(DERIVED)/$(APP).zip
 
-# Notarization uses a stored notarytool keychain profile — created once with
-# `xcrun notarytool store-credentials <name>`. Signing just uses the Developer ID
-# cert already in your keychain and your Xcode-logged-in account (for the profile).
-NOTARY_PROFILE ?= mytokens
+# Notarization creds come from mytokens itself (dogfooding): a secret named
+# $(ASC_SECRET) with fields "Key ID", "Issuer ID", "Key (base64 .p8)" — an App
+# Store Connect API key. Signing uses the Developer ID cert already in your
+# keychain + your Xcode-logged-in account.
+ASC_SECRET ?= asc-api-key
 
 .PHONY: project build test install selftest verify dist release icon screenshots clean
 
@@ -63,7 +64,12 @@ dist: project
 		-exportOptionsPlist ExportOptions.plist -exportPath $(EXPORT) \
 		-allowProvisioningUpdates
 	ditto -c -k --keepParent "$(EXPORT)/$(BUNDLE)" "$(DIST_ZIP)"
-	xcrun notarytool submit "$(DIST_ZIP)" --keychain-profile "$(NOTARY_PROFILE)" --wait
+	@set -e; TMP=$$(mktemp -d); trap 'rm -rf "$$TMP"' EXIT; \
+		mytokens get $(ASC_SECRET) --field "Key (base64 .p8)" | base64 -d > "$$TMP/asc.p8"; \
+		xcrun notarytool submit "$(DIST_ZIP)" \
+			--key "$$TMP/asc.p8" \
+			--key-id "$$(mytokens get $(ASC_SECRET) --field 'Key ID')" \
+			--issuer "$$(mytokens get $(ASC_SECRET) --field 'Issuer ID')" --wait
 	xcrun stapler staple "$(EXPORT)/$(BUNDLE)"
 	ditto -c -k --keepParent "$(EXPORT)/$(BUNDLE)" "$(DIST_ZIP)"
 	@echo "dist: $(DIST_ZIP) (Developer ID-signed, notarized, stapled)"

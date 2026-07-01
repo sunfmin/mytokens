@@ -212,21 +212,29 @@ icon is generated from code (`make icon`).
 
 ### Releasing (maintainers)
 
-Built and published locally — no CI. Produce the notarized artifact and upload it:
+Built and published locally — no CI. Notarization creds live in **mytokens itself**
+(dogfooding): a secret named `asc-api-key` with fields **Key ID**, **Issuer ID**, and
+**Key (base64 .p8)** — an App Store Connect API key. Create the key in App Store Connect →
+*Users and Access → Integrations → Team Keys* (role: Developer), then store it:
 
 ```sh
-# one-time: store notarization creds under a keychain profile
-xcrun notarytool store-credentials mytokens --apple-id <you@example.com> \
-      --team-id HL27PWAKDF --password <app-specific-password>
-
-make dist NOTARY_PROFILE=mytokens   # → build/MyTokens.zip (Developer ID-signed, notarized, stapled)
-make release TAG=v0.1.0             # → gh release create + upload MyTokens.zip
+base64 -i ~/Downloads/AuthKey_XXXX.p8 | tr -d '\n' | pbcopy   # single-line .p8 → clipboard
+mytokens add asc-api-key --description "App Store Connect API key — notarize MyTokens" \
+  --fields "Key ID","Issuer ID","Key (base64 .p8)" --show "Key ID","Issuer ID"
 ```
 
-`scripts/install.sh` downloads `MyTokens.zip` from the **latest** Release, so bump `TAG` each
-time. `make dist` uses your Developer ID cert (already in the keychain) and your
-Xcode-logged-in account (for the Developer ID + Keychain-Sharing profile). Screenshots in
-this guide are regenerated with `make screenshots`.
+Then build and publish:
+
+```sh
+make dist                # archive → Developer ID export → notarize → staple → zip
+make release TAG=v0.1.0  # gh release create + upload build/MyTokens.zip
+```
+
+`make dist` reads the API key from mytokens into a temp file (deleted right after), signs
+with your Developer ID cert (already in the keychain), and builds with the **Hardened
+Runtime** (required for notarization). `scripts/install.sh` downloads `MyTokens.zip` from the
+**latest** Release, so bump `TAG` each time. Screenshots are regenerated with
+`make screenshots`.
 
 ### How it's built
 

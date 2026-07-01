@@ -14,33 +14,60 @@ The Helper is **service-agnostic** — it only stores and returns secrets. Servi
 behavior (e.g. Cloudflare token minting) is a runtime pattern documented in `SKILL.md`, not
 code in the Helper.
 
-## Requirements
+## Install
+
+### Recommended — install the skill, let Claude install the app
+
+```sh
+npx skills add sunfmin/mytokens     # or your skill manager's equivalent
+```
+
+The skill lives at `skills/mytokens/SKILL.md`. On first use Claude runs the bundled
+`scripts/install.sh`, which downloads the latest **notarized** `MyTokens.app` from this
+repo's [Releases](https://github.com/sunfmin/mytokens/releases), installs it to
+`~/Applications`, symlinks `~/.local/bin/mytokens`, and runs `selftest`. Run it yourself
+any time:
+
+```sh
+bash ~/.claude/skills/mytokens/scripts/install.sh
+```
+
+macOS only; put `~/.local/bin` on your `PATH`.
+
+### Build from source (your own signing identity)
+
+Prefer to build and sign it yourself — recommended if you'd rather not run someone else's
+signed binary holding your secrets:
 
 - macOS with **Xcode** and a **paid Apple Developer** signing identity (the iCloud
-  data-protection keychain requires an entitlement only a signed app can carry — ADR-0001).
+  data-protection keychain needs an entitlement only a signed app can carry — ADR-0001).
 - [`xcodegen`](https://github.com/yonaskolb/XcodeGen) (`brew install xcodegen`).
-- `~/.local/bin` on your `PATH`.
-
-## Build & install
 
 ```sh
 make install      # xcodegen → signed xcodebuild → ~/Applications/MyTokens.app + ~/.local/bin/mytokens
 make verify       # show the signature + keychain-access-group
-mytokens selftest # real-keychain add/get/list/delete round-trip — should print SELFTEST PASS
+mytokens selftest # real-keychain round-trip — should print SELFTEST PASS
 ```
 
-`project.yml` is the source of truth; the `.xcodeproj` is generated and git-ignored.
-The team and bundle id are set in `project.yml` (`DEVELOPMENT_TEAM`, `com.sunfmin.mytokens`)
-and the access group in `mytokens.entitlements` — change all three together if you fork this.
+`project.yml` is the source of truth; the `.xcodeproj` is generated and git-ignored. The
+team and bundle id live in `project.yml` (`DEVELOPMENT_TEAM`, `com.sunfmin.mytokens`) and the
+access group in `mytokens.entitlements` — change all three together if you fork this.
 
-## Install the skill
+### Releasing (maintainers)
 
-Register this repo with your `skills` tooling so Claude auto-loads it (SKILL.md is at the
-repo root):
+Built and published locally — no CI. Produce the notarized artifact and upload it to a
+GitHub Release:
 
 ```sh
-npx skills add sunfmin/mytokens     # or your skill manager's equivalent; skillPath = SKILL.md
+export ASC_KEY=~/keys/AuthKey_XXXX.p8 ASC_KEY_ID=XXXXXXXX ASC_ISSUER=<issuer-uuid>
+make dist                  # → build/MyTokens.zip (Developer ID-signed, notarized, stapled)
+make release TAG=v0.1.0    # → gh release create + upload MyTokens.zip
 ```
+
+`scripts/install.sh` downloads `MyTokens.zip` from the **latest** Release, so bump `TAG`
+each time. `make dist` needs an App Store Connect API key (Developer / App-Manager role) so
+xcodebuild can fetch a Developer ID profile with Keychain Sharing and `notarytool` can
+submit; `make release` needs `gh` authenticated.
 
 ## Usage
 

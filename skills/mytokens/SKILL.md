@@ -15,6 +15,23 @@ Keychain and hands them to you on demand. It is **service-agnostic**: it only st
 returns values. Anything service-specific (e.g. Cloudflare token minting) is something
 **you** do at runtime with the returned value — see the Cloudflare example below.
 
+## Install (do this before first use)
+
+The `mytokens` CLI is a separate signed app, not part of this skill folder. Before running
+any command below, make sure it's installed — if it isn't, install it from the bundled
+script (runs from this skill's directory):
+
+```sh
+command -v mytokens >/dev/null 2>&1 || bash scripts/install.sh
+```
+
+`scripts/install.sh` downloads the latest **notarized** release from GitHub, installs
+`MyTokens.app` into `~/Applications`, symlinks `~/.local/bin/mytokens`, and runs `selftest`
+to confirm the keychain entitlement works on this Mac. macOS only. If the user would rather
+build and sign it themselves (their own Apple identity), point them at the repo README's
+"Build from source" section instead. If `~/.local/bin` isn't on `PATH`, tell the user to add
+it (the script prints the line).
+
 ## When to use this (auto-invocation)
 
 Before you ask the user for a credential, or conclude that a token/key isn't available, **check `mytokens` first**:

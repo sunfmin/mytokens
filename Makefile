@@ -11,16 +11,28 @@ ARCHIVE      := $(DERIVED)/$(APP).xcarchive
 EXPORT       := $(DERIVED)/export
 DIST_ZIP     := $(DERIVED)/$(APP).zip
 
-# Release signing/notarization creds — App Store Connect API key (.p8). Set these
-# in the environment (CI passes them from secrets); `dist` fails clearly if unset.
-ASC_KEY      ?=
-ASC_KEY_ID   ?=
-ASC_ISSUER   ?=
+# Notarization uses a stored notarytool keychain profile — created once with
+# `xcrun notarytool store-credentials <name>`. Signing just uses the Developer ID
+# cert already in your keychain and your Xcode-logged-in account (for the profile).
+NOTARY_PROFILE ?= mytokens
 
-.PHONY: project build test install selftest verify dist release clean
+.PHONY: project build test install selftest verify dist release icon screenshots clean
 
 project:
 	xcodegen generate
+
+# Regenerate the app icon set from tools/makeicon.swift.
+icon:
+	swift tools/makeicon.swift Assets.xcassets/AppIcon.appiconset
+
+# Regenerate the README screenshots: the dialog renders come straight from the
+# render tests (same view the real popup hosts), plus a downscaled app icon.
+screenshots: test
+	mkdir -p docs/images
+	cp out/secret-prompt-multi.png docs/images/popup-multi.png
+	cp out/secret-prompt-description.png docs/images/popup-description.png
+	sips -Z 256 Assets.xcassets/AppIcon.appiconset/icon_512x512@2x.png --out docs/images/icon.png >/dev/null
+	@echo "screenshots → docs/images/"
 
 build: project
 	xcodebuild -project $(PROJECT) -scheme $(APP) -configuration Release \
@@ -46,16 +58,12 @@ verify:
 dist: project
 	xcodebuild -project $(PROJECT) -scheme $(APP) -configuration Release \
 		-derivedDataPath $(DERIVED) -archivePath $(ARCHIVE) \
-		-allowProvisioningUpdates \
-		-authenticationKeyID $(ASC_KEY_ID) -authenticationKeyIssuerID $(ASC_ISSUER) -authenticationKeyPath $(ASC_KEY) \
-		archive
+		-allowProvisioningUpdates archive
 	xcodebuild -exportArchive -archivePath $(ARCHIVE) \
 		-exportOptionsPlist ExportOptions.plist -exportPath $(EXPORT) \
-		-allowProvisioningUpdates \
-		-authenticationKeyID $(ASC_KEY_ID) -authenticationKeyIssuerID $(ASC_ISSUER) -authenticationKeyPath $(ASC_KEY)
+		-allowProvisioningUpdates
 	ditto -c -k --keepParent "$(EXPORT)/$(BUNDLE)" "$(DIST_ZIP)"
-	xcrun notarytool submit "$(DIST_ZIP)" \
-		--key $(ASC_KEY) --key-id $(ASC_KEY_ID) --issuer $(ASC_ISSUER) --wait
+	xcrun notarytool submit "$(DIST_ZIP)" --keychain-profile "$(NOTARY_PROFILE)" --wait
 	xcrun stapler staple "$(EXPORT)/$(BUNDLE)"
 	ditto -c -k --keepParent "$(EXPORT)/$(BUNDLE)" "$(DIST_ZIP)"
 	@echo "dist: $(DIST_ZIP) (Developer ID-signed, notarized, stapled)"

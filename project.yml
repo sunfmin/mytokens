@@ -15,6 +15,7 @@ targets:
     platform: macOS
     sources:
       - path: Sources
+      - path: Assets.xcassets
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.sunfmin.mytokens
@@ -22,6 +23,7 @@ targets:
         CODE_SIGN_ENTITLEMENTS: mytokens.entitlements
         GENERATE_INFOPLIST_FILE: "YES"
         INFOPLIST_KEY_LSUIElement: "YES"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         MARKETING_VERSION: "0.1.0"
         CURRENT_PROJECT_VERSION: "1"
   MyTokensTests:

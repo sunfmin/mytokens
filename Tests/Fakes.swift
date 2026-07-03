@@ -2,20 +2,20 @@ import Foundation
 
 // In-memory SecretStore for tests — never touches the real keychain.
 final class InMemorySecretStore: SecretStore {
-    struct Entry { var value: String; var kind: String; var meta: Any?; var fields: [String]?; var description: String? }
+    struct Entry { var secret: SecretValue; var kind: String; var meta: Any?; var description: String? }
     private(set) var items: [String: Entry] = [:]
     var locked = false
 
     private func key(_ s: String, _ a: String) -> String { "\(s)\u{1}\(a)" }
 
-    func upsert(service: String, account: String, value: String, kind: String, meta: Any?, fields: [String]?, description: String?) throws {
+    func upsert(service: String, account: String, secret: SecretValue, kind: String, meta: Any?, description: String?) throws {
         if locked { throw StoreError.locked }
-        items[key(service, account)] = Entry(value: value, kind: kind, meta: meta, fields: fields, description: description)
+        items[key(service, account)] = Entry(secret: secret, kind: kind, meta: meta, description: description)
     }
 
-    func get(service: String, account: String) throws -> StoredSecret? {
+    func get(service: String, account: String) throws -> SecretValue? {
         if locked { throw StoreError.locked }
-        return items[key(service, account)].map { StoredSecret(value: $0.value, fields: $0.fields) }
+        return items[key(service, account)]?.secret
     }
 
     func list() throws -> [SecretRecord] {
@@ -27,7 +27,7 @@ final class InMemorySecretStore: SecretStore {
                 account: parts.count > 1 ? String(parts[1]) : "",
                 kind: e.kind,
                 meta: e.meta.flatMap(JSONUtil.compact),
-                fields: e.fields,
+                fields: e.secret.schema,
                 description: e.description
             )
         }

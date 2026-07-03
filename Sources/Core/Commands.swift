@@ -120,24 +120,15 @@ private func runAdd(_ argv: [String], _ deps: Dependencies) -> CommandResult {
         guard let v = values[field.label], !v.isEmpty else { return fail("empty value; nothing stored\n", 1) }
     }
 
-    // 1 field ⇒ store the raw value (back-compat, ADR-0002); >1 ⇒ a JSON object,
-    // with the ordered label schema recorded by the store.
-    let storeValue: String
-    let storeFields: [String]?
-    if fieldLabels.isEmpty {
-        storeValue = values[""] ?? ""
-        storeFields = nil
-    } else {
-        var obj: [String: String] = [:]
-        for label in fieldLabels { obj[label] = values[label] }
-        guard let json = JSONUtil.compact(obj) else { return fail("failed to encode fields\n", 1) }
-        storeValue = json
-        storeFields = fieldLabels
-    }
+    // Assemble the Secret as ordered Fields; the store owns whether that persists as
+    // a raw value or a JSON object (ADR-0005). No --fields ⇒ the lone unlabelled value.
+    let secret = fieldLabels.isEmpty
+        ? SecretValue(single: values[""] ?? "")
+        : SecretValue(fields: fieldLabels.map { (label: $0, value: values[$0] ?? "") })
 
     do {
-        try deps.store.upsert(service: service, account: account, value: storeValue,
-                              kind: kind, meta: meta, fields: storeFields, description: description)
+        try deps.store.upsert(service: service, account: account, secret: secret,
+                              kind: kind, meta: meta, description: description)
         return ok("stored \(service)/\(account)\n")
     } catch {
         return fail("\(error)\n", 1)
@@ -151,33 +142,30 @@ private func runGet(_ argv: [String], _ deps: Dependencies) -> CommandResult {
     let field = args.flags["field"].flatMap { $0.isEmpty ? nil : $0 }
     let wantJSON = args.flags["json"] != nil
     do {
-        guard let stored = try deps.store.get(service: service, account: account) else {
+        guard let secret = try deps.store.get(service: service, account: account) else {
             return fail("no secret for \(service)/\(account)\n", 1)
         }
 
-        // Single bare value: no field schema (ADR-0002 behavior, unchanged).
-        guard let fields = stored.fields else {
+        // Lone unlabelled value: --field is meaningless, --json is ignored (ADR-0002).
+        guard secret.isLabelled else {
             if field != nil { return fail("\(service)/\(account) has no fields\n", 1) }
-            return CommandResult(stdout: stored.value, stderr: "", exitCode: 0)  // exact value, no newline
+            return CommandResult(stdout: secret.fields[0].value, stderr: "", exitCode: 0)  // exact value, no newline
         }
 
-        // Multi-field: the stored value is a JSON object {label: value}.
-        guard let obj = JSONUtil.parse(stored.value) as? [String: Any] else {
-            return fail("\(service)/\(account) is malformed\n", 1)
-        }
         if let field {
-            guard let v = obj[field] as? String else {
-                return fail("\(service)/\(account) has no field '\(field)'; fields: \(fields.joined(separator: ", "))\n", 1)
+            guard let v = secret.value(forField: field) else {
+                return fail("\(service)/\(account) has no field '\(field)'; fields: \(secret.labels.joined(separator: ", "))\n", 1)
             }
             return CommandResult(stdout: v, stderr: "", exitCode: 0)  // one field's raw value
         }
         if wantJSON {
-            return CommandResult(stdout: stored.value, stderr: "", exitCode: 0)  // whole object, compact
+            guard let json = secret.compactJSON() else { return fail("failed to encode fields\n", 1) }
+            return CommandResult(stdout: json, stderr: "", exitCode: 0)  // whole object, compact
         }
-        if fields.count == 1, let only = obj[fields[0]] as? String {
+        if let only = secret.loneValue {
             return CommandResult(stdout: only, stderr: "", exitCode: 0)  // degenerate 1-field ⇒ bare value
         }
-        return fail("\(service)/\(account) has fields: \(fields.joined(separator: ", ")) — use --field <label> or --json\n", 1)
+        return fail("\(service)/\(account) has fields: \(secret.labels.joined(separator: ", ")) — use --field <label> or --json\n", 1)
     } catch {
         return fail("\(error)\n", 1)
     }
@@ -217,19 +205,34 @@ private func runRm(_ argv: [String], _ deps: Dependencies) -> CommandResult {
 // Post-install sanity check (ADR-0003): exercises the REAL KeychainSecretStore
 // end-to-end against the data-protection keychain — upsert, get, list, delete,
 // and confirm-gone — proving the entitlement and the store code path both work.
-// Provides its own value, so no popup is involved.
+// Runs two legs: a lone unlabelled value (raw round-trip, ADR-0002) and a
+// multi-field Secret (the labelled JSON encode/decode that lives in the store,
+// ADR-0005). Provides its own values, so no popup is involved.
 private func runSelftest() -> CommandResult {
     let store = KeychainSecretStore()
-    let service = "mytokens.selftest", account = "selftest"
-    _ = try? store.delete(service: service, account: account)  // clear any leftover
+    let service = "mytokens.selftest"
+    _ = try? store.delete(service: service, account: "single")   // clear any leftover
+    _ = try? store.delete(service: service, account: "multi")
     do {
-        try store.upsert(service: service, account: account, value: "SELFTEST-OK", kind: "static", meta: ["probe": true], fields: nil, description: nil)
-        let roundtripped = try store.get(service: service, account: account)?.value == "SELFTEST-OK"
-        let listed = try store.list().contains { $0.service == service && $0.account == account }
-        let deleted = try store.delete(service: service, account: account)
-        let gone = try store.get(service: service, account: account) == nil
-        let pass = roundtripped && listed && deleted && gone
-        let report = "upsert+get=\(roundtripped) · list=\(listed) · delete=\(deleted) · gone=\(gone)\n"
+        // Single-value leg: raw value in, raw value out.
+        try store.upsert(service: service, account: "single", secret: SecretValue(single: "SELFTEST-OK"),
+                         kind: "static", meta: ["probe": true], description: nil)
+        let single = try store.get(service: service, account: "single")?.loneValue == "SELFTEST-OK"
+
+        // Multi-field leg: Fields in, Fields back, ordered schema preserved.
+        try store.upsert(service: service, account: "multi",
+                         secret: SecretValue(fields: [(label: "A", value: "a"), (label: "B", value: "b")]),
+                         kind: "static", meta: nil, description: nil)
+        let got = try store.get(service: service, account: "multi")
+        let fieldsBack = got?.value(forField: "A") == "a" && got?.value(forField: "B") == "b"
+        let schemaBack = try store.list().first { $0.service == service && $0.account == "multi" }?.fields == ["A", "B"]
+
+        let listed = try store.list().contains { $0.service == service && $0.account == "single" }
+        let deleted = try store.delete(service: service, account: "single") && (try store.delete(service: service, account: "multi"))
+        let gone = try store.get(service: service, account: "single") == nil && (try store.get(service: service, account: "multi")) == nil
+
+        let pass = single && fieldsBack && schemaBack && listed && deleted && gone
+        let report = "single=\(single) · fields=\(fieldsBack) · schema=\(schemaBack) · list=\(listed) · delete=\(deleted) · gone=\(gone)\n"
         return pass ? ok(report + "SELFTEST PASS\n") : fail(report + "SELFTEST FAIL\n", 1)
     } catch {
         return fail("SELFTEST FAIL: \(error)\n", 1)

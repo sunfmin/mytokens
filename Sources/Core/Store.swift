@@ -11,12 +11,43 @@ struct SecretRecord {
     var description: String?  // agent-authored purpose note (ADR-0006), or nil
 }
 
-// What `get` reads back: the stored value plus, for a multi-field Secret, its
-// ordered field schema. `value` is the raw secret for a single-field Secret, or a
-// compact JSON object {label: value} for a multi-field one (ADR-0005).
-struct StoredSecret {
-    var value: String
-    var fields: [String]?   // nil for a single bare-value Secret
+// The value payload of a Secret: one or more ordered Fields (ADR-0005), each a
+// `(label, value)` pair. A lone Field with an empty label is the unlabelled
+// bare-value Secret (ADR-0002); any labelled Fields serialize as a JSON object.
+// This is the currency of the store seam — callers add and read Secrets as
+// structured Fields and never touch the on-disk encoding.
+struct SecretValue {
+    let fields: [(label: String, value: String)]
+
+    /// The unlabelled single-value Secret (today's common path).
+    init(single value: String) { self.fields = [(label: "", value: value)] }
+    init(fields: [(label: String, value: String)]) { self.fields = fields }
+
+    /// True when the Secret carries labelled Fields (⇒ JSON storage); false for the
+    /// lone unlabelled value (⇒ raw storage). Derived — the shape is never recorded twice.
+    var isLabelled: Bool { !(fields.count == 1 && fields[0].label.isEmpty) }
+
+    /// The ordered label schema for a labelled Secret; nil for the bare value.
+    var schema: [String]? { isLabelled ? fields.map(\.label) : nil }
+
+    /// Every Field's label, in order.
+    var labels: [String] { fields.map(\.label) }
+
+    /// The lone value when the Secret has exactly one Field — what bare `get`
+    /// returns (ADR-0005's "1 field ⇒ bare get works" rule).
+    var loneValue: String? { fields.count == 1 ? fields[0].value : nil }
+
+    /// A Field's value by label, or nil if there is no such Field.
+    func value(forField label: String) -> String? { fields.first { $0.label == label }?.value }
+
+    /// The `{label: value}` object as compact, key-sorted JSON: the on-disk form of
+    /// a labelled Secret (ADR-0005) and the `--json` output. One serializer, so what
+    /// `--json` prints is byte-for-byte what was stored.
+    func compactJSON() -> String? {
+        var obj: [String: String] = [:]
+        for f in fields { obj[f.label] = f.value }
+        return JSONUtil.compact(obj)
+    }
 }
 
 enum StoreError: Error, CustomStringConvertible {
@@ -38,10 +69,12 @@ enum StoreError: Error, CustomStringConvertible {
 }
 
 /// The lowest-level seam for stored Secrets. The real impl talks to the
-/// data-protection (iCloud) keychain; tests use an in-memory fake.
+/// data-protection (iCloud) keychain; tests use an in-memory fake. Secrets cross
+/// this seam as structured `SecretValue` Fields — the single-vs-JSON on-disk
+/// encoding (ADR-0005) lives inside the implementation, not in the caller.
 protocol SecretStore {
-    func upsert(service: String, account: String, value: String, kind: String, meta: Any?, fields: [String]?, description: String?) throws
-    func get(service: String, account: String) throws -> StoredSecret?   // nil if absent
+    func upsert(service: String, account: String, secret: SecretValue, kind: String, meta: Any?, description: String?) throws
+    func get(service: String, account: String) throws -> SecretValue?   // nil if absent
     func list() throws -> [SecretRecord]
     func delete(service: String, account: String) throws -> Bool   // false if absent
 }
@@ -70,10 +103,20 @@ struct KeychainSecretStore: SecretStore {
         s == errSecInteractionNotAllowed ? .locked : .keychain(s)
     }
 
-    func upsert(service: String, account: String, value: String, kind: String, meta: Any?, fields: [String]?, description: String?) throws {
-        let comment = try CommentCodec.encode(kind: kind, meta: meta, fields: fields, description: description)
+    func upsert(service: String, account: String, secret: SecretValue, kind: String, meta: Any?, description: String?) throws {
+        // The label schema is recorded for a labelled Secret only; the value's
+        // encoding follows from it — raw bytes for the lone unlabelled value, a
+        // {label: value} JSON object for labelled Fields (ADR-0005).
+        let comment = try CommentCodec.encode(kind: kind, meta: meta, fields: secret.schema, description: description)
+        let storedValue: String
+        if secret.isLabelled {
+            guard let json = secret.compactJSON() else { throw StoreError.encoding }
+            storedValue = json
+        } else {
+            storedValue = secret.fields[0].value
+        }
         let changes: [String: Any] = [
-            kSecValueData as String: Data(value.utf8),
+            kSecValueData as String: Data(storedValue.utf8),
             kSecAttrComment as String: comment,
             kSecAttrLabel as String: mytokensLabelPrefix + "\(service)/\(account)",
         ]
@@ -82,14 +125,14 @@ struct KeychainSecretStore: SecretStore {
         guard updated == errSecItemNotFound else { throw mapErr(updated) }
 
         var add = itemQuery(service, account)
-        add[kSecValueData as String] = Data(value.utf8)
+        add[kSecValueData as String] = Data(storedValue.utf8)
         add[kSecAttrComment as String] = comment
-        add[kSecAttrLabel as String] = "mytokens: \(service)/\(account)"
+        add[kSecAttrLabel as String] = mytokensLabelPrefix + "\(service)/\(account)"
         let added = SecItemAdd(add as CFDictionary, nil)
         guard added == errSecSuccess else { throw mapErr(added) }
     }
 
-    func get(service: String, account: String) throws -> StoredSecret? {
+    func get(service: String, account: String) throws -> SecretValue? {
         var q = itemQuery(service, account)
         q[kSecReturnData as String] = true
         q[kSecReturnAttributes as String] = true   // also read the comment for the field schema
@@ -100,8 +143,20 @@ struct KeychainSecretStore: SecretStore {
               let data = attrs[kSecValueData as String] as? Data,
               let str = String(data: data, encoding: .utf8)
         else { throw mapErr(s) }
-        let (_, _, fields, _) = CommentCodec.decode(attrs[kSecAttrComment as String] as? String)
-        return StoredSecret(value: str, fields: fields)
+        let (_, _, schema, _) = CommentCodec.decode(attrs[kSecAttrComment as String] as? String)
+
+        // No schema ⇒ the raw bytes are the lone unlabelled value (ADR-0002).
+        guard let schema else { return SecretValue(single: str) }
+
+        // Labelled ⇒ the bytes are a {label: value} object; rebuild Fields in schema
+        // order. A value that fails to decode is a corrupt item, surfaced as an error.
+        guard let obj = JSONUtil.parse(str) as? [String: Any] else { throw StoreError.encoding }
+        var fields: [(label: String, value: String)] = []
+        for label in schema {
+            guard let v = obj[label] as? String else { throw StoreError.encoding }
+            fields.append((label: label, value: v))
+        }
+        return SecretValue(fields: fields)
     }
 
     func list() throws -> [SecretRecord] {

@@ -23,6 +23,19 @@ private struct ParsedArgs {
     var flags: [String: String] = [:]
 }
 
+/// Semantic reads over the parsed args (ADR-0007). The `account` default lives
+/// here once — `add`/`get`/`rm` must agree on it or a Secret becomes unfindable.
+extension ParsedArgs {
+    /// The command's target Service (first positional), or nil if none was given.
+    var service: String? { positionals.first }
+    /// The account, defaulting to "default" — the single source of that default.
+    var account: String { flags["account"] ?? "default" }
+    /// A flag's value, treating a present-but-empty flag as absent.
+    func flag(_ name: String) -> String? { flags[name].flatMap { $0.isEmpty ? nil : $0 } }
+    /// Whether a bare presence flag (e.g. `--json`) was given.
+    func present(_ name: String) -> Bool { flags[name] != nil }
+}
+
 /// Split a comma-separated flag value (e.g. `--fields`/`--show`) into trimmed,
 /// non-empty entries. Field labels may contain spaces, just not commas (ADR-0005).
 private func splitCSV(_ s: String) -> [String] {
@@ -80,15 +93,15 @@ private func usage() -> CommandResult {
 
 private func runAdd(_ argv: [String], _ deps: Dependencies) -> CommandResult {
     let args = parseArgs(argv)
-    guard let service = args.positionals.first else { return usage() }
-    let account = args.flags["account"] ?? "default"
+    guard let service = args.service else { return usage() }
+    let account = args.account
     let kind = args.flags["kind"] ?? "static"
     guard kind == "static" || kind == "parent" else {
         return fail("--kind must be 'static' or 'parent'\n", 64)
     }
 
     // Agent's purpose note (ADR-0006). Optional here; SKILL.md mandates the agent set it.
-    let description = args.flags["description"].flatMap { $0.isEmpty ? nil : $0 }
+    let description = args.flag("description")
 
     // Multi-field shape (ADR-0005). No --fields ⇒ the single bare-value path.
     let fieldLabels = args.flags["fields"].map(splitCSV) ?? []
@@ -137,10 +150,10 @@ private func runAdd(_ argv: [String], _ deps: Dependencies) -> CommandResult {
 
 private func runGet(_ argv: [String], _ deps: Dependencies) -> CommandResult {
     let args = parseArgs(argv)
-    guard let service = args.positionals.first else { return usage() }
-    let account = args.flags["account"] ?? "default"
-    let field = args.flags["field"].flatMap { $0.isEmpty ? nil : $0 }
-    let wantJSON = args.flags["json"] != nil
+    guard let service = args.service else { return usage() }
+    let account = args.account
+    let field = args.flag("field")
+    let wantJSON = args.present("json")
     do {
         guard let secret = try deps.store.get(service: service, account: account) else {
             return fail("no secret for \(service)/\(account)\n", 1)
@@ -190,8 +203,8 @@ private func runList(_ argv: [String], _ deps: Dependencies) -> CommandResult {
 
 private func runRm(_ argv: [String], _ deps: Dependencies) -> CommandResult {
     let args = parseArgs(argv)
-    guard let service = args.positionals.first else { return usage() }
-    let account = args.flags["account"] ?? "default"
+    guard let service = args.service else { return usage() }
+    let account = args.account
     do {
         if try deps.store.delete(service: service, account: account) {
             return ok("removed \(service)/\(account)\n")

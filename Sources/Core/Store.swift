@@ -88,15 +88,26 @@ private let mytokensLabelPrefix = "mytokens: "
 /// Real store: synchronizable generic-password items in the data-protection
 /// keychain, under our own access group (ADR-0001).
 struct KeychainSecretStore: SecretStore {
-    private func itemQuery(_ service: String, _ account: String) -> [String: Any] {
+    /// The scoping every query shares: our own access group's synchronizable
+    /// generic-password items in the data-protection keychain (ADR-0001). This is
+    /// the one invariant that must never vary across operations — if `list` and
+    /// `upsert` disagreed on `synchronizable`, `list` would stop seeing stored
+    /// items — so it lives in exactly one place.
+    private var baseQuery: [String: Any] {
         [
             kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: account,
             kSecAttrAccessGroup as String: mytokensAccessGroup,
             kSecAttrSynchronizable as String: kCFBooleanTrue!,
             kSecUseDataProtectionKeychain as String: true,
         ]
+    }
+
+    /// `baseQuery` narrowed to a single item by service + account.
+    private func itemQuery(_ service: String, _ account: String) -> [String: Any] {
+        var q = baseQuery
+        q[kSecAttrService as String] = service
+        q[kSecAttrAccount as String] = account
+        return q
     }
 
     private func mapErr(_ s: OSStatus) -> StoreError {
@@ -160,14 +171,10 @@ struct KeychainSecretStore: SecretStore {
     }
 
     func list() throws -> [SecretRecord] {
-        let q: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrAccessGroup as String: mytokensAccessGroup,
-            kSecAttrSynchronizable as String: kCFBooleanTrue!,
-            kSecUseDataProtectionKeychain as String: true,
-            kSecMatchLimit as String: kSecMatchLimitAll,
-            kSecReturnAttributes as String: true,
-        ]
+        // Same scoping as every other op, widened to all items with their attributes.
+        var q = baseQuery
+        q[kSecMatchLimit as String] = kSecMatchLimitAll
+        q[kSecReturnAttributes as String] = true
         var out: CFTypeRef?
         let s = SecItemCopyMatching(q as CFDictionary, &out)
         if s == errSecItemNotFound { return [] }

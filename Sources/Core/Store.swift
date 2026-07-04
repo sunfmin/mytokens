@@ -5,7 +5,7 @@ import Security
 struct SecretRecord {
     var service: String
     var account: String
-    var kind: String          // "static" | "parent"
+    var kind: String          // "static" | "parent" | "profile"
     var meta: String?         // compact JSON, or nil
     var fields: [String]?     // ordered field labels for a multi-field Secret, else nil
     var description: String?  // agent-authored purpose note (ADR-0006), or nil

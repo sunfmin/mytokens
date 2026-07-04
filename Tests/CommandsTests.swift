@@ -183,4 +183,115 @@ final class CommandsTests: XCTestCase {
         XCTAssertTrue(list.stdout.contains("fields: Access Key ID, Secret Access Key"))
         XCTAssertFalse(list.stdout.contains("AKIA123"))
     }
+
+    // ── Profiles (ADR-0008) ─────────────────────────────────────────────────────
+
+    private let glmValues = [
+        "ANTHROPIC_BASE_URL": "https://open.bigmodel.cn/api/anthropic",
+        "ANTHROPIC_AUTH_TOKEN": "glm-abc123",
+        "ANTHROPIC_MODEL": "glm-4.6",
+    ]
+
+    func testProfileAddThenEnvEmitsExportLinesInOrder() {
+        let store = InMemorySecretStore()
+        let add = runCommand(["add", "glm", "--kind", "profile",
+                              "--fields", "ANTHROPIC_BASE_URL,ANTHROPIC_AUTH_TOKEN,ANTHROPIC_MODEL"],
+                             mdeps(store, values: glmValues))
+        XCTAssertEqual(add.exitCode, 0)
+
+        // Rendered as POSIX `export` lines, in the declared field order.
+        let env = runCommand(["env", "glm"], mdeps(store, values: nil))
+        XCTAssertEqual(env.exitCode, 0)
+        XCTAssertEqual(env.stdout, """
+        export ANTHROPIC_BASE_URL='https://open.bigmodel.cn/api/anthropic'
+        export ANTHROPIC_AUTH_TOKEN='glm-abc123'
+        export ANTHROPIC_MODEL='glm-4.6'
+
+        """)
+    }
+
+    func testEnvOnSingleValueSecretErrors() {
+        let store = InMemorySecretStore()
+        _ = runCommand(["add", "gh"], deps(store, input: "tok"))
+        let env = runCommand(["env", "gh"], deps(store, input: nil))
+        XCTAssertNotEqual(env.exitCode, 0)
+        XCTAssertEqual(env.stdout, "")                     // never dumps a value by accident
+        XCTAssertTrue(env.stderr.contains("not a Profile"))
+    }
+
+    func testEnvOnParentSecretErrors() {
+        let store = InMemorySecretStore()
+        _ = runCommand(["add", "cloudflare", "--kind", "parent"], deps(store, input: "parent-tok"))
+        let env = runCommand(["env", "cloudflare"], deps(store, input: nil))
+        XCTAssertNotEqual(env.exitCode, 0)
+        XCTAssertEqual(env.stdout, "")
+    }
+
+    func testEnvOnMultiFieldNonProfileErrors() {
+        // A multi-field *credential* (kind static) must not render as env vars —
+        // profile-ness is the kind marker, not the label shape.
+        let store = InMemorySecretStore()
+        _ = runCommand(["add", "aws", "--fields", "Access Key ID,Secret Access Key"], mdeps(store, values: awsValues))
+        let env = runCommand(["env", "aws"], mdeps(store, values: nil))
+        XCTAssertNotEqual(env.exitCode, 0)
+        XCTAssertEqual(env.stdout, "")                     // no `export Access Key ID=…`
+        XCTAssertFalse(env.stdout.contains("AKIA123"))
+    }
+
+    func testEnvOnAbsentServiceErrors() {
+        let store = InMemorySecretStore()
+        let env = runCommand(["env", "nope"], deps(store, input: nil))
+        XCTAssertNotEqual(env.exitCode, 0)
+        XCTAssertEqual(env.stdout, "")
+    }
+
+    func testEnvSingleQuotesValuesSafely() {
+        // A value with a space, a single quote, and a command substitution must be
+        // emitted so `eval` sets it verbatim and cannot inject shell.
+        let store = InMemorySecretStore()
+        _ = runCommand(["add", "weird", "--kind", "profile", "--fields", "TOKEN"],
+                       mdeps(store, values: ["TOKEN": "a b'c$(x)"]))
+        let env = runCommand(["env", "weird"], mdeps(store, values: nil))
+        XCTAssertEqual(env.exitCode, 0)
+        XCTAssertEqual(env.stdout, "export TOKEN='a b'\\''c$(x)'\n")
+    }
+
+    func testProfileWithoutFieldsErrors() {
+        let store = InMemorySecretStore()
+        let add = runCommand(["add", "glm", "--kind", "profile"], deps(store, input: "x"))
+        XCTAssertNotEqual(add.exitCode, 0)
+        XCTAssertTrue(store.items.isEmpty)
+        XCTAssertTrue(add.stderr.contains("requires --fields"))
+    }
+
+    func testProfileInvalidEnvNameRejectedBeforePrompting() {
+        let store = InMemorySecretStore()
+        let add = runCommand(["add", "glm", "--kind", "profile", "--fields", "ANTHROPIC BASE URL"],
+                             mdeps(store, values: ["ANTHROPIC BASE URL": "x"]))
+        XCTAssertNotEqual(add.exitCode, 0)
+        XCTAssertTrue(store.items.isEmpty)                 // rejected before prompting
+        XCTAssertTrue(add.stderr.contains("valid environment-variable name"))
+    }
+
+    func testEnvSelectsAccount() {
+        let store = InMemorySecretStore()
+        _ = runCommand(["add", "glm", "--account", "work", "--kind", "profile", "--fields", "ANTHROPIC_MODEL"],
+                       mdeps(store, values: ["ANTHROPIC_MODEL": "glm-4.6-work"]))
+        _ = runCommand(["add", "glm", "--account", "personal", "--kind", "profile", "--fields", "ANTHROPIC_MODEL"],
+                       mdeps(store, values: ["ANTHROPIC_MODEL": "glm-4.6-personal"]))
+        let env = runCommand(["env", "glm", "--account", "work"], mdeps(store, values: nil))
+        XCTAssertEqual(env.stdout, "export ANTHROPIC_MODEL='glm-4.6-work'\n")
+    }
+
+    func testListShowsProfileKindAndLabelsNotValues() {
+        let store = InMemorySecretStore()
+        _ = runCommand(["add", "glm", "--kind", "profile", "--description", "Claude Code to GLM",
+                        "--fields", "ANTHROPIC_BASE_URL,ANTHROPIC_AUTH_TOKEN,ANTHROPIC_MODEL"],
+                       mdeps(store, values: glmValues))
+        let list = runCommand(["list"], mdeps(store, values: nil))
+        XCTAssertTrue(list.stdout.contains("glm/default"))
+        XCTAssertTrue(list.stdout.contains("profile"))
+        XCTAssertTrue(list.stdout.contains("fields: ANTHROPIC_BASE_URL, ANTHROPIC_AUTH_TOKEN, ANTHROPIC_MODEL"))
+        XCTAssertFalse(list.stdout.contains("glm-abc123"))   // token value never shown
+    }
 }

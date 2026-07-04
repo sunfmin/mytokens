@@ -42,6 +42,24 @@ private func splitCSV(_ s: String) -> [String] {
     s.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
 }
 
+/// True iff `s` is a legal POSIX shell variable name: `[A-Za-z_][A-Za-z0-9_]*`.
+/// A Profile's Field labels must satisfy this so `env` can emit `export <label>=…`.
+private func isValidEnvName(_ s: String) -> Bool {
+    guard let first = s.unicodeScalars.first else { return false }
+    let isAlpha: (Unicode.Scalar) -> Bool = { ("A"..."Z").contains($0) || ("a"..."z").contains($0) }
+    let isDigit: (Unicode.Scalar) -> Bool = { ("0"..."9").contains($0) }
+    guard isAlpha(first) || first == "_" else { return false }
+    return s.unicodeScalars.allSatisfy { isAlpha($0) || isDigit($0) || $0 == "_" }
+}
+
+/// POSIX single-quote a value so `eval "$(mytokens env …)"` sets it verbatim and
+/// cannot inject shell: wrap in `'…'`, and rewrite each embedded `'` as `'\''`
+/// (close-quote, escaped literal quote, reopen-quote). Handles spaces, `$`,
+/// backticks, newlines — everything (ADR-0008).
+private func shellSingleQuote(_ value: String) -> String {
+    "'" + value.replacingOccurrences(of: "'", with: "'\\''") + "'"
+}
+
 private func parseArgs(_ argv: [String]) -> ParsedArgs {
     var result = ParsedArgs()
     var i = 0
@@ -71,6 +89,7 @@ func runCommand(_ argv: [String], _ deps: Dependencies) -> CommandResult {
     switch cmd {
     case "add": return runAdd(rest, deps)
     case "get": return runGet(rest, deps)
+    case "env": return runEnv(rest, deps)
     case "list": return runList(rest, deps)
     case "rm": return runRm(rest, deps)
     case "selftest": return runSelftest()
@@ -81,10 +100,11 @@ func runCommand(_ argv: [String], _ deps: Dependencies) -> CommandResult {
 private func usage() -> CommandResult {
     fail("""
     usage:
-      mytokens add <service> [--account <label>] [--kind static|parent] [--meta <json>]
+      mytokens add <service> [--account <label>] [--kind static|parent|profile] [--meta <json>]
                              [--description "<text>"]
                              [--fields "<Label>","<Label>" [--show "<Label>",…]]
       mytokens get <service> [--account <label>] [--field "<Label>" | --json]
+      mytokens env <service> [--account <label>]
       mytokens list
       mytokens rm  <service> [--account <label>]
 
@@ -96,8 +116,8 @@ private func runAdd(_ argv: [String], _ deps: Dependencies) -> CommandResult {
     guard let service = args.service else { return usage() }
     let account = args.account
     let kind = args.flags["kind"] ?? "static"
-    guard kind == "static" || kind == "parent" else {
-        return fail("--kind must be 'static' or 'parent'\n", 64)
+    guard kind == "static" || kind == "parent" || kind == "profile" else {
+        return fail("--kind must be 'static', 'parent', or 'profile'\n", 64)
     }
 
     // Agent's purpose note (ADR-0006). Optional here; SKILL.md mandates the agent set it.
@@ -111,6 +131,17 @@ private func runAdd(_ argv: [String], _ deps: Dependencies) -> CommandResult {
     }
     if let unknown = showLabels.first(where: { !fieldLabels.contains($0) }) {
         return fail("--show \"\(unknown)\" is not one of --fields\n", 64)
+    }
+    // A Profile is a bundle of env vars, so it requires --fields and every label
+    // must be a legal shell variable name — validated here so `env` can render
+    // `export <label>=…` unconditionally (ADR-0008). Checked before prompting.
+    if kind == "profile" {
+        guard !fieldLabels.isEmpty else {
+            return fail("--kind profile requires --fields (the environment-variable names)\n", 64)
+        }
+        if let bad = fieldLabels.first(where: { !isValidEnvName($0) }) {
+            return fail("--fields \"\(bad)\" is not a valid environment-variable name (need [A-Za-z_][A-Za-z0-9_]*)\n", 64)
+        }
     }
 
     // Validate metadata BEFORE prompting, so bad args don't pop a dialog.
@@ -179,6 +210,40 @@ private func runGet(_ argv: [String], _ deps: Dependencies) -> CommandResult {
             return CommandResult(stdout: only, stderr: "", exitCode: 0)  // degenerate 1-field ⇒ bare value
         }
         return fail("\(service)/\(account) has fields: \(secret.labels.joined(separator: ", ")) — use --field <label> or --json\n", 1)
+    } catch {
+        return fail("\(error)\n", 1)
+    }
+}
+
+// `env` renders a Profile as shell `export` lines for `eval` (ADR-0008). The kind
+// lives on the record (list) while the values live on the SecretValue (get), and no
+// single store call returns both — so read the kind from `list()`, then the values
+// from `get()`. Profile-only is enforced by the `kind` marker (the source of truth),
+// not by inferring it from label shape. Stays on ADR-0002's stdout side (no exec).
+private func runEnv(_ argv: [String], _ deps: Dependencies) -> CommandResult {
+    let args = parseArgs(argv)
+    guard let service = args.service else { return usage() }
+    let account = args.account
+    do {
+        guard let record = try deps.store.list().first(where: { $0.service == service && $0.account == account }) else {
+            return fail("no secret for \(service)/\(account)\n", 1)
+        }
+        guard record.kind == "profile" else {
+            return fail("\(service)/\(account) is kind '\(record.kind)', not a Profile — `env` only renders Profiles\n", 1)
+        }
+        guard let secret = try deps.store.get(service: service, account: account) else {
+            return fail("no secret for \(service)/\(account)\n", 1)   // vanished between list and get
+        }
+        // Emit one `export NAME='VALUE'` per Field, in stored order. Labels were
+        // validated at `add` time; re-check as defense against a corrupt item.
+        var lines: [String] = []
+        for field in secret.fields {
+            guard isValidEnvName(field.label) else {
+                return fail("\(service)/\(account) field '\(field.label)' is not a valid environment-variable name\n", 1)
+            }
+            lines.append("export \(field.label)=\(shellSingleQuote(field.value))")
+        }
+        return ok(lines.joined(separator: "\n") + "\n")
     } catch {
         return fail("\(error)\n", 1)
     }

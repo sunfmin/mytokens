@@ -156,7 +156,35 @@ so the token is used directly and never stored in a variable or printed.
 
 ---
 
-## 5. Rotate or remove
+## 5. Point a tool at another provider (Profiles)
+
+A **Profile** is a named bundle of environment variables — an endpoint, a model, and a token —
+that you load into a shell in one line. The motivating case: run **Claude Code** against a
+different API provider (say GLM) without editing any config files.
+
+Store it once (`--kind profile`; one popup collects all three, and `--show` reveals the
+non-secret config so you can check it while the token stays masked):
+
+```sh
+mytokens add glm --kind profile --description "Claude Code → GLM" \
+  --fields "ANTHROPIC_BASE_URL","ANTHROPIC_AUTH_TOKEN","ANTHROPIC_MODEL" \
+  --show "ANTHROPIC_BASE_URL","ANTHROPIC_MODEL"
+```
+
+Then load it and launch — `mytokens env` prints shell `export` lines, so `eval` them and run
+your tool:
+
+```sh
+eval "$(mytokens env glm)" && claude       # …or aider, or anything that reads ANTHROPIC_*
+```
+
+Name a Profile by **provider** (`glm`), not by tool — the same Profile works for any tool that
+reads those variables. To keep the token out of your shell for the rest of the session, scope
+it to a subshell: `(eval "$(mytokens env glm)"; claude)`.
+
+---
+
+## 6. Rotate or remove
 
 ```sh
 mytokens add cloudflare --description "…"   # re-add to rotate: same popup, overwrites the old value

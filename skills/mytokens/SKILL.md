@@ -5,7 +5,9 @@ description: >-
   auto-supply them when authenticating to an external service. Consult this BEFORE
   asking the user for any credential, or assuming a token/key is unavailable — for
   Cloudflare, GitHub, OpenAI, databases, and the like. Also mints short-lived,
-  least-privilege Cloudflare child tokens from a stored parent token.
+  least-privilege Cloudflare child tokens from a stored parent token, and stores
+  **Profiles** — named env-var bundles emitted as shell `export` lines — to point a
+  tool (e.g. Claude Code) at a different API provider, endpoint, and model.
 ---
 
 # mytokens
@@ -68,10 +70,11 @@ The value is plaintext once `get` returns it (acceptable on this trusted machine
 
 | Command | Purpose |
 |---|---|
-| `mytokens add <service> --description "<text>" [--account L] [--kind static\|parent] [--meta JSON]` | Popup → store. Collects only the value. |
+| `mytokens add <service> --description "<text>" [--account L] [--kind static\|parent\|profile] [--meta JSON]` | Popup → store. Collects only the value. |
 | `mytokens add <service> --fields "<A>","<B>" [--show "<A>"]` | One popup, one row per field; masked unless `--show`. All required. |
 | `mytokens get <service> [--account L]` | Raw value to stdout; non-zero exit if absent. |
 | `mytokens get <service> --field "<A>"` / `--json` | One field's raw value / the whole field object as JSON. |
+| `mytokens env <service> [--account L]` | A Profile's env vars as shell `export` lines for `eval`. Errors on a non-Profile. |
 | `mytokens list` | Stored services/accounts/kind/description/fields/meta; never values. |
 | `mytokens rm <service> [--account L]` | Delete the whole Secret. Re-`add` overwrites (rotation). |
 | `mytokens selftest` | Real-keychain round-trip sanity check. |
@@ -97,6 +100,34 @@ Secret that rotates and deletes as a unit.
   multi-field one and lists the field labels — use `--field`, or `--json` to dump the whole
   `{label: value}` object.
 - **`list`** shows the field labels (never values).
+
+### Profiles: point a tool at another provider (ADR-0008)
+
+A **Profile** is a named bundle of environment variables — a provider's endpoint, model, and
+token — stored as one item and emitted as shell `export` lines. Use it to launch a tool
+(Claude Code is the motivating case) against a *different* API provider. Name a Profile by
+**provider** (`glm`), not by tool — the same Profile then serves any tool that reads those vars.
+
+- **Add** (`--kind profile`; one popup collects everything, `--show` the non-secret config so
+  the human can eyeball it while the token stays masked). You know the provider, so you supply
+  the env-var **names**; the field labels must be valid shell identifiers, validated at `add`:
+  ```sh
+  mytokens add glm --kind profile --description "Claude Code → GLM" \
+    --fields "ANTHROPIC_BASE_URL","ANTHROPIC_AUTH_TOKEN","ANTHROPIC_MODEL" \
+    --show "ANTHROPIC_BASE_URL","ANTHROPIC_MODEL"
+  ```
+- **Load & launch** — `env` prints `export NAME='VALUE'` lines (safely single-quoted); `eval`
+  them so the tool you launch in that shell inherits them:
+  ```sh
+  eval "$(mytokens env glm)" && claude       # …or aider, or any Anthropic-compatible tool
+  ```
+- **Scope to one launch** — a subshell keeps the token out of your interactive shell for the
+  rest of the session:
+  ```sh
+  (eval "$(mytokens env glm)"; claude)
+  ```
+- `env` **errors on a non-Profile Secret** (it won't emit `export`s from, say, an AWS
+  credential), and `list` shows a Profile as `kind=profile` with its env-var names, never values.
 
 ## Minting short-lived tokens — Cloudflare as the worked example
 

@@ -2,7 +2,7 @@ import AppKit
 
 /// The secret-entry dialog's content view, built independently of *how* it's run.
 ///
-/// `PopupSecretInput` hosts it in a modal window for the real `add` flow, and the
+/// `PopupSecretInput` hosts it in a modal window for the real `put` flow, and the
 /// render test rasterizes the very same view offscreen — one source of truth for
 /// the UI, so the screenshot can't drift from what the user actually sees.
 ///

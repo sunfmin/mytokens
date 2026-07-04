@@ -21,10 +21,13 @@ struct Dependencies {
 private struct ParsedArgs {
     var positionals: [String] = []
     var flags: [String: String] = [:]
+    /// `--set NAME=VALUE` may repeat (one per non-secret field), so it collects into
+    /// a list rather than the last-wins `flags` dict (ADR-0009).
+    var sets: [String] = []
 }
 
 /// Semantic reads over the parsed args (ADR-0007). The `account` default lives
-/// here once — `add`/`get`/`rm` must agree on it or a Secret becomes unfindable.
+/// here once — `put`/`get`/`rm` must agree on it or a Secret becomes unfindable.
 extension ParsedArgs {
     /// The command's target Service (first positional), or nil if none was given.
     var service: String? { positionals.first }
@@ -67,7 +70,11 @@ private func parseArgs(_ argv: [String]) -> ParsedArgs {
         let token = argv[i]
         if token.hasPrefix("--") {
             let key = String(token.dropFirst(2))
-            if i + 1 < argv.count && !argv[i + 1].hasPrefix("--") {
+            let hasValue = i + 1 < argv.count && !argv[i + 1].hasPrefix("--")
+            if key == "set" {                              // repeatable → collect (ADR-0009)
+                result.sets.append(hasValue ? argv[i + 1] : "")
+                i += hasValue ? 2 : 1
+            } else if hasValue {
                 result.flags[key] = argv[i + 1]
                 i += 2
             } else {
@@ -87,7 +94,7 @@ func runCommand(_ argv: [String], _ deps: Dependencies) -> CommandResult {
     guard let cmd = argv.first else { return usage() }
     let rest = Array(argv.dropFirst())
     switch cmd {
-    case "add": return runAdd(rest, deps)
+    case "put": return runPut(rest, deps)
     case "get": return runGet(rest, deps)
     case "env": return runEnv(rest, deps)
     case "list": return runList(rest, deps)
@@ -100,9 +107,12 @@ func runCommand(_ argv: [String], _ deps: Dependencies) -> CommandResult {
 private func usage() -> CommandResult {
     fail("""
     usage:
-      mytokens add <service> [--account <label>] [--kind static|parent|profile] [--meta <json>]
+      mytokens put <service> [--account <label>] [--kind static|parent|profile] [--meta <json>]
                              [--description "<text>"]
-                             [--fields "<Label>","<Label>" [--show "<Label>",…]]
+                             [--set "<NAME>=<value>" …]                  non-secret fields, from the CLI
+                             [--fields "<Label>","<Label>" [--show "<Label>",…]]   secret fields, via popup
+          upserts the named fields into the secret, keeping the rest; with no
+          --set/--fields it stores one bare value. Whole-replace: rm then put.
       mytokens get <service> [--account <label>] [--field "<Label>" | --json]
       mytokens env <service> [--account <label>]
       mytokens list
@@ -111,66 +121,139 @@ private func usage() -> CommandResult {
     """, 64)
 }
 
-private func runAdd(_ argv: [String], _ deps: Dependencies) -> CommandResult {
+// `put` UPSERTS the named fields into a Secret and keeps the rest (ADR-0009):
+// non-secret values come from the CLI via repeatable `--set NAME=VALUE`, secret
+// values via the masked popup (`--fields`). It reads what's there, merges, and
+// writes the whole item back through the store seam — so there is no "whole
+// replace" (that's `rm` then `put`), and it behaves the same for every kind.
+// With neither --set nor --fields it stores one bare value (ADR-0002).
+private func runPut(_ argv: [String], _ deps: Dependencies) -> CommandResult {
     let args = parseArgs(argv)
     guard let service = args.service else { return usage() }
     let account = args.account
-    let kind = args.flags["kind"] ?? "static"
-    guard kind == "static" || kind == "parent" || kind == "profile" else {
-        return fail("--kind must be 'static', 'parent', or 'profile'\n", 64)
+
+    // Non-secret fields: NAME=VALUE, split on the FIRST '=' so a value may contain
+    // '=' (ADR-0009). Empty name/value is rejected; every field carries a value.
+    var setPairs: [(label: String, value: String)] = []
+    for raw in args.sets {
+        guard let eq = raw.firstIndex(of: "=") else {
+            return fail("--set must be NAME=VALUE (got \"\(raw)\")\n", 64)
+        }
+        let label = String(raw[..<eq]).trimmingCharacters(in: .whitespaces)
+        let value = String(raw[raw.index(after: eq)...])
+        guard !label.isEmpty else { return fail("--set has an empty NAME\n", 64) }
+        guard !value.isEmpty else { return fail("--set \"\(label)\" has an empty value\n", 64) }
+        setPairs.append((label, value))
     }
 
-    // Agent's purpose note (ADR-0006). Optional here; SKILL.md mandates the agent set it.
-    let description = args.flag("description")
-
-    // Multi-field shape (ADR-0005). No --fields ⇒ the single bare-value path.
+    // Secret fields: collected in the popup (masked unless --show).
     let fieldLabels = args.flags["fields"].map(splitCSV) ?? []
     let showLabels = Set(args.flags["show"].map(splitCSV) ?? [])
-    guard fieldLabels.isEmpty || kind != "parent" else {
-        return fail("--kind parent cannot be combined with --fields (a Parent token is a single value)\n", 64)
+    let writtenLabels = setPairs.map(\.label) + fieldLabels
+    let isLabelledWrite = !writtenLabels.isEmpty
+
+    var seen = Set<String>()
+    for label in writtenLabels where !seen.insert(label).inserted {
+        return fail("field \"\(label)\" given more than once across --set/--fields\n", 64)
     }
     if let unknown = showLabels.first(where: { !fieldLabels.contains($0) }) {
         return fail("--show \"\(unknown)\" is not one of --fields\n", 64)
     }
-    // A Profile is a bundle of env vars, so it requires --fields and every label
-    // must be a legal shell variable name — validated here so `env` can render
-    // `export <label>=…` unconditionally (ADR-0008). Checked before prompting.
-    if kind == "profile" {
-        guard !fieldLabels.isEmpty else {
-            return fail("--kind profile requires --fields (the environment-variable names)\n", 64)
-        }
-        if let bad = fieldLabels.first(where: { !isValidEnvName($0) }) {
-            return fail("--fields \"\(bad)\" is not a valid environment-variable name (need [A-Za-z_][A-Za-z0-9_]*)\n", 64)
-        }
+
+    let explicitKind = args.flags["kind"]
+    if let k = explicitKind, k != "static", k != "parent", k != "profile" {
+        return fail("--kind must be 'static', 'parent', or 'profile'\n", 64)
     }
 
-    // Validate metadata BEFORE prompting, so bad args don't pop a dialog.
-    var meta: Any?
+    // Validate --meta JSON before any prompt; an absent --meta preserves the
+    // existing meta (resolved below).
+    var explicitMeta: Any?
+    let haveExplicitMeta = args.flags["meta"] != nil
     if let raw = args.flags["meta"] {
         guard let parsed = JSONUtil.parse(raw) else { return fail("--meta must be valid JSON\n", 64) }
-        meta = parsed
+        explicitMeta = parsed
     }
-
-    let promptFields = fieldLabels.isEmpty
-        ? [Field(label: "", masked: true)]
-        : fieldLabels.map { Field(label: $0, masked: !showLabels.contains($0)) }
-
-    guard let values = deps.input.promptForSecret(service: service, account: account,
-                                                  description: description, fields: promptFields) else {
-        return fail("cancelled; nothing stored\n", 1)
-    }
-    // Every field is required (ADR-0005) — the popup enforces it; double-check here.
-    for field in promptFields {
-        guard let v = values[field.label], !v.isEmpty else { return fail("empty value; nothing stored\n", 1) }
-    }
-
-    // Assemble the Secret as ordered Fields; the store owns whether that persists as
-    // a raw value or a JSON object (ADR-0005). No --fields ⇒ the lone unlabelled value.
-    let secret = fieldLabels.isEmpty
-        ? SecretValue(single: values[""] ?? "")
-        : SecretValue(fields: fieldLabels.map { (label: $0, value: values[$0] ?? "") })
 
     do {
+        // Read the current item so unnamed fields — and kind/meta/description — survive
+        // the merge. get() carries the values, list() the kind/meta/description; absent ⇒ create.
+        let existing = try deps.store.get(service: service, account: account)
+        let record = try deps.store.list().first { $0.service == service && $0.account == account }
+
+        // A merge can't change the kind (rm to change it); an absent item defaults to static.
+        if let existingKind = record?.kind, let explicitKind, explicitKind != existingKind {
+            return fail("\(service)/\(account) already exists as kind '\(existingKind)'; rm it first to change kind\n", 64)
+        }
+        let kind = explicitKind ?? record?.kind ?? "static"
+
+        // A Secret is either a lone bare value or a set of labelled fields; put can't
+        // switch a secret between those shapes (rm first).
+        if let existing {
+            if existing.isLabelled && !isLabelledWrite {
+                return fail("\(service)/\(account) has named fields; name them with --set/--fields (or rm it first)\n", 64)
+            }
+            if !existing.isLabelled && isLabelledWrite {
+                return fail("\(service)/\(account) is a single-value secret; rm it first to give it named fields\n", 64)
+            }
+        }
+
+        guard !(kind == "parent" && isLabelledWrite) else {
+            return fail("--kind parent cannot be combined with --set/--fields (a Parent token is a single value)\n", 64)
+        }
+        // A Profile is a bundle of env vars: it needs named fields, and every label
+        // must be a legal shell variable name so `env` can emit `export <label>=…`.
+        if kind == "profile" {
+            guard isLabelledWrite || (existing?.isLabelled ?? false) else {
+                return fail("--kind profile requires --set or --fields (the environment-variable names)\n", 64)
+            }
+            if let bad = writtenLabels.first(where: { !isValidEnvName($0) }) {
+                return fail("field \"\(bad)\" is not a valid environment-variable name (need [A-Za-z_][A-Za-z0-9_]*)\n", 64)
+            }
+        }
+
+        // Preserve an existing meta/description when this put doesn't provide one.
+        let meta: Any? = haveExplicitMeta ? explicitMeta : record?.meta.flatMap(JSONUtil.parse)
+        let description = args.flag("description") ?? record?.description
+
+        let secret: SecretValue
+        if isLabelledWrite {
+            // Only secret (--fields) values touch the popup; --set values came from the CLI.
+            var popupValues: [String: String] = [:]
+            if !fieldLabels.isEmpty {
+                let promptFields = fieldLabels.map { Field(label: $0, masked: !showLabels.contains($0)) }
+                guard let values = deps.input.promptForSecret(service: service, account: account,
+                                                              description: description, fields: promptFields) else {
+                    return fail("cancelled; nothing stored\n", 1)
+                }
+                for field in promptFields {
+                    guard let v = values[field.label], !v.isEmpty else { return fail("empty value; nothing stored\n", 1) }
+                    popupValues[field.label] = v
+                }
+            }
+            // Merge: keep existing fields (updating a named one in place), append new
+            // ones in the order --set then --fields.
+            var fields = existing?.fields ?? []
+            func upsertField(_ label: String, _ value: String) {
+                if let idx = fields.firstIndex(where: { $0.label == label }) {
+                    fields[idx] = (label: label, value: value)
+                } else {
+                    fields.append((label: label, value: value))
+                }
+            }
+            for (label, value) in setPairs { upsertField(label, value) }
+            for label in fieldLabels { upsertField(label, popupValues[label] ?? "") }
+            secret = SecretValue(fields: fields)
+        } else {
+            // Bare single value (ADR-0002): one masked popup field with the empty label.
+            guard let values = deps.input.promptForSecret(service: service, account: account,
+                                                          description: description,
+                                                          fields: [Field(label: "", masked: true)]) else {
+                return fail("cancelled; nothing stored\n", 1)
+            }
+            guard let v = values[""], !v.isEmpty else { return fail("empty value; nothing stored\n", 1) }
+            secret = SecretValue(single: v)
+        }
+
         try deps.store.upsert(service: service, account: account, secret: secret,
                               kind: kind, meta: meta, description: description)
         return ok("stored \(service)/\(account)\n")
@@ -235,7 +318,7 @@ private func runEnv(_ argv: [String], _ deps: Dependencies) -> CommandResult {
             return fail("no secret for \(service)/\(account)\n", 1)   // vanished between list and get
         }
         // Emit one `export NAME='VALUE'` per Field, in stored order. Labels were
-        // validated at `add` time; re-check as defense against a corrupt item.
+        // validated at `put` time; re-check as defense against a corrupt item.
         var lines: [String] = []
         for field in secret.fields {
             guard isValidEnvName(field.label) else {

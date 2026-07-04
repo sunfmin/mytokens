@@ -24,7 +24,7 @@ _Avoid_: sub-secret, key/value pair (a Field's label is its identity, not an arb
 
 **Description**:
 An agent-authored, human-readable note of what a Secret is *for* (e.g. "CI deploy: S3
-bucket uploads"), set at `add` time and shown by `list` and in the input popup. Its
+bucket uploads"), set when a Secret is first `put` and shown by `list` and in the input popup. Its
 audience is a *later* agent run recalling a Secret's purpose; the human sees it as the
 reason the popup appeared. Optional in the Helper, but the skill mandates the agent always
 set one. Distinct from **Meta** (below).

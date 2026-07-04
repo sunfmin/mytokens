@@ -43,12 +43,12 @@ mytokens list                 # what's stored (services/accounts/kind; never val
 mytokens get <service>        # the raw value on stdout; non-zero exit if absent
 ```
 
-If the Service has a Secret, use it. If `get` exits non-zero, the Secret isn't stored yet — offer to add it (this pops a secure popup; the value never passes through you):
+If the Service has a Secret, use it. If `get` exits non-zero, the Secret isn't stored yet — offer to `put` it (secret values pop a secure popup and never pass through you; non-secret values you can pass on the CLI with `--set`):
 
 ```sh
-mytokens add <service> --description "<what it's for>" [--account <label>] [--kind static|parent] [--meta '<json>']
+mytokens put <service> --description "<what it's for>" [--account <label>] [--kind static|parent] [--meta '<json>']
 # A credential with several parts (key + secret, user + password) → one popup:
-mytokens add aws --description "CI deploy: S3 uploads" --fields "Access Key ID","Secret Access Key" --show "Access Key ID"
+mytokens put aws --description "CI deploy: S3 uploads" --fields "Access Key ID","Secret Access Key" --show "Access Key ID"
 ```
 
 **Always pass `--description`** — a short note of what the Secret is for. A *later* run sees it in `list` and knows the Secret's purpose, and the human sees it in the popup as the reason the dialog appeared.
@@ -57,7 +57,7 @@ mytokens add aws --description "CI deploy: S3 uploads" --fields "Access Key ID",
 
 - **Reading/using a stored Secret is silent.** The user storing it is standing authorization to use it — don't ask.
 - **Announce, but don't gate, outward-facing writes.** Before minting or revoking a token (a write to the service's account), say what you're about to do (e.g. "minting a 24h DNS-edit Cloudflare child token"), then proceed without waiting for approval.
-- **When a Secret is missing, pop the dialog** via `mytokens add <service>` rather than aborting the task.
+- **When a Secret is missing, `put` it** via `mytokens put <service>` (secret fields pop the dialog) rather than aborting the task.
 
 ## Consumption hygiene
 
@@ -70,29 +70,35 @@ The value is plaintext once `get` returns it (acceptable on this trusted machine
 
 | Command | Purpose |
 |---|---|
-| `mytokens add <service> --description "<text>" [--account L] [--kind static\|parent\|profile] [--meta JSON]` | Popup → store. Collects only the value. |
-| `mytokens add <service> --fields "<A>","<B>" [--show "<A>"]` | One popup, one row per field; masked unless `--show`. All required. |
+| `mytokens put <service> --description "<text>" [--account L] [--kind static\|parent\|profile] [--meta JSON]` | Upsert. No `--set`/`--fields` ⇒ one bare value via popup. |
+| `mytokens put <service> --set "<NAME>=<value>" …` | Upsert non-secret field(s) from the CLI — **no popup**. Repeatable. |
+| `mytokens put <service> --fields "<A>","<B>" [--show "<A>"]` | Upsert secret field(s) via one popup; masked unless `--show`. |
 | `mytokens get <service> [--account L]` | Raw value to stdout; non-zero exit if absent. |
 | `mytokens get <service> --field "<A>"` / `--json` | One field's raw value / the whole field object as JSON. |
 | `mytokens env <service> [--account L]` | A Profile's env vars as shell `export` lines for `eval`. Errors on a non-Profile. |
 | `mytokens list` | Stored services/accounts/kind/description/fields/meta; never values. |
-| `mytokens rm <service> [--account L]` | Delete the whole Secret. Re-`add` overwrites (rotation). |
+| `mytokens rm <service> [--account L]` | Delete the whole Secret. Whole-replace = `rm` then `put`. |
 | `mytokens selftest` | Real-keychain round-trip sanity check. |
 
+**`put` upserts** (ADR-0009): it updates/inserts the fields you name and **keeps the rest**, so `put svc --set MODEL=…` changes one field and `put svc --fields TOKEN` rotates one secret — the others are untouched. Works the same for a lone value, a composite credential, or a Profile. There is no whole-replace; to rebuild (or drop a stale field), `rm` then `put`.
+
 `--account` lets one Service hold several Secrets (`cloudflare/personal` vs `cloudflare/work`).
-`--description` records what a Secret is for (shown by `list` and in the popup) — **always set it** when you `add`; it's how a later run recalls the Secret's purpose. It's prose for a reader, distinct from `--meta` (structured machine data like a Cloudflare `account_id`).
+`--description` records what a Secret is for (shown by `list` and in the popup) — **always set it** when you first `put` a Secret; it's how a later run recalls its purpose (a merge keeps it if you don't repeat it). It's prose for a reader, distinct from `--meta` (structured machine data like a Cloudflare `account_id`).
 
 ### Multi-field credentials (ADR-0005)
 
 Some credentials are several values used together — AWS *Access Key ID* + *Secret Access
 Key*, a DB *Username* + *Password*. You know the parts (you know the Service), so pass the
-field **labels** at `add` time; they're collected in **one** popup and stored as **one**
-Secret that rotates and deletes as a unit.
+field **labels** at `put` time; they're collected in **one** popup and stored as **one**
+Secret that deletes as a unit.
 
-- **Add**: `mytokens add aws --fields "Access Key ID","Secret Access Key" --show "Access Key ID"`.
-  Labels are comma-separated; every field is required; `--show` reveals non-secret fields
-  (identifiers) so the user can verify a paste — everything else is masked. `--kind parent`
-  is single-value and can't be combined with `--fields`.
+- **Create / rotate together**: `mytokens put aws --fields "Access Key ID","Secret Access Key" --show "Access Key ID"`.
+  Labels are comma-separated; every named field is required; `--show` reveals non-secret fields
+  (identifiers) so the user can verify a paste — everything else is masked. Naming both fields
+  in one `put` rotates them atomically. `--kind parent` is single-value and can't take `--fields`.
+- **Update one field** without touching the rest (ADR-0009): `mytokens put aws --fields "Secret Access Key"`
+  re-pops just that field; the Access Key ID is left as-is. Non-secret parts can go via
+  `--set` instead of the popup, e.g. `mytokens put db --set "Username=svc_ci"`.
 - **Get one field**: `mytokens get aws --field "Secret Access Key"` → that field's raw value
   (the label is the key — quote the spaces). Consume inline, e.g.
   `AWS_SECRET_ACCESS_KEY=$(mytokens get aws --field "Secret Access Key")`.
@@ -108,13 +114,19 @@ token — stored as one item and emitted as shell `export` lines. Use it to laun
 (Claude Code is the motivating case) against a *different* API provider. Name a Profile by
 **provider** (`glm`), not by tool — the same Profile then serves any tool that reads those vars.
 
-- **Add** (`--kind profile`; one popup collects everything, `--show` the non-secret config so
-  the human can eyeball it while the token stays masked). You know the provider, so you supply
-  the env-var **names**; the field labels must be valid shell identifiers, validated at `add`:
+- **Create** (`--kind profile`): pass the non-secret config on the CLI with `--set`, and the
+  secret token via `--fields` (the one popup). You know the provider, so you supply the env-var
+  **names**; labels must be valid shell identifiers, validated at `put`:
   ```sh
-  mytokens add glm --kind profile --description "Claude Code → GLM" \
-    --fields "ANTHROPIC_BASE_URL","ANTHROPIC_AUTH_TOKEN","ANTHROPIC_MODEL" \
-    --show "ANTHROPIC_BASE_URL","ANTHROPIC_MODEL"
+  mytokens put glm --kind profile --description "Claude Code → GLM" \
+    --set "ANTHROPIC_BASE_URL=https://open.bigmodel.cn/api/anthropic" \
+    --set "ANTHROPIC_MODEL=glm-4.6" \
+    --fields "ANTHROPIC_AUTH_TOKEN"
+  ```
+- **Update one var**, leaving the rest — `put` merges:
+  ```sh
+  mytokens put glm --set "ANTHROPIC_MODEL=glm-4.6-pro"   # change the model only, no popup
+  mytokens put glm --fields "ANTHROPIC_AUTH_TOKEN"       # rotate the token only (popup)
   ```
 - **Load & launch** — `env` prints `export NAME='VALUE'` lines (safely single-quoted); `eval`
   them so the tool you launch in that shell inherits them:

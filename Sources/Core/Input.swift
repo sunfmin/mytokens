@@ -8,7 +8,7 @@ struct Field {
     let masked: Bool
 }
 
-/// How `add` collects a secret. The real impl pops native fields; tests inject
+/// How `put` collects a secret. The real impl pops native fields; tests inject
 /// canned values. `description` is the agent's purpose note shown to the human
 /// (ADR-0006). Returns label → value for the given fields (the single bare case
 /// uses the empty-string label), or nil if cancelled. Values are returned only

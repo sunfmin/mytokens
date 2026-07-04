@@ -1,5 +1,9 @@
 # A Secret may hold multiple named Fields, stored as one item, addressed by label
 
+> **Status:** the atomicity rules here — *"re-add overwrites the whole Secret"* and *"Fields
+> are not independently updatable"* — are **superseded by ADR-0009** (field-level `put`). The
+> multi-field storage model (one item, JSON object, ordered label schema) below still stands.
+
 A **Secret** is one credential = one keychain item, holding **one or more named Fields**
 (e.g. AWS *Access Key ID* + *Secret Access Key*). A multi-field Secret is collected in a
 single popup, written atomically, and rotated/removed as a unit. Each Field is addressed by

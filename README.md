@@ -64,7 +64,7 @@ SELFTEST PASS
 When a secret isn't stored yet, Claude runs a command like this (you can run it too):
 
 ```sh
-mytokens add cloudflare --description "Purge the CDN cache after a deploy"
+mytokens put cloudflare --description "Purge the CDN cache after a deploy"
 ```
 
 **What happens:** a secure window appears. Nothing is stored until you fill it in and click
@@ -106,7 +106,7 @@ Some credentials come in pieces — an AWS **Access Key ID** *and* **Secret Acce
 database **username** + **password**. Claude collects them in **one** popup:
 
 ```sh
-mytokens add aws --description "CI deploy: S3 uploads" \
+mytokens put aws --description "CI deploy: S3 uploads" \
                  --fields "Access Key ID","Secret Access Key" --show "Access Key ID"
 ```
 
@@ -120,7 +120,9 @@ mytokens add aws --description "CI deploy: S3 uploads" \
 - **Secret Access Key** is masked.
 - **Store** turns on only when **every** field is filled — you can't save half a credential.
 
-The whole thing is saved as one credential and rotates or deletes as a unit.
+The whole thing is saved as one credential and deletes as a unit. Later you can update just
+one part — `mytokens put aws --fields "Secret Access Key"` re-pops only that field and leaves
+the Access Key ID — or name both to rotate them together.
 
 ---
 
@@ -162,13 +164,14 @@ A **Profile** is a named bundle of environment variables — an endpoint, a mode
 that you load into a shell in one line. The motivating case: run **Claude Code** against a
 different API provider (say GLM) without editing any config files.
 
-Store it once (`--kind profile`; one popup collects all three, and `--show` reveals the
-non-secret config so you can check it while the token stays masked):
+Store it once — pass the non-secret config on the command line with `--set`, and only the
+secret token pops a masked field (`--fields`):
 
 ```sh
-mytokens add glm --kind profile --description "Claude Code → GLM" \
-  --fields "ANTHROPIC_BASE_URL","ANTHROPIC_AUTH_TOKEN","ANTHROPIC_MODEL" \
-  --show "ANTHROPIC_BASE_URL","ANTHROPIC_MODEL"
+mytokens put glm --kind profile --description "Claude Code → GLM" \
+  --set "ANTHROPIC_BASE_URL=https://open.bigmodel.cn/api/anthropic" \
+  --set "ANTHROPIC_MODEL=glm-4.6" \
+  --fields "ANTHROPIC_AUTH_TOKEN"
 ```
 
 Then load it and launch — `mytokens env` prints shell `export` lines, so `eval` them and run
@@ -177,6 +180,10 @@ your tool:
 ```sh
 eval "$(mytokens env glm)" && claude       # …or aider, or anything that reads ANTHROPIC_*
 ```
+
+Change one variable later without re-entering the rest — `put` merges: `mytokens put glm --set
+"ANTHROPIC_MODEL=glm-4.6-pro"`, or `mytokens put glm --fields "ANTHROPIC_AUTH_TOKEN"` to rotate
+just the token.
 
 Name a Profile by **provider** (`glm`), not by tool — the same Profile works for any tool that
 reads those variables. To keep the token out of your shell for the rest of the session, scope
@@ -187,9 +194,13 @@ it to a subshell: `(eval "$(mytokens env glm)"; claude)`.
 ## 6. Rotate or remove
 
 ```sh
-mytokens add cloudflare --description "…"   # re-add to rotate: same popup, overwrites the old value
-mytokens rm cloudflare                       # delete it entirely
+mytokens put cloudflare                        # re-put to rotate a lone token: same popup, new value
+mytokens put glm --set "ANTHROPIC_MODEL=…"     # update just one field of a multi-field secret
+mytokens rm  cloudflare                        # delete it entirely
 ```
+
+`put` updates the fields you name and keeps the rest; to rebuild from scratch (or drop a
+field), `rm` then `put`.
 
 ---
 
@@ -247,7 +258,7 @@ Built and published locally — no CI. Notarization creds live in **mytokens its
 
 ```sh
 base64 -i ~/Downloads/AuthKey_XXXX.p8 | tr -d '\n' | pbcopy   # single-line .p8 → clipboard
-mytokens add asc-api-key --description "App Store Connect API key — notarize MyTokens" \
+mytokens put asc-api-key --description "App Store Connect API key — notarize MyTokens" \
   --fields "Key ID","Issuer ID","Key (base64 .p8)" --show "Key ID","Issuer ID"
 ```
 

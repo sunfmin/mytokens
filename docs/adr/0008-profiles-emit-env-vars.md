@@ -1,5 +1,10 @@
 # Profiles: named env-var bundles emitted as shell `export` lines via `mytokens env`
 
+> **Status:** the entry-method decisions here — *"split entry declined"* and *"uniform
+> popup"* — are **superseded by ADR-0009**: non-secret values now come from the CLI via
+> `--set`, and the write verb is `put`, not `add`. The Profile concept and `env` rendering
+> below still stand.
+
 mytokens gains a **Profile** — a named bundle of environment variables (a provider's
 endpoint, model, and token) stored as a `--kind profile` multi-field Secret and emitted by a
 new `mytokens env <service>` command as POSIX `export` lines for `eval`, so a tool launched

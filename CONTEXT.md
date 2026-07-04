@@ -36,10 +36,11 @@ Optional structured (JSON) data attached to a Secret for *machine* use — e.g. 
 from **Description**, which is prose intent for a reader, not data for a program.
 
 **Service**:
-A target API or tool that a Secret authenticates to, identified by a stable slug
-(`cloudflare`, `github`, `openai`, …). The slug is how Claude looks a Secret up. The Helper
-treats every Service uniformly — service-specific behavior (e.g. Cloudflare minting) lives in
-Claude's runtime usage and the skill's recipes, **not** in the Helper (ADR-0004).
+A target API or tool that a Secret authenticates to — or, for a Profile, the provider a
+tool is pointed at — identified by a stable slug (`cloudflare`, `github`, `openai`, `glm`,
+…). The slug is how Claude looks a Secret or Profile up. The Helper treats every Service
+uniformly — service-specific behavior (e.g. Cloudflare minting) lives in Claude's runtime
+usage and the skill's recipes, **not** in the Helper (ADR-0004).
 
 **Parent token**:
 A stored Secret that holds permission to *create other tokens* on its Service (e.g. a
@@ -55,6 +56,15 @@ _Avoid_: scoped token (use as adjective only).
 
 **Mint**:
 To create a Child token from a Parent token by calling the Service's token-creation API.
+
+**Profile**:
+A named bundle of environment variables — typically a target API's endpoint, model, and
+token — used to point a tool at a provider (e.g. running Claude Code against a different
+API). `mytokens env <service>` emits it as shell `export` lines to `eval`, so any tool
+launched in that shell inherits them. Unlike a Secret, a Profile is **not** a single
+credential: it bundles secret and non-secret config that are used together. Each variable is
+one **Field** whose label is the environment-variable name.
+_Avoid_: environment (too generic), config set, env file.
 
 **Password (out of scope)**:
 A human-facing web login (username + website + password) of the kind Passwords.app

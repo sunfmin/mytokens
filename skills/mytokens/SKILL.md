@@ -165,10 +165,13 @@ API=https://api.cloudflare.com/client/v4
 # means it is account-scoped — switch the paths below to /accounts/$ACCOUNT_ID/tokens.
 curl -s -H "Authorization: Bearer $PARENT" "$API/user/tokens/verify"
 
-# Can it CREATE? An empty-policy POST returns 400 (CAN create) vs 403/code 9109 (CANNOT).
-curl -s -o /dev/null -w '%{http_code}\n' -X POST -H "Authorization: Bearer $PARENT" \
-  -H "Content-Type: application/json" "$API/user/tokens" --data '{"name":"probe","policies":[]}'
-# 403 → NOT a mint-capable Parent. Tell the user to make a USER token with "API Tokens: Edit".
+# Can it CREATE? Read the token's OWN policies — never probe with a POST: Cloudflare accepts an
+# empty-policy POST /user/tokens with 200 and really creates a token (seen 2026-09 and 2026-10).
+ID=$(curl -s -H "Authorization: Bearer $PARENT" "$API/user/tokens/verify" | jq -r .result.id)
+curl -s -H "Authorization: Bearer $PARENT" "$API/user/tokens/$ID" \
+  | jq '[.result.policies[] | select(.effect=="allow") | .permission_groups[].name] | index("API Tokens Write") != null'
+# false (or an auth error) → NOT a mint-capable Parent. Tell the user to make a USER token with
+# "API Tokens: Edit". If you ever did POST a probe, list /user/tokens and DELETE what it made.
 
 # pick minimal permission groups for the task (needs API Tokens *Read*):
 curl -s -H "Authorization: Bearer $PARENT" "$API/user/tokens/permission_groups"

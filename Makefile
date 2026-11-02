@@ -17,10 +17,21 @@ DIST_ZIP     := $(DERIVED)/$(APP).zip
 # keychain + your Xcode-logged-in account.
 ASC_SECRET ?= asc-api-key
 
-.PHONY: project build test install selftest verify dist release icon screenshots clean
+# XcodeGen, pinned: the one version every build and the gate generate the
+# project with. `make xcodegen-install` installs it under $HOME via mise.
+XCODEGEN_VERSION := 2.46.0
+XCODEGEN := mise exec xcodegen@$(XCODEGEN_VERSION) -- xcodegen
+
+.PHONY: project build test install selftest verify dist release icon screenshots clean xcodegen-check xcodegen-install
+
+xcodegen-check:
+	$(XCODEGEN) --version
+
+xcodegen-install:
+	mise install xcodegen@$(XCODEGEN_VERSION)
 
 project:
-	xcodegen generate
+	$(XCODEGEN) generate
 
 # Regenerate the app icon set from tools/makeicon.swift.
 icon:

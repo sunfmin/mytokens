@@ -8,8 +8,13 @@ iCloud Keychain and lets Claude auto-retrieve and mint them when calling APIs. S
 
 ### Issue tracker
 
-Issues live in this repo's GitHub Issues (via the `gh` CLI); external PRs are **not** a
-triage surface. See `docs/agents/issue-tracker.md`.
+Issues live in the tracker the host names (sunfmin/control, control ADR 0002), labelled
+`repo:sunfmin/mytokens`; open them with the line `afkconvoy flows` gives. External PRs are
+**not** a triage surface. See `docs/agents/issue-tracker.md`.
+
+### afkconvoy
+
+The fleet goes by `docs/agents/afkconvoy.md`; the gate is `./gate.sh`.
 
 ### Triage labels
 

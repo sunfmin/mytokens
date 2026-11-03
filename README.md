@@ -203,6 +203,19 @@ mytokens rm  cloudflare                        # delete it entirely
 `put` updates the fields you name and keeps the rest; to rebuild from scratch (or drop a
 field), `rm` then `put`.
 
+### Over SSH
+
+Run `put` in a terminal and it asks there instead of popping the dialog: each secret field
+is read with no echo (fields named in `--show` echo), so it works on a Mac you reach only by
+SSH:
+
+```sh
+ssh -t my-mac mytokens put cloudflare --description "DNS edits" --fields Token
+```
+
+With neither a terminal nor a desktop (an agent on an SSH-only machine), `put` stores nothing
+and prints the command to run in a terminal.
+
 ---
 
 ## Where do the secrets live?

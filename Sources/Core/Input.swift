@@ -8,13 +8,14 @@ struct Field {
     let masked: Bool
 }
 
-/// How `put` collects a secret. The real impl pops native fields; tests inject
-/// canned values. `description` is the agent's purpose note shown to the human
-/// (ADR-0006). Returns label → value for the given fields (the single bare case
-/// uses the empty-string label), or nil if cancelled. Values are returned only
-/// to the Helper process — never to the caller's shell.
+/// How `put` collects a secret. Live, `SelectingSecretInput` picks the terminal or
+/// the native popup; tests inject canned values. `description` is the agent's
+/// purpose note shown to the human (ADR-0006). Returns `.entered` with label →
+/// value for the given fields (the single bare case uses the empty-string label),
+/// `.cancelled`, or `.unavailable` when it cannot reach a human here. Values are
+/// returned only to the Helper process — never to the caller's shell.
 protocol SecretInput {
-    func promptForSecret(service: String, account: String, description: String?, fields: [Field]) -> [String: String]?
+    func promptForSecret(service: String, account: String, description: String?, fields: [Field]) -> PromptResult
 }
 
 /// Native masked popup. Builds `SecretPromptView`, hosts it in a modal window,
@@ -22,7 +23,7 @@ protocol SecretInput {
 /// temporary GUI activation is harmless. The view-building lives in
 /// `SecretPromptView` so the render test exercises the exact same UI.
 struct PopupSecretInput: SecretInput {
-    func promptForSecret(service: String, account: String, description: String?, fields: [Field]) -> [String: String]? {
+    func promptForSecret(service: String, account: String, description: String?, fields: [Field]) -> PromptResult {
         let app = NSApplication.shared
         app.setActivationPolicy(.regular)
         installEditMenu(app)   // wire up ⌘X/⌘C/⌘V/⌘A so paste works in the field
@@ -60,8 +61,8 @@ struct PopupSecretInput: SecretInput {
 
         let response = app.runModal(for: window)
         window.orderOut(nil)
-        guard response == .OK else { return nil }
-        return card.values
+        guard response == .OK else { return .cancelled }
+        return .entered(card.values)
     }
 
     /// A minimal Edit menu so standard editing key-equivalents reach the field

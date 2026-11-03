@@ -134,7 +134,7 @@ that one command:
 ```
 
 - **Never** put a project's env vars in a `.env` file, a shell rc (`~/.zshrc`, `~/.zshenv`, …),
-  or the repo. If you find them there, move them into the Profile.
+  or the repo. If you find them there, put them into the Profile and tell the user what to delete.
 - **Add or change** a var with `put`, which merges: `mytokens put <project> --set "NAME=value"`
   for a non-secret value, `mytokens put <project> --fields "NAME"` for a secret one (the popup —
   the value never passes through you). Create the Profile on its first var with

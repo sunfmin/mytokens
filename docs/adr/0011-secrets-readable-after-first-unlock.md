@@ -57,3 +57,14 @@ that requirement.
 - ADR-0001 stands, apart from the accessibility class it left at the default.
 - `selftest` rewrites its single-value probe, so the update path, which sets the
   accessibility, runs against the real keychain at every install.
+
+## Verified
+
+On macs-Mac-Mini, 2026-11-03 19:42 JST, with v0.1.6 (the first release with this decision)
+installed and the console screen locked (`pmset displaysleepnow`, then
+`CGSSessionScreenIsLocked=Yes` in `ioreg -n Root -d1`), a background session with no
+console read and wrote Secrets: `mytokens list` exit 0, `mytokens get <service>` exit 0, and
+`mytokens selftest` → `SELFTEST PASS`. With 0.1.5 the same reads had failed with
+`keychain is locked (interaction not allowed)`, before anyone had logged in since boot
+(sunfmin/control#551). After a login, 0.1.5 also read while the screen was locked, so this
+check shows that nothing regressed. It does not show a before/after difference on this Mac.

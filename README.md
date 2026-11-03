@@ -267,8 +267,10 @@ Helper. That means:
 
 A **server** is a Mac of yours that runs unattended — reached over SSH or the tailnet, its
 screen locked whenever nobody sits at it — and that you do **not** sign into iCloud. It keeps
-its secrets in its own **login keychain** instead of the iCloud Keychain, so jobs on it can
-read them while the screen is locked (ADR-0010).
+its secrets in **local, non-synchronizable items** in the macOS data-protection keychain instead
+of the iCloud Keychain (ADR-0013). Once its user has logged in after boot, jobs can read them
+over SSH, including Tailscale SSH, while the screen is locked. After a reboot, log in once at
+the console or over Screen Sharing before jobs need the secrets.
 
 On the server, once:
 
@@ -276,17 +278,21 @@ On the server, once:
 bash ~/.claude/skills/mytokens/scripts/install.sh   # the same signed app as on your own Macs
 mytokens host server                                # this Mac's role; default: personal
 mytokens host                                       # prints it: server
-mytokens selftest                                   # round-trips through the login keychain
+mytokens selftest                                   # round-trips through the local store
 ```
 
-From then on `put`, `get`, `env`, `list` and `rm` act on the server's login keychain:
+From then on `put`, `get`, `env`, `list` and `rm` act on the server's local store:
 
 - Every secret stored there is `server`-level; `put --level personal` is refused.
 - iCloud Keychain sync never reaches the server. What is on it was entered on it or came by
   `mytokens sync` from one of your own Macs — and what was entered on it is adopted by the
   next `sync`, so your own Macs become its home.
 - Secrets in your iCloud Keychain stay on your own Macs. `mytokens host personal` switches
-  back (the login-keychain secrets stay where they are until you set `server` again).
+  back (the local secrets stay where they are until you set `server` again).
+
+If the server used a release that stored secrets in its login keychain, sync **before**
+upgrading so anything entered only on the server is adopted. Upgrading does not move or delete
+those old items; sync after upgrading restores every `server`-level secret from your own Mac.
 
 ### Sync with a server
 

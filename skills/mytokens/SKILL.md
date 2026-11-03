@@ -94,7 +94,7 @@ The value is plaintext once `get` returns it (acceptable on this trusted machine
 | `mytokens rm <service> [--account L]` | Delete the whole Secret. Whole-replace = `rm` then `put`. |
 | `mytokens selftest` | Real-keychain round-trip sanity check. |
 | `mytokens sync <host>` | On a personal Mac, over SSH (values only in the pipes): first **adopt** each Secret entered on the Server `<host>` — store it here, whole, `server`-level, Description noting the Server and date — then make the Server hold exactly the `server`-level Secrets. Prints `adopted`/`added`/`updated`/`removed`/`conflict` names, or `no changes`. A same-name Secret here is a `conflict`: neither side changes, exit non-zero — leave it for the human. `push` is gone. |
-| `mytokens host [personal\|server]` | Print this Mac's role, or set it. On a `server` every command acts on the login keychain (readable while the screen is locked) and every Secret stored is `server`-level. |
+| `mytokens host [personal\|server]` | Print this Mac's role, or set it. On a `server` every command acts on local, non-synchronizable keychain items (readable over SSH after the first unlock since boot) and every Secret stored is `server`-level. |
 
 **`put` upserts** (ADR-0009): it updates/inserts the fields you name and **keeps the rest**, so `put svc --set MODEL=…` changes one field and `put svc --fields TOKEN` rotates one secret — the others are untouched. Works the same for a lone value, a composite credential, or a Profile. There is no whole-replace; to rebuild (or drop a stale field), `rm` then `put`.
 

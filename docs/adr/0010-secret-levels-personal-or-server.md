@@ -1,6 +1,7 @@
 # Every Secret carries a level, personal or server; servers hold the server-level ones, pushed from a personal Mac
 
 Status: narrowed by ADR-0012 — `push` became `sync`, which also adopts the Secrets entered on a Server.
+ADR-0013 replaces the Server's login keychain with local data-protection keychain items.
 
 Every **Secret** carries a **Level** that says how far it may travel: `personal` (the
 default — it stays in the iCloud Keychain on the user's own Macs) or `server` (it may also be

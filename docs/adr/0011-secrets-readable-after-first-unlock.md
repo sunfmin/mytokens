@@ -1,5 +1,7 @@
 # A Secret is readable while the screen is locked, once the Mac has been unlocked since boot
 
+Status: extended by ADR-0013 to a Server's local, non-synchronizable items.
+
 Every iCloud Keychain item mytokens writes on a personal Mac carries
 `kSecAttrAccessibleAfterFirstUnlock`. The Helper can read a **Secret** whenever the Mac has
 been unlocked once since it booted, whether the screen is locked or not. Before this, items
@@ -31,8 +33,9 @@ that requirement.
   matches nothing (`errSecItemNotFound`). It is best effort: while the screen is locked, the
   old items cannot be touched (`errSecInteractionNotAllowed`). The command carries on, and the
   next run on an unlocked Mac moves them.
-- **Server unchanged.** The login keychain (ADR-0010) has no data-protection classes. A
-  Server's items are written exactly as before, and the migration does nothing there.
+- **Server initially unchanged.** The login keychain (ADR-0010) had no data-protection classes.
+  ADR-0013 later replaces that store with local data-protection items using this same
+  accessibility and migration.
 - **Before first unlock.** After a reboot, before anyone has logged in, a Secret still
   cannot be read. The `.locked` error says so, and says what to do: log in once, at the Mac or
   over Screen Sharing, then retry.

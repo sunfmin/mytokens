@@ -100,14 +100,16 @@ private func byName(_ a: SecretRecord, _ b: SecretRecord) -> Bool { (a.service, 
 
 /// `sync <host>`, on a personal Mac: adopt what was entered on the Server, then push.
 /// Prints what changed by name — `adopted`, `added`, `updated`, `removed`, `conflict` —
-/// or `no changes`. A conflict makes the exit status 1, after everything else is done.
+/// or `no changes` after both runs succeed. A conflict or failed run makes the exit status 1;
+/// a failure names its step and relays the Server's error without printing Secret values.
 func sync(with host: String, store: SecretStore, via remote: Remote, now: Date) -> CommandResult {
     guard !host.isEmpty, !host.hasPrefix("-") else {
         return CommandResult(stdout: "", stderr: "sync needs a host name (got \"\(host)\")\n", exitCode: 64)
     }
     var lines: [String] = []
+    var step = "adopt"
     func failed(_ why: String) -> CommandResult {
-        CommandResult(stdout: lines.map { $0 + "\n" }.joined(), stderr: "sync with \(host) failed:\n" + why, exitCode: 1)
+        CommandResult(stdout: lines.map { $0 + "\n" }.joined(), stderr: "sync with \(host) failed to \(step):\n" + why, exitCode: 1)
     }
     do {
         // 1. Adopt.
@@ -145,6 +147,7 @@ func sync(with host: String, store: SecretStore, via remote: Remote, now: Date) 
         }
 
         // 2. Push.
+        step = "push"
         let records = try store.list().filter { $0.level == .server }.sorted(by: byName)
         let secrets = try records.compactMap { r in
             try store.get(service: r.service, account: r.account).map { WireSecret(r, $0) }

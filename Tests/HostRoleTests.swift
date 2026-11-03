@@ -17,7 +17,8 @@ final class HostRoleTests: XCTestCase {
     private func run(_ argv: [String], input: [String: String]? = nil) -> CommandResult {
         let deps = Dependencies(role: setting,
                                 store: { [personal, server] in $0 == .server ? server : personal },
-                                input: { _ in CannedSecretInput(values: input) })
+                                input: { _ in CannedSecretInput(values: input) },
+                                remote: RecordingRemote(), stdin: { Data() })
         return runCommand(argv, deps)
     }
 

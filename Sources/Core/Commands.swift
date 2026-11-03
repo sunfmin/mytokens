@@ -8,6 +8,9 @@ struct CommandResult {
     var exitCode: Int32
 }
 
+/// Thrown by `put`'s prompt step to return a failure from inside its `do` block.
+extension CommandResult: Error {}
+
 private func ok(_ s: String) -> CommandResult { CommandResult(stdout: s, stderr: "", exitCode: 0) }
 private func fail(_ s: String, _ code: Int32) -> CommandResult { CommandResult(stdout: "", stderr: s, exitCode: code) }
 
@@ -20,7 +23,7 @@ struct Dependencies {
     static var live: Dependencies {
         .init(role: FileHostRoleSetting(),
               store: { KeychainSecretStore(location: $0.keychain) },
-              input: PopupSecretInput())
+              input: SelectingSecretInput(session: .current, terminal: TerminalSecretInput(), popup: PopupSecretInput()))
     }
 }
 
@@ -67,6 +70,13 @@ private func isValidEnvName(_ s: String) -> Bool {
 /// backticks, newlines — everything (ADR-0008).
 private func shellSingleQuote(_ value: String) -> String {
     "'" + value.replacingOccurrences(of: "'", with: "'\\''") + "'"
+}
+
+/// Quote one shell word only when it needs it, so a printed command reads like
+/// what a human would type (`mytokens put svc --fields Token`) yet pastes exactly.
+private func shellWord(_ s: String) -> String {
+    let safe = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_@%+=:,./-")
+    return !s.isEmpty && s.unicodeScalars.allSatisfy(safe.contains) ? s : shellSingleQuote(s)
 }
 
 private func parseArgs(_ argv: [String]) -> ParsedArgs {
@@ -191,6 +201,25 @@ private func runPut(_ argv: [String], _ store: SecretStore, _ input: SecretInput
         return fail("--show \"\(unknown)\" is not one of --fields\n", 64)
     }
 
+    // Collect secret values from whichever input reaches a human, or throw the
+    // failure `put` returns. With no input here, store nothing and print the exact
+    // command to run where there is one (a terminal, e.g. over `ssh -t`).
+    func prompt(_ fields: [Field], _ description: String?) throws -> [String: String] {
+        switch input.promptForSecret(service: service, account: account, description: description, fields: fields) {
+        case .entered(let values):
+            if fields.contains(where: { (values[$0.label] ?? "").isEmpty }) {
+                throw fail("empty value; nothing stored\n", 1)
+            }
+            return values
+        case .cancelled:
+            throw fail("cancelled; nothing stored\n", 1)
+        case .unavailable:
+            let command = (["mytokens", "put"] + argv).map(shellWord).joined(separator: " ")
+            throw fail("no terminal or desktop session to enter the secret in; nothing stored.\n"
+                       + "Run this in a terminal (e.g. over ssh -t):\n  \(command)\n", 1)
+        }
+    }
+
     let explicitKind = args.flags["kind"]
     if let k = explicitKind, k != "static", k != "parent", k != "profile" {
         return fail("--kind must be 'static', 'parent', or 'profile'\n", 64)
@@ -269,18 +298,11 @@ private func runPut(_ argv: [String], _ store: SecretStore, _ input: SecretInput
         if isMetadataOnly, let existing {
             secret = existing
         } else if isLabelledWrite {
-            // Only secret (--fields) values touch the popup; --set values came from the CLI.
-            var popupValues: [String: String] = [:]
+            // Only secret (--fields) values are prompted for; --set values came from the CLI.
+            var promptedValues: [String: String] = [:]
             if !fieldLabels.isEmpty {
                 let promptFields = fieldLabels.map { Field(label: $0, masked: !showLabels.contains($0)) }
-                guard let values = input.promptForSecret(service: service, account: account,
-                                                              description: description, fields: promptFields) else {
-                    return fail("cancelled; nothing stored\n", 1)
-                }
-                for field in promptFields {
-                    guard let v = values[field.label], !v.isEmpty else { return fail("empty value; nothing stored\n", 1) }
-                    popupValues[field.label] = v
-                }
+                promptedValues = try prompt(promptFields, description)
             }
             // Merge: keep existing fields (updating a named one in place), append new
             // ones in the order --set then --fields.
@@ -293,22 +315,18 @@ private func runPut(_ argv: [String], _ store: SecretStore, _ input: SecretInput
                 }
             }
             for (label, value) in setPairs { upsertField(label, value) }
-            for label in fieldLabels { upsertField(label, popupValues[label] ?? "") }
+            for label in fieldLabels { upsertField(label, promptedValues[label] ?? "") }
             secret = SecretValue(fields: fields)
         } else {
-            // Bare single value (ADR-0002): one masked popup field with the empty label.
-            guard let values = input.promptForSecret(service: service, account: account,
-                                                          description: description,
-                                                          fields: [Field(label: "", masked: true)]) else {
-                return fail("cancelled; nothing stored\n", 1)
-            }
-            guard let v = values[""], !v.isEmpty else { return fail("empty value; nothing stored\n", 1) }
-            secret = SecretValue(single: v)
+            // Bare single value (ADR-0002): one masked field with the empty label.
+            secret = SecretValue(single: try prompt([Field(label: "", masked: true)], description)[""]!)
         }
 
         try store.upsert(service: service, account: account, secret: secret,
                               kind: kind, meta: meta, description: description, level: level)
         return ok("stored \(service)/\(account)\n")
+    } catch let failure as CommandResult {
+        return failure                       // a prompt that stored nothing
     } catch {
         return fail("\(error)\n", 1)
     }

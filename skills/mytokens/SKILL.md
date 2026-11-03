@@ -53,6 +53,8 @@ mytokens put aws --description "CI deploy: S3 uploads" --fields "Access Key ID",
 
 **Always pass `--description`** — a short note of what the Secret is for. A *later* run sees it in `list` and knows the Secret's purpose, and the human sees it in the popup as the reason the dialog appeared.
 
+Where `put` asks: in the terminal when the human runs it in one (hidden input; works over `ssh -t`), else the desktop popup. From an agent shell on a machine with no desktop (e.g. an SSH-only server), `put` stores nothing, exits non-zero and prints the exact command — hand that line to the human to run in their own `ssh -t` session.
+
 ## Consent contract
 
 - **Reading/using a stored Secret is silent.** The user storing it is standing authorization to use it — don't ask.

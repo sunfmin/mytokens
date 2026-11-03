@@ -60,7 +60,7 @@ mytokens put aws --description "CI deploy: S3 uploads" --fields "Access Key ID",
 
 **Always pass `--description`** — a short note of what the Secret is for. A *later* run sees it in `list` and knows the Secret's purpose, and the human sees it in the popup as the reason the dialog appeared.
 
-Where `put` asks: in the terminal when the human runs it in one (hidden input; works over `ssh -t`), else the desktop popup. From an agent shell on a machine with no desktop (e.g. an SSH-only server), `put` stores nothing, exits non-zero and prints the exact command — hand that line to the human to run in their own `ssh -t` session.
+Where `put` asks: in the terminal when the human runs it in one (hidden input; works over `ssh -t`), else the desktop popup (never on a `server`: nobody watches its screen), else a **one-time tailnet link**. With the link, `put` prints `mytokens: open this link …` and the URL on stderr, then **blocks** until the human submits it (exit 0, `stored …`) or it expires after 10 minutes (non-zero, nothing stored). So run that `put` in the background, read the link from its output as soon as it appears, and hand the link to the human (e.g. a phone push) — the value never passes through you. Only with no terminal, no desktop and no tailnet does `put` store nothing at once and print the exact command — hand that line to the human to run in their own `ssh -t` session.
 
 ## Consent contract
 

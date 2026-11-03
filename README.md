@@ -213,8 +213,36 @@ SSH:
 ssh -t my-mac mytokens put cloudflare --description "DNS edits" --fields Token
 ```
 
-With neither a terminal nor a desktop (an agent on an SSH-only machine), `put` stores nothing
-and prints the command to run in a terminal.
+### From your phone: the one-time link
+
+With neither a terminal nor a desktop — an agent running `put` on a server — `put` serves
+**one page** on the Mac's tailnet address and prints a link to it:
+
+```text
+mytokens: open this link to enter the secret for cloudflare / default (it works once, within 10 minutes):
+  https://my-server.tailnet-name.ts.net:53765/a7c81fb048650e728fe85acf9a8f0892
+```
+
+Open it on any device on your tailnet (your phone), fill in the fields and press **Store**. The
+value goes from your browser straight into mytokens and the keychain — never through the
+agent, its transcript or a file. The link carries a fresh random token, works **once** for that
+one secret, and expires after **10 minutes**; then the page closes and `put` exits (stored, or
+not stored with a non-zero exit). Getting the link to your phone is the caller's job; `put`
+only prints it.
+
+- It is served on the tailnet address only, never on another interface.
+- HTTPS uses the Mac's tailnet certificate (`tailscale cert`). Where this user may not get one,
+  the link is plain HTTP on the tailnet (which WireGuard encrypts) and `put` says why. To allow
+  HTTPS for a non-admin user, an admin runs `sudo tailscale set --operator=<user>` once, and
+  HTTPS certificates must be on for the tailnet.
+- The macOS firewall must let MyTokens accept connections: the signed release is allowed
+  automatically (*Automatically allow downloaded signed software*); an unsigned local build is
+  not, and the link then never answers.
+- On a Mac set to `server` (below) `put` never shows the popup — nobody watches a server's
+  screen, even a logged-in one — so there it is the terminal, else the link.
+
+With no terminal, no desktop and no tailnet, `put` stores nothing and prints the command to run
+in a terminal.
 
 ---
 

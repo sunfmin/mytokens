@@ -93,7 +93,7 @@ extension Dependencies {
     /// A personal Mac (the default role) whose one store is `store` — for tests
     /// that don't exercise the role.
     init(store: SecretStore, input: SecretInput) {
-        self.init(role: InMemoryHostRoleSetting(), store: { _ in store }, input: input,
+        self.init(role: InMemoryHostRoleSetting(), store: { _ in store }, input: { _ in input },
                   remote: RecordingRemote(), stdin: { Data() })
     }
 }

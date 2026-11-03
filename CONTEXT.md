@@ -86,6 +86,13 @@ writes them there over SSH and removes ones it pushed earlier that are no longer
 (ADR-0010). The only way a Secret reaches a Server other than being entered on it.
 _Avoid_: sync (that is the iCloud Keychain's job between personal Macs), deploy, copy.
 
+**One-time link**:
+How `put` collects a Secret's values where no terminal or watched desktop reaches the human: a
+page served on the Mac's tailnet address only, behind a fresh 128-bit token, good for one
+submission of that one Secret within 10 minutes. `put` prints it; delivering it (e.g. a phone
+push) is the caller's business. The values go from the browser straight into the Helper (ADR-0010).
+_Avoid_: magic link, share link, URL (say which link).
+
 **Password (out of scope)**:
 A human-facing web login (username + website + password) of the kind Passwords.app
 autofills in a browser. Explicitly NOT managed by this skill.

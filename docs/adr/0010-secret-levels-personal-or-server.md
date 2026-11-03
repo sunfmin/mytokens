@@ -58,7 +58,9 @@ same Secrets (a deploy token, an API key for a long-running agent). Felix's deci
   collects values through a one-time link: a page served on the host's tailnet address only,
   behind a fresh 128-bit token, usable once for the one Secret and for 10 minutes. The value
   goes from the browser straight into the Helper — never through the agent or its transcript. The desktop popup stays
-  the path when there is a desktop and no terminal.
+  the path when there is a desktop and no terminal — except on a Server, which runs
+  unattended: a logged-in desktop there is a screen nobody watches, so a Server goes terminal,
+  then link (sunfmin/control#519 found the fleet's agents running in such a session).
 
 ## Narrows ADR-0001
 

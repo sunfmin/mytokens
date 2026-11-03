@@ -7,8 +7,10 @@ enum PromptResult: Equatable {
     case entered([String: String])
     /// The human cancelled (popup Cancel, or the terminal read failed).
     case cancelled
-    /// This input has no way to reach a human here (no terminal, no desktop).
+    /// This input has no way to reach a human here (no terminal, no desktop, no tailnet).
     case unavailable
+    /// The one-time link was not used before it expired.
+    case expired
 }
 
 /// Where a human can be reached from this process.
@@ -32,22 +34,25 @@ struct InputSession: Equatable {
 }
 
 /// The live `SecretInput`: picks how to reach the human for this run. The terminal
-/// wins when there is one (works over SSH), else the desktop popup, else
-/// `.unavailable` so `put` can say what to run instead. A later input path (e.g. a
-/// one-time web link) joins here as another candidate.
+/// wins when there is one (works over SSH), else the desktop popup, else the one-time
+/// tailnet link — which answers `.unavailable` where there is no tailnet, so `put` can
+/// say what to run instead. A Server runs unattended, so its desktop — even a
+/// logged-in one — is never where the human is: there it is terminal, then link.
 struct SelectingSecretInput: SecretInput {
     var session: InputSession
+    var role: HostRole
     var terminal: SecretInput
     var popup: SecretInput
+    var link: SecretInput
 
     func promptForSecret(service: String, account: String, description: String?, fields: [Field]) -> PromptResult {
         if session.hasTerminal {
             return terminal.promptForSecret(service: service, account: account, description: description, fields: fields)
         }
-        if session.hasDesktop {
+        if session.hasDesktop && role.isAttended {
             return popup.promptForSecret(service: service, account: account, description: description, fields: fields)
         }
-        return .unavailable
+        return link.promptForSecret(service: service, account: account, description: description, fields: fields)
     }
 }
 

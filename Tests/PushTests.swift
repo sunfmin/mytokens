@@ -17,12 +17,12 @@ final class PushTests: XCTestCase {
 
     private func onLaptop(_ argv: [String], input: [String: String]? = nil) -> CommandResult {
         runCommand(argv, Dependencies(role: InMemoryHostRoleSetting(.personal), store: { [laptop] _ in laptop },
-                                      input: CannedSecretInput(values: input), remote: remote, stdin: { Data() }))
+                                      input: { _ in CannedSecretInput(values: input) }, remote: remote, stdin: { Data() }))
     }
 
     private func onServer(_ argv: [String], input: [String: String]? = nil, stdin: Data = Data()) -> CommandResult {
         runCommand(argv, Dependencies(role: InMemoryHostRoleSetting(.server), store: { [server] _ in server },
-                                      input: CannedSecretInput(values: input), remote: remote, stdin: { stdin }))
+                                      input: { _ in CannedSecretInput(values: input) }, remote: remote, stdin: { stdin }))
     }
 
     private func push() -> CommandResult { onLaptop(["push", "macs-Mac-Mini"]) }
@@ -123,7 +123,7 @@ final class PushTests: XCTestCase {
         let payload = remote.runs[0].stdin                   // a real push payload
         let r = runCommand(["put", "--stdin"],
                            Dependencies(role: InMemoryHostRoleSetting(.personal), store: { [laptop] _ in laptop },
-                                        input: CannedSecretInput(value: nil), remote: remote, stdin: { payload }))
+                                        input: { _ in CannedSecretInput(value: nil) }, remote: remote, stdin: { payload }))
         XCTAssertEqual(r.exitCode, 64)
         XCTAssertTrue(r.stderr.contains("personal Mac"))
         XCTAssertFalse(laptop.items.values.contains { $0.pushed })

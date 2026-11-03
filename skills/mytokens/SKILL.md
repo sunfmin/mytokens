@@ -72,17 +72,22 @@ The value is plaintext once `get` returns it (acceptable on this trusted machine
 
 | Command | Purpose |
 |---|---|
-| `mytokens put <service> --description "<text>" [--account L] [--kind static\|parent\|profile] [--meta JSON]` | Upsert. No `--set`/`--fields` ⇒ one bare value via popup. |
+| `mytokens put <service> --description "<text>" [--account L] [--kind static\|parent\|profile] [--meta JSON] [--level personal\|server]` | Upsert. No `--set`/`--fields` ⇒ one bare value via popup. |
+| `mytokens put <service> --level personal\|server` | On an existing Secret: change only its Level — no popup, values kept. |
 | `mytokens put <service> --set "<NAME>=<value>" …` | Upsert non-secret field(s) from the CLI — **no popup**. Repeatable. |
 | `mytokens put <service> --fields "<A>","<B>" [--show "<A>"]` | Upsert secret field(s) via one popup; masked unless `--show`. |
 | `mytokens get <service> [--account L]` | Raw value to stdout; non-zero exit if absent. |
-| `mytokens get <service> --field "<A>"` / `--json` | One field's raw value / the whole field object as JSON. |
+| `mytokens get <service> --field "<A>"` / `--json` | One field's raw value / the whole Secret as JSON: `{"fields":{…},"level":…}` (or `{"level":…,"value":…}` for a lone value). |
 | `mytokens env <service> [--account L]` | A Profile's env vars as shell `export` lines for `eval`. Errors on a non-Profile. |
-| `mytokens list` | Stored services/accounts/kind/description/fields/meta; never values. |
+| `mytokens list` | Stored services/accounts/kind/level/description/fields/meta; never values. |
 | `mytokens rm <service> [--account L]` | Delete the whole Secret. Whole-replace = `rm` then `put`. |
 | `mytokens selftest` | Real-keychain round-trip sanity check. |
 
 **`put` upserts** (ADR-0009): it updates/inserts the fields you name and **keeps the rest**, so `put svc --set MODEL=…` changes one field and `put svc --fields TOKEN` rotates one secret — the others are untouched. Works the same for a lone value, a composite credential, or a Profile. There is no whole-replace; to rebuild (or drop a stale field), `rm` then `put`.
+
+`--level` says how far a Secret may travel (ADR-0010): `personal` (default — only the user's own
+Macs) or `server` (also pushed to the user's Servers). A `put` without `--level` keeps the stored
+level. Mark a Secret `server` only when a job on a Server needs it.
 
 `--account` lets one Service hold several Secrets (`cloudflare/personal` vs `cloudflare/work`).
 `--description` records what a Secret is for (shown by `list` and in the popup) — **always set it** when you first `put` a Secret; it's how a later run recalls its purpose (a merge keeps it if you don't repeat it). It's prose for a reader, distinct from `--meta` (structured machine data like a Cloudflare `account_id`).
@@ -106,7 +111,7 @@ Secret that deletes as a unit.
   `AWS_SECRET_ACCESS_KEY=$(mytokens get aws --field "Secret Access Key")`.
 - **Bare `get`** returns the raw value for a single-field Secret, but **errors** for a
   multi-field one and lists the field labels — use `--field`, or `--json` to dump the whole
-  `{label: value}` object.
+  Secret (`{"fields": {label: value}, "level": …}`).
 - **`list`** shows the field labels (never values).
 
 ### Profiles: point a tool at another provider (ADR-0008)

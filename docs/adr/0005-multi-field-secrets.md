@@ -3,6 +3,8 @@
 > **Status:** the atomicity rules here — *"re-add overwrites the whole Secret"* and *"Fields
 > are not independently updatable"* — are **superseded by ADR-0009** (field-level `put`). The
 > multi-field storage model (one item, JSON object, ordered label schema) below still stands.
+> The `get --json` output shape is **superseded by ADR-0010**: the field object now sits under
+> `fields`, beside the Secret's `level`.
 
 A **Secret** is one credential = one keychain item, holding **one or more named Fields**
 (e.g. AWS *Access Key ID* + *Secret Access Key*). A multi-field Secret is collected in a

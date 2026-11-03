@@ -66,6 +66,24 @@ credential: it bundles secret and non-secret config that are used together. Each
 one **Field** whose label is the environment-variable name.
 _Avoid_: environment (too generic), config set, env file.
 
+**Level**:
+How far a Secret may travel: `personal` (the default — it stays in the iCloud Keychain on
+the user's own Macs) or `server` (it may also be **Pushed** to the user's **Servers**). Set
+by `put --level`; a Secret stored before levels existed reads as `personal` (ADR-0010).
+_Avoid_: scope (that is a Child token's permissions), visibility, tier.
+
+**Server**:
+A Mac of the user's that runs unattended (reached over SSH / the tailnet) and does **not**
+sign into iCloud. It holds only `server`-level Secrets, in its own login keychain, received
+by **Push** or entered on it directly (ADR-0010). The other Macs are **personal Macs**.
+_Avoid_: host (the generic machine word; `push <host>` names one), remote.
+
+**Push**:
+To make a Server hold exactly a personal Mac's `server`-level Secrets: `mytokens push <host>`
+writes them there over SSH and removes ones it pushed earlier that are no longer `server`-level
+(ADR-0010). The only way a Secret reaches a Server other than being entered on it.
+_Avoid_: sync (that is the iCloud Keychain's job between personal Macs), deploy, copy.
+
 **Password (out of scope)**:
 A human-facing web login (username + website + password) of the kind Passwords.app
 autofills in a browser. Explicitly NOT managed by this skill.
@@ -88,7 +106,8 @@ _Avoid_: "the script", "the CLI" (reserve "CLI" for the user-facing `mytokens` c
 
 **Login keychain (not used)**:
 The legacy, local-only `login.keychain-db` that `/usr/bin/security` reads/writes. Does
-not sync. mytokens deliberately does NOT use it (ADR-0001).
+not sync. mytokens does NOT use it on the user's personal Macs (ADR-0001); on a **Server**
+it is the store, since a Server does not sign into iCloud (ADR-0010 narrows ADR-0001).
 
 **Passwords.app (not a storage target)**:
 Apple's GUI vault. mytokens Secrets are NOT listed here — making third-party tokens

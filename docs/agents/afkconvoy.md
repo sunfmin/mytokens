@@ -11,7 +11,7 @@ gate_seconds: 1200                # the gate limit, starting after its turn is g
 
 The rest default (`ready_label: ready-for-agent`, `escalate_label:
 ready-for-human`, `lock_label: fleet-lock`). The gate (`gate.sh`) generates
-the Xcode project with the pinned XcodeGen and runs `make test`: 50 tests,
+the Xcode project with the pinned XcodeGen and runs `make test`: 59 tests,
 7 s on macs-Mac-Mini (12 cores) on 2026-11-03, cold derived data.
 
 ## What the gate needs on a host

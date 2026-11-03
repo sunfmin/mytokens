@@ -74,7 +74,7 @@ enum StoreError: Error, CustomStringConvertible {
             let m = SecCopyErrorMessageString(s, nil).map { $0 as String } ?? "unknown"
             return "keychain error \(s): \(m)"
         case .locked:
-            return "keychain is locked (interaction not allowed) — unlock the login session and retry"
+            return "keychain is locked (interaction not allowed) — the Mac has not been unlocked since it booted: log in once (at the Mac or over Screen Sharing), then retry"
         case .encoding:
             return "failed to encode/decode item metadata"
         }
@@ -108,6 +108,27 @@ enum KeychainLocation {
     case login
 }
 
+/// The four SecItem calls the store makes, behind a seam so tests can drive the real
+/// `KeychainSecretStore` query logic against an in-memory keychain. Signatures mirror
+/// the Security framework's; `SystemKeychain` forwards to it unchanged.
+protocol Keychain {
+    func add(_ attributes: [String: Any]) -> OSStatus
+    func update(_ query: [String: Any], _ changes: [String: Any]) -> OSStatus
+    func copyMatching(_ query: [String: Any], _ result: inout CFTypeRef?) -> OSStatus
+    func delete(_ query: [String: Any]) -> OSStatus
+}
+
+struct SystemKeychain: Keychain {
+    func add(_ attributes: [String: Any]) -> OSStatus { SecItemAdd(attributes as CFDictionary, nil) }
+    func update(_ query: [String: Any], _ changes: [String: Any]) -> OSStatus {
+        SecItemUpdate(query as CFDictionary, changes as CFDictionary)
+    }
+    func copyMatching(_ query: [String: Any], _ result: inout CFTypeRef?) -> OSStatus {
+        SecItemCopyMatching(query as CFDictionary, &result)
+    }
+    func delete(_ query: [String: Any]) -> OSStatus { SecItemDelete(query as CFDictionary) }
+}
+
 // The login keychain has no access groups, so our items there carry this creator code
 // ('mytk') and every query is scoped to it — never touching another app's items.
 private let mytokensCreator: UInt32 = 0x6D79_746B
@@ -116,6 +137,16 @@ private let mytokensCreator: UInt32 = 0x6D79_746B
 /// Keychain on a personal Mac (ADR-0001), the login keychain on a Server (ADR-0010).
 struct KeychainSecretStore: SecretStore {
     var location: KeychainLocation = .iCloud
+    var keychain: Keychain = SystemKeychain()
+
+    /// The store for `location`, with every item already at the accessibility it is
+    /// written with — so a Secret stored by an older build becomes readable while the
+    /// screen is locked the first time any command runs on an unlocked Mac (ADR-0011).
+    static func opened(_ location: KeychainLocation, keychain: Keychain = SystemKeychain()) -> KeychainSecretStore {
+        let store = KeychainSecretStore(location: location, keychain: keychain)
+        _ = store.migrateAccessibility()
+        return store
+    }
 
     /// The scoping every query shares. This is the one invariant that must never vary
     /// across operations — if `list` and `upsert` disagreed on it, `list` would stop
@@ -136,6 +167,37 @@ struct KeychainSecretStore: SecretStore {
                 kSecUseDataProtectionKeychain as String: false,
             ]
         }
+    }
+
+    /// When an item's value may be read, set on every write. A personal Mac's Secret is
+    /// readable once the Mac has been unlocked since boot, screen locked or not — the
+    /// synchronizable class, not a `ThisDeviceOnly` one, so iCloud sync keeps working
+    /// (ADR-0011). Not a query key: an item still at the old default must stay findable.
+    /// The login keychain has no data-protection classes; a Server's items are unchanged.
+    private var accessibility: CFString? {
+        switch location {
+        case .iCloud: return kSecAttrAccessibleAfterFirstUnlock
+        case .login: return nil
+        }
+    }
+
+    /// The accessibility an older build left items at: the system default, never set
+    /// explicitly. Nil where `accessibility` is nil — nothing to move.
+    private var formerAccessibility: CFString? {
+        accessibility == nil ? nil : kSecAttrAccessibleWhenUnlocked
+    }
+
+    /// Move every item still at `formerAccessibility` to `accessibility`, values and
+    /// attributes untouched, no popup. Idempotent: once moved, nothing matches. Best
+    /// effort — while the screen is locked the old items can't be touched
+    /// (`errSecInteractionNotAllowed`), and the next run on an unlocked Mac moves them.
+    /// Returns the keychain status, for tests; `errSecItemNotFound` means nothing to move.
+    @discardableResult
+    func migrateAccessibility() -> OSStatus {
+        guard let accessibility, let formerAccessibility else { return errSecItemNotFound }
+        var q = baseQuery
+        q[kSecAttrAccessible as String] = formerAccessibility
+        return keychain.update(q, [kSecAttrAccessible as String: accessibility])
     }
 
     /// `baseQuery` narrowed to a single item by service + account.
@@ -162,20 +224,18 @@ struct KeychainSecretStore: SecretStore {
         } else {
             storedValue = secret.fields[0].value
         }
-        let changes: [String: Any] = [
+        var changes: [String: Any] = [
             kSecValueData as String: Data(storedValue.utf8),
             kSecAttrComment as String: comment,
             kSecAttrLabel as String: mytokensLabelPrefix + "\(service)/\(account)",
         ]
-        let updated = SecItemUpdate(itemQuery(service, account) as CFDictionary, changes as CFDictionary)
+        if let accessibility { changes[kSecAttrAccessible as String] = accessibility }
+        let updated = keychain.update(itemQuery(service, account), changes)
         if updated == errSecSuccess { return }
         guard updated == errSecItemNotFound else { throw mapErr(updated) }
 
-        var add = itemQuery(service, account)
-        add[kSecValueData as String] = Data(storedValue.utf8)
-        add[kSecAttrComment as String] = comment
-        add[kSecAttrLabel as String] = mytokensLabelPrefix + "\(service)/\(account)"
-        let added = SecItemAdd(add as CFDictionary, nil)
+        let add = itemQuery(service, account).merging(changes) { _, new in new }
+        let added = keychain.add(add)
         guard added == errSecSuccess else { throw mapErr(added) }
     }
 
@@ -184,7 +244,7 @@ struct KeychainSecretStore: SecretStore {
         q[kSecReturnData as String] = true
         q[kSecReturnAttributes as String] = true   // also read the comment for the field schema
         var out: CFTypeRef?
-        let s = SecItemCopyMatching(q as CFDictionary, &out)
+        let s = keychain.copyMatching(q, &out)
         if s == errSecItemNotFound { return nil }
         guard s == errSecSuccess, let attrs = out as? [String: Any],
               let data = attrs[kSecValueData as String] as? Data,
@@ -212,7 +272,7 @@ struct KeychainSecretStore: SecretStore {
         q[kSecMatchLimit as String] = kSecMatchLimitAll
         q[kSecReturnAttributes as String] = true
         var out: CFTypeRef?
-        let s = SecItemCopyMatching(q as CFDictionary, &out)
+        let s = keychain.copyMatching(q, &out)
         if s == errSecItemNotFound { return [] }
         guard s == errSecSuccess, let items = out as? [[String: Any]] else { throw mapErr(s) }
         return items.compactMap { attrs in
@@ -229,7 +289,7 @@ struct KeychainSecretStore: SecretStore {
     }
 
     func delete(service: String, account: String) throws -> Bool {
-        let s = SecItemDelete(itemQuery(service, account) as CFDictionary)
+        let s = keychain.delete(itemQuery(service, account))
         if s == errSecItemNotFound { return false }
         guard s == errSecSuccess else { throw mapErr(s) }
         return true

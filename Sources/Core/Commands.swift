@@ -25,7 +25,7 @@ struct Dependencies {
     var stdin: () -> Data          // what `put --stdin` reads
     static var live: Dependencies {
         .init(role: FileHostRoleSetting(),
-              store: { KeychainSecretStore(location: $0.keychain) },
+              store: { KeychainSecretStore.opened($0.keychain) },
               input: { SelectingSecretInput(session: .current, role: $0, terminal: TerminalSecretInput(),
                                             popup: PopupSecretInput(), link: LinkSecretInput.live) },
               remote: SSHRemote(),

@@ -40,12 +40,27 @@ final class InMemorySecretStore: SecretStore {
 }
 
 struct CannedSecretInput: SecretInput {
-    var values: [String: String]?   // nil == cancelled (Store not pressed)
+    var result: PromptResult
 
-    /// Single bare value, keyed by the empty-string label (today's add path).
-    init(value: String?) { self.values = value.map { ["": $0] } }
-    /// Multi-field: label → value, exactly as the popup would return.
-    init(values: [String: String]?) { self.values = values }
+    /// Single bare value, keyed by the empty-string label; nil == cancelled.
+    init(value: String?) { self.result = value.map { .entered(["": $0]) } ?? .cancelled }
+    /// Multi-field: label → value, exactly as the popup would return; nil == cancelled.
+    init(values: [String: String]?) { self.result = values.map { .entered($0) } ?? .cancelled }
+    /// Any outcome, e.g. `.unavailable` (no terminal, no desktop).
+    init(result: PromptResult) { self.result = result }
 
-    func promptForSecret(service: String, account: String, description: String?, fields: [Field]) -> [String: String]? { values }
+    func promptForSecret(service: String, account: String, description: String?, fields: [Field]) -> PromptResult { result }
+}
+
+/// Records each prompt it receives, then answers with `result` — so a test can
+/// tell which input `SelectingSecretInput` chose and what it was asked for.
+final class RecordingSecretInput: SecretInput {
+    let result: PromptResult
+    private(set) var prompts: [(service: String, description: String?, fields: [Field])] = []
+    init(_ result: PromptResult) { self.result = result }
+
+    func promptForSecret(service: String, account: String, description: String?, fields: [Field]) -> PromptResult {
+        prompts.append((service, description, fields))
+        return result
+    }
 }

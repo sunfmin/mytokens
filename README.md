@@ -343,9 +343,11 @@ signed binary holding your secrets):
 
 - macOS with **Xcode** and a **paid Apple Developer** signing identity (the iCloud
   data-protection keychain needs an entitlement only a signed app can carry — ADR-0001).
-- [`xcodegen`](https://github.com/yonaskolb/XcodeGen) (`brew install xcodegen`).
+- The pinned [`xcodegen`](https://github.com/yonaskolb/XcodeGen); the install command below
+  also installs mise from its official, checksum-verified release when it is absent.
 
 ```sh
+make xcodegen-install
 make install      # xcodegen → signed build → ~/Applications/MyTokens.app + ~/.local/bin/mytokens
 make verify       # show the signature + keychain-access-group
 mytokens selftest # real-keychain round-trip — should print SELFTEST PASS

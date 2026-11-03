@@ -32,7 +32,10 @@ checks:
     install_seconds: 300
 ```
 
-The XcodeGen version lives in the `Makefile` (`XCODEGEN_VERSION`) alone.
+The XcodeGen and mise versions live in the `Makefile` (`XCODEGEN_VERSION` and
+`MISE_VERSION`) alone. `xcodegen-install` installs a missing mise into
+`~/.local/bin` from its official release after verifying its SHA-256, then
+installs the pinned XcodeGen.
 
 ## Cutting a version
 

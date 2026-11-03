@@ -17,19 +17,25 @@ DIST_ZIP     := $(DERIVED)/$(APP).zip
 # keychain + your Xcode-logged-in account.
 ASC_SECRET ?= asc-api-key
 
-# XcodeGen, pinned: the one version every build and the gate generate the
-# project with. `make xcodegen-install` installs it under $HOME via mise.
+# XcodeGen and mise, pinned: every build and the gate use these versions.
+# `make xcodegen-install` installs both under $HOME when they are absent.
 XCODEGEN_VERSION := 2.46.0
-XCODEGEN := mise exec xcodegen@$(XCODEGEN_VERSION) -- xcodegen
+MISE_VERSION := 2026.10.15
+MISE := $(shell command -v mise 2>/dev/null || printf '%s\n' '$(BIN_DIR)/mise')
+XCODEGEN := "$(MISE)" exec xcodegen@$(XCODEGEN_VERSION) -- xcodegen
 
 .PHONY: project build test install selftest verify signed dist release icon screenshots clean xcodegen-check xcodegen-install \
 	set-version installed-version-check release-check-keychain release-check-signing release-check-asc release-check-gh
 
 xcodegen-check:
+	@command -v mise >/dev/null 2>&1 || [ -x "$(BIN_DIR)/mise" ] || { echo "mise is missing: run make -s xcodegen-install to install it from its official, checksum-verified release" >&2; exit 1; }
 	$(XCODEGEN) --version
 
 xcodegen-install:
-	mise install xcodegen@$(XCODEGEN_VERSION)
+	@if ! command -v mise >/dev/null 2>&1 && [ ! -x "$(BIN_DIR)/mise" ]; then \
+		tools/install-mise.sh "$(MISE_VERSION)" "$(BIN_DIR)/mise"; \
+	fi
+	"$(MISE)" install xcodegen@$(XCODEGEN_VERSION)
 
 project:
 	$(XCODEGEN) generate
@@ -52,6 +58,7 @@ build: project
 		-derivedDataPath $(DERIVED) -allowProvisioningUpdates build
 
 test: project
+	tools/xcodegen-need-test.sh
 	tools/console-locked-test.sh
 	xcodebuild -project $(PROJECT) -scheme $(APP) -derivedDataPath $(DERIVED) test
 

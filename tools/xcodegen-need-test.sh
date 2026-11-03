@@ -70,4 +70,12 @@ make -s xcodegen-check >"$tmp/check.out" 2>"$tmp/check.err" \
 [ -f "$home/fake-xcodegen-installed" ] || fail "install did not install the pinned XcodeGen"
 grep -qF "2.46.0" "$tmp/check.out" || fail "check did not run the pinned XcodeGen"
 
+rm "$home/.local/bin/mise" "$home/fake-xcodegen-installed"
+printf 'tampered\n' >>"$release/$asset"
+! make -s xcodegen-install >"$tmp/tampered.out" 2>"$tmp/tampered.err" \
+	|| fail "install accepted an archive whose checksum did not match"
+grep -qF "failed SHA-256 verification" "$tmp/tampered.err" \
+	|| fail "checksum failure was not named: $(cat "$tmp/tampered.err")"
+[ ! -e "$home/.local/bin/mise" ] || fail "a failed checksum still installed mise"
+
 echo "xcodegen-need-test: ok"

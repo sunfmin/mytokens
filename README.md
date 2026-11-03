@@ -256,6 +256,10 @@ Helper. That means:
 - ❌ They do **not** appear in the **Passwords app** — that only lists website logins, not
   third-party API tokens. This is expected, not a bug.
 - ❌ `/usr/bin/security` and unsigned scripts can't read them — only the signed Helper can.
+- ✅ They are readable while the **screen is locked** (from SSH, the fleet, background jobs),
+  once the Mac has been unlocked since it booted (ADR-0011). Right after a reboot, log in
+  once before jobs can read them. Secrets stored by an older version move over on their own
+  the next time mytokens runs while the Mac is unlocked.
 
 ---
 
@@ -373,7 +377,8 @@ Runtime** (required for notarization). `scripts/install.sh` downloads `MyTokens.
 - Domain glossary: [`CONTEXT.md`](./CONTEXT.md)
 - Decisions: [`docs/adr/`](./docs/adr/) — iCloud Keychain via a signed helper (0001), `get`
   returns the raw value (0002), a `.app` bundle (0003), minting (0004), multi-field
-  Secrets (0005), per-Secret description (0006)
+  Secrets (0005), per-Secret description (0006),
+  readable after first unlock (0011)
 - Skill behavior for Claude: [`skills/mytokens/SKILL.md`](./skills/mytokens/SKILL.md)
 
 ## License

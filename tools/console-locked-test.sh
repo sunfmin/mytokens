@@ -9,13 +9,14 @@ trap 'rm -rf "$tmp"' EXIT
 uid=$(id -u)
 fail() { echo "console-locked-test: $*" >&2; exit 1; }
 
-# One IOConsoleUsers entry per argument "uid:locked", locked since 07:52:47Z.
+# One IOConsoleUsers entry per argument "uid:locked", locked since 07:52:47Z
+# (LOCKED_TIME overrides that epoch second).
 users() {
 	{
 		echo '<?xml version="1.0" encoding="UTF-8"?><plist version="1.0"><dict><key>IOConsoleUsers</key><array>'
 		for u in "$@"; do
 			echo "<dict><key>kCGSSessionUserIDKey</key><integer>${u%%:*}</integer>"
-			[ "${u#*:}" = locked ] && echo '<key>CGSSessionScreenIsLocked</key><true/><key>CGSSessionScreenLockedTime</key><integer>1793692367</integer>'
+			[ "${u#*:}" = locked ] && echo '<key>CGSSessionScreenIsLocked</key><true/><key>CGSSessionScreenLockedTime</key><integer>'"${LOCKED_TIME:-1793692367}"'</integer>'
 			echo '</dict>'
 		done
 		echo '</array></dict></plist>'
@@ -32,6 +33,9 @@ grep -qF "Screen Sharing" "$tmp/err" || fail "locked message lacks the fix: $(ca
 users 9999:locked "$uid:unlocked"
 ! tools/console-locked.sh 2>"$tmp/err" || fail "another user's locked session reads as this user's"
 [ ! -s "$tmp/err" ] || fail "an unlocked session printed: $(cat "$tmp/err")"
+(LOCKED_TIME=3941187854; users "$uid:locked")
+tools/console-locked.sh 2>"$tmp/err" || fail "a locked session with a future lock time reads as unlocked"
+grep -qF "locked (since an unknown time)" "$tmp/err" || fail "a future lock time is reported as a time: $(cat "$tmp/err")"
 
 # release-check-signing: the cause comes before Xcode's lines, and the PLA
 # advice only while unlocked. A fake `make signed` fails as a locked host does.

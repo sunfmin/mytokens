@@ -21,8 +21,9 @@ struct Dependencies {
     var role: HostRoleSetting
     var store: (HostRole) -> SecretStore
     var input: (HostRole) -> SecretInput
-    var remote: Remote             // how `push` reaches a Server
+    var remote: Remote             // how `sync` reaches a Server
     var stdin: () -> Data          // what `put --stdin` reads
+    var now: () -> Date = Date.init   // the date an adopted Secret's Description records
     static var live: Dependencies {
         .init(role: FileHostRoleSetting(),
               store: { KeychainSecretStore.opened($0.keychain) },
@@ -116,7 +117,10 @@ func runCommand(_ argv: [String], _ deps: Dependencies) -> CommandResult {
     guard let cmd = argv.first else { return usage() }
     let rest = Array(argv.dropFirst())
     if cmd == "host" { return runHost(rest, deps.role) }
-    guard ["put", "get", "env", "list", "rm", "push", "selftest"].contains(cmd) else { return usage() }
+    if cmd == "push" {
+        return fail("push is now `mytokens sync <host>`: it also adopts the secrets entered on the server\n", 64)
+    }
+    guard ["put", "get", "env", "list", "rm", "sync", "selftest"].contains(cmd) else { return usage() }
 
     // Every Secret command acts on the store the Mac's role picks (ADR-0010).
     let role: HostRole
@@ -125,7 +129,8 @@ func runCommand(_ argv: [String], _ deps: Dependencies) -> CommandResult {
     switch cmd {
     case "put" where rest.contains("--stdin"): return runPutStdin(rest, store, deps.stdin, role)
     case "put": return runPut(rest, store, deps.input(role), role)
-    case "push": return runPush(rest, store, deps.remote, role)
+    case "sync": return runSync(rest, store, deps.remote, role, deps.now())
+    case "get" where rest.contains("--unpushed"): return runGetUnpushed(rest, store, role)
     case "get": return runGet(rest, store)
     case "env": return runEnv(rest, store)
     case "list": return runList(rest, store)
@@ -162,11 +167,15 @@ private func usage() -> CommandResult {
       mytokens env <service> [--account <label>]
       mytokens list
       mytokens rm  <service> [--account <label>]
-      mytokens push <host>
-          makes the server <host> hold exactly this Mac's server-level secrets,
-          over ssh; removes ones it pushed there earlier that no longer are
+      mytokens sync <host>
+          brings the server <host> and this Mac into agreement, over ssh: adopts
+          each secret entered on the server as a server-level secret here (a
+          same-name secret here is a conflict: neither side changes), then makes
+          the server hold exactly this Mac's server-level secrets
+      mytokens get --unpushed
+          (on a server, run by sync) writes the secrets entered on it to stdout
       mytokens put --stdin
-          (on a server, run by push) stores the pushed secrets read from stdin
+          (on a server, run by sync) stores the synced secrets read from stdin
       mytokens host [personal|server]
           prints this Mac's role, or sets it; a server keeps its secrets in the
           login keychain and every secret stored there is server-level
@@ -348,25 +357,38 @@ private func runPut(_ argv: [String], _ store: SecretStore, _ input: SecretInput
     }
 }
 
-// `push <host>` sends this personal Mac's server-level Secrets to a Server (ADR-0010).
-private func runPush(_ argv: [String], _ store: SecretStore, _ remote: Remote, _ role: HostRole) -> CommandResult {
+// `sync <host>` brings a Server and this personal Mac into agreement (ADR-0012).
+private func runSync(_ argv: [String], _ store: SecretStore, _ remote: Remote, _ role: HostRole, _ now: Date) -> CommandResult {
     let args = parseArgs(argv)
     guard args.positionals.count == 1, args.flags.isEmpty, args.sets.isEmpty, let host = args.service else { return usage() }
     guard role == .personal else {
-        return fail("this Mac is a server: push from a personal Mac, which holds the server-level secrets\n", 64)
+        return fail("this Mac is a server: sync from a personal Mac, the home of every secret\n", 64)
     }
-    return push(to: host, from: store, via: remote)
+    return sync(with: host, store: store, via: remote, now: now)
 }
 
-// `put --stdin` is the Server's end of `push`: it takes nothing else, and is refused on a
-// personal Mac, whose Secrets come from the user, not from a pipe (ADR-0010).
-private func runPutStdin(_ argv: [String], _ store: SecretStore, _ stdin: () -> Data, _ role: HostRole) -> CommandResult {
+// `get --unpushed` is the Server's end of `sync`'s adoption: it takes nothing else, and is
+// refused on a personal Mac, which never hands its whole store to a pipe (ADR-0012).
+private func runGetUnpushed(_ argv: [String], _ store: SecretStore, _ role: HostRole) -> CommandResult {
     let args = parseArgs(argv)
-    guard args.positionals.isEmpty, args.flags.keys.sorted() == ["stdin"], args.sets.isEmpty else {
-        return fail("put --stdin takes no other arguments: it reads the secrets `push` sends\n", 64)
+    guard args.positionals.isEmpty, args.flags == ["unpushed": ""], args.sets.isEmpty else {
+        return fail("get --unpushed takes no other arguments: it writes the secrets `sync` adopts\n", 64)
     }
     guard role == .server else {
-        return fail("put --stdin is refused on a personal Mac: it is how `push` writes to a server\n", 64)
+        return fail("get --unpushed is refused on a personal Mac: it is how `sync` reads a server\n", 64)
+    }
+    return exportUnpushed(from: store)
+}
+
+// `put --stdin` is the Server's end of `sync`'s push: it takes nothing else, and is refused
+// on a personal Mac, whose Secrets come from the user, not from a pipe (ADR-0010).
+private func runPutStdin(_ argv: [String], _ store: SecretStore, _ stdin: () -> Data, _ role: HostRole) -> CommandResult {
+    let args = parseArgs(argv)
+    guard args.positionals.isEmpty, args.flags == ["stdin": ""], args.sets.isEmpty else {
+        return fail("put --stdin takes no other arguments: it reads the secrets `sync` sends\n", 64)
+    }
+    guard role == .server else {
+        return fail("put --stdin is refused on a personal Mac: it is how `sync` writes to a server\n", 64)
     }
     return receivePush(stdin(), into: store)
 }

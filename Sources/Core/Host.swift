@@ -12,6 +12,10 @@ enum HostRole: String, CaseIterable {
     /// The allowed values as the CLI spells them, for error messages.
     static var allowed: String { allCases.map { "'\($0.rawValue)'" }.joined(separator: " or ") }
 
+    /// Whether someone sits at this Mac. A Server runs unattended (ADR-0010), so `put`
+    /// never shows its popup there — it would wait on a screen nobody watches.
+    var isAttended: Bool { self == .personal }
+
     /// Where this role's Secrets live — the one place the role picks a store.
     var keychain: KeychainLocation {
         switch self {

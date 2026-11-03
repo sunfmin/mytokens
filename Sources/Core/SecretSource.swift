@@ -36,9 +36,11 @@ struct InputSession: Equatable {
 /// The live `SecretInput`: picks how to reach the human for this run. The terminal
 /// wins when there is one (works over SSH), else the desktop popup, else the one-time
 /// tailnet link — which answers `.unavailable` where there is no tailnet, so `put` can
-/// say what to run instead.
+/// say what to run instead. A Server runs unattended, so its desktop — even a
+/// logged-in one — is never where the human is: there it is terminal, then link.
 struct SelectingSecretInput: SecretInput {
     var session: InputSession
+    var role: HostRole
     var terminal: SecretInput
     var popup: SecretInput
     var link: SecretInput
@@ -47,7 +49,7 @@ struct SelectingSecretInput: SecretInput {
         if session.hasTerminal {
             return terminal.promptForSecret(service: service, account: account, description: description, fields: fields)
         }
-        if session.hasDesktop {
+        if session.hasDesktop && role.isAttended {
             return popup.promptForSecret(service: service, account: account, description: description, fields: fields)
         }
         return link.promptForSecret(service: service, account: account, description: description, fields: fields)

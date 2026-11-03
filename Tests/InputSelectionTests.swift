@@ -8,8 +8,9 @@ final class InputSelectionTests: XCTestCase {
 
     private func run(_ argv: [String], _ store: InMemorySecretStore, session: InputSession,
                      terminal: RecordingSecretInput, popup: RecordingSecretInput,
-                     link: RecordingSecretInput = RecordingSecretInput(.unavailable)) -> CommandResult {
-        let input = SelectingSecretInput(session: session, terminal: terminal, popup: popup, link: link)
+                     link: RecordingSecretInput = RecordingSecretInput(.unavailable),
+                     role: HostRole = .personal) -> CommandResult {
+        let input = SelectingSecretInput(session: session, role: role, terminal: terminal, popup: popup, link: link)
         return runCommand(argv, Dependencies(store: store, input: input))
     }
 
@@ -76,6 +77,29 @@ final class InputSelectionTests: XCTestCase {
         XCTAssertEqual(link.prompts.first?.description, "CI deploy")
         XCTAssertEqual(link.prompts.first?.fields.map(\.label), ["Token"])
         XCTAssertEqual(try store.get(service: "svc", account: "default")?.value(forField: "Token"), "link-tok")
+    }
+
+    func testOnAServerALoggedInDesktopIsSkippedForTheLink() {
+        // A Server runs unattended: a popup there would wait on a screen nobody watches.
+        let popup = RecordingSecretInput(.entered(["": "popup-tok"]))
+        let link = RecordingSecretInput(.entered(["": "link-tok"]))
+        let store = InMemorySecretStore()
+        let put = run(["put", "svc"], store, session: InputSession(hasTerminal: false, hasDesktop: true),
+                      terminal: RecordingSecretInput(.cancelled), popup: popup, link: link, role: .server)
+        XCTAssertEqual(put.exitCode, 0, put.stderr)
+        XCTAssertEqual(popup.prompts.count, 0)
+        XCTAssertEqual(link.prompts.count, 1)
+        XCTAssertEqual(try store.get(service: "svc", account: "default")?.loneValue, "link-tok")
+    }
+
+    func testOnAServerTheTerminalStillWins() {
+        let terminal = RecordingSecretInput(.entered(["": "tty-tok"]))
+        let link = RecordingSecretInput(.entered(["": "link-tok"]))
+        let put = run(["put", "svc"], InMemorySecretStore(), session: InputSession(hasTerminal: true, hasDesktop: true),
+                      terminal: terminal, popup: RecordingSecretInput(.cancelled), link: link, role: .server)
+        XCTAssertEqual(put.exitCode, 0, put.stderr)
+        XCTAssertEqual(terminal.prompts.count, 1)
+        XCTAssertEqual(link.prompts.count, 0)
     }
 
     func testAnExpiredLinkStoresNothingAndFails() {

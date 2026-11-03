@@ -15,16 +15,17 @@ private func ok(_ s: String) -> CommandResult { CommandResult(stdout: s, stderr:
 private func fail(_ s: String, _ code: Int32) -> CommandResult { CommandResult(stdout: "", stderr: s, exitCode: code) }
 
 /// The one injected seam. `.live` wires the real keychains, role setting and inputs;
-/// tests pass fakes. The store is chosen per command from the Mac's role (ADR-0010).
+/// tests pass fakes. The store and the input are chosen per command from the Mac's
+/// role (ADR-0010): a Server keeps its own store, and nobody watches its desktop.
 struct Dependencies {
     var role: HostRoleSetting
     var store: (HostRole) -> SecretStore
-    var input: SecretInput
+    var input: (HostRole) -> SecretInput
     static var live: Dependencies {
         .init(role: FileHostRoleSetting(),
               store: { KeychainSecretStore(location: $0.keychain) },
-              input: SelectingSecretInput(session: .current, terminal: TerminalSecretInput(), popup: PopupSecretInput(),
-                                          link: LinkSecretInput.live))
+              input: { SelectingSecretInput(session: .current, role: $0, terminal: TerminalSecretInput(),
+                                            popup: PopupSecretInput(), link: LinkSecretInput.live) })
     }
 }
 
@@ -118,7 +119,7 @@ func runCommand(_ argv: [String], _ deps: Dependencies) -> CommandResult {
     do { role = try deps.role.read() } catch { return fail("\(error)\n", 1) }
     let store = deps.store(role)
     switch cmd {
-    case "put": return runPut(rest, store, deps.input, role)
+    case "put": return runPut(rest, store, deps.input(role), role)
     case "get": return runGet(rest, store)
     case "env": return runEnv(rest, store)
     case "list": return runList(rest, store)

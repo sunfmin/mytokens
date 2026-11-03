@@ -414,4 +414,101 @@ final class CommandsTests: XCTestCase {
         XCTAssertNotEqual(bad.exitCode, 0)
         XCTAssertTrue(bad.stderr.contains("rm it first to change kind"))
     }
+
+    // MARK: - Level (ADR-0010)
+
+    private func level(_ store: InMemorySecretStore, _ service: String, _ account: String = "default") -> Level? {
+        try? store.list().first { $0.service == service && $0.account == account }?.level
+    }
+
+    func testPutLevelSetsServer() {
+        let store = InMemorySecretStore()
+        XCTAssertEqual(runCommand(["put", "gh", "--level", "server"], deps(store, input: "tok")).exitCode, 0)
+        XCTAssertEqual(level(store, "gh"), .server)
+    }
+
+    func testNewSecretWithoutLevelIsPersonal() {
+        let store = InMemorySecretStore()
+        XCTAssertEqual(runCommand(["put", "gh"], deps(store, input: "tok")).exitCode, 0)
+        XCTAssertEqual(level(store, "gh"), .personal)
+    }
+
+    func testPutWithoutLevelKeepsStoredLevel() {
+        let store = InMemorySecretStore()
+        _ = runCommand(["put", "glm", "--kind", "profile", "--level", "server", "--set", "MODEL=a"],
+                       mdeps(store, values: nil))
+        _ = runCommand(["put", "glm", "--set", "MODEL=b"], mdeps(store, values: nil))   // no --level
+        XCTAssertEqual(level(store, "glm"), .server)
+        _ = runCommand(["put", "gh", "--level", "server"], deps(store, input: "old"))
+        _ = runCommand(["put", "gh"], deps(store, input: "new"))                        // rotate, no --level
+        XCTAssertEqual(level(store, "gh"), .server)
+    }
+
+    func testPutLevelAloneOnExistingSecretChangesOnlyLevelWithoutPopup() {
+        let store = InMemorySecretStore()
+        _ = runCommand(["put", "aws", "--fields", "Access Key ID,Secret Access Key"], mdeps(store, values: awsValues))
+        _ = runCommand(["put", "gh", "--description", "CI"], deps(store, input: "tok"))
+        // A nil popup answer is a cancel: if either put popped, it would fail.
+        XCTAssertEqual(runCommand(["put", "aws", "--level", "server"], mdeps(store, values: nil)).exitCode, 0)
+        XCTAssertEqual(runCommand(["put", "gh", "--level", "server"], deps(store, input: nil)).exitCode, 0)
+        XCTAssertEqual(level(store, "aws"), .server)
+        XCTAssertEqual(level(store, "gh"), .server)
+        XCTAssertEqual(runCommand(["get", "aws", "--field", "Secret Access Key"], deps(store, input: nil)).stdout, "sshhh")
+        XCTAssertEqual(runCommand(["get", "gh"], deps(store, input: nil)).stdout, "tok")
+        XCTAssertEqual(try store.list().first { $0.service == "gh" }?.description, "CI")
+        // Back down again.
+        XCTAssertEqual(runCommand(["put", "gh", "--level", "personal"], deps(store, input: nil)).exitCode, 0)
+        XCTAssertEqual(level(store, "gh"), .personal)
+    }
+
+    func testUnknownLevelRefusedWithAllowedValuesBeforePrompting() {
+        let store = InMemorySecretStore()
+        let r = runCommand(["put", "gh", "--level", "public"], deps(store, input: "tok"))
+        XCTAssertEqual(r.exitCode, 64)
+        XCTAssertTrue(r.stderr.contains("'personal'") && r.stderr.contains("'server'"), r.stderr)
+        XCTAssertTrue(store.items.isEmpty)
+    }
+
+    func testListShowsLevel() {
+        let store = InMemorySecretStore()
+        _ = runCommand(["put", "gh", "--level", "server"], deps(store, input: "tok"))
+        _ = runCommand(["put", "openai"], deps(store, input: "tok"))
+        let lines = runCommand(["list"], deps(store, input: nil)).stdout.split(separator: "\n")
+        XCTAssertEqual(lines, ["gh/default\tstatic\tserver", "openai/default\tstatic\tpersonal"])
+    }
+
+    func testGetJSONIncludesLevel() {
+        let store = InMemorySecretStore()
+        _ = runCommand(["put", "aws", "--level", "server", "--fields", "Access Key ID,Secret Access Key"],
+                       mdeps(store, values: awsValues))
+        _ = runCommand(["put", "gh"], deps(store, input: "tok"))
+        XCTAssertEqual(runCommand(["get", "aws", "--json"], deps(store, input: nil)).stdout,
+                       #"{"fields":{"Access Key ID":"AKIA123","Secret Access Key":"sshhh"},"level":"server"}"#)
+        XCTAssertEqual(runCommand(["get", "gh", "--json"], deps(store, input: nil)).stdout,
+                       #"{"level":"personal","value":"tok"}"#)
+        // A field named "level" stays among the fields, apart from the Secret's level.
+        _ = runCommand(["put", "odd", "--set", "level=9"], deps(store, input: nil))
+        XCTAssertEqual(runCommand(["get", "odd", "--json"], deps(store, input: nil)).stdout,
+                       #"{"fields":{"level":"9"},"level":"personal"}"#)
+    }
+
+    func testOldSecretWithoutLevelReadsAsPersonal() {
+        let store = InMemorySecretStore()
+        store.putLegacy(service: "old", account: "default", secret: SecretValue(single: "v"))
+        XCTAssertEqual(level(store, "old"), .personal)
+        XCTAssertTrue(runCommand(["list"], deps(store, input: nil)).stdout.contains("old/default\tstatic\tpersonal"))
+        XCTAssertEqual(runCommand(["get", "old", "--json"], deps(store, input: nil)).stdout, #"{"level":"personal","value":"v"}"#)
+        // A later put without --level keeps it personal; with --level it moves.
+        _ = runCommand(["put", "old"], deps(store, input: "w"))
+        XCTAssertEqual(level(store, "old"), .personal)
+        _ = runCommand(["put", "old", "--level", "server"], deps(store, input: nil))
+        XCTAssertEqual(level(store, "old"), .server)
+    }
+
+    func testCommentCodecRoundTripsLevelAndDefaultsOld() throws {
+        let c = try CommentCodec.encode(kind: "static", meta: nil, fields: nil, description: nil, level: .server)
+        XCTAssertEqual(CommentCodec.decode(c).level, .server)
+        XCTAssertEqual(CommentCodec.decode(#"{"kind":"parent","meta":null}"#).level, .personal)
+        XCTAssertEqual(CommentCodec.decode(nil).level, .personal)
+    }
 }

@@ -108,11 +108,12 @@ private func usage() -> CommandResult {
     fail("""
     usage:
       mytokens put <service> [--account <label>] [--kind static|parent|profile] [--meta <json>]
-                             [--description "<text>"]
+                             [--description "<text>"] [--level personal|server]
                              [--set "<NAME>=<value>" …]                  non-secret fields, from the CLI
                              [--fields "<Label>","<Label>" [--show "<Label>",…]]   secret fields, via popup
           upserts the named fields into the secret, keeping the rest; with no
-          --set/--fields it stores one bare value. Whole-replace: rm then put.
+          --set/--fields it stores one bare value — or, on an existing secret given
+          --level, changes only its metadata. Whole-replace: rm then put.
       mytokens get <service> [--account <label>] [--field "<Label>" | --json]
       mytokens env <service> [--account <label>]
       mytokens list
@@ -126,7 +127,8 @@ private func usage() -> CommandResult {
 // values via the masked popup (`--fields`). It reads what's there, merges, and
 // writes the whole item back through the store seam — so there is no "whole
 // replace" (that's `rm` then `put`), and it behaves the same for every kind.
-// With neither --set nor --fields it stores one bare value (ADR-0002).
+// With neither --set nor --fields it stores one bare value (ADR-0002) — unless the
+// Secret exists and --level is given, which updates only its metadata (ADR-0010).
 private func runPut(_ argv: [String], _ deps: Dependencies) -> CommandResult {
     let args = parseArgs(argv)
     guard let service = args.service else { return usage() }
@@ -165,6 +167,13 @@ private func runPut(_ argv: [String], _ deps: Dependencies) -> CommandResult {
         return fail("--kind must be 'static', 'parent', or 'profile'\n", 64)
     }
 
+    // The level: an absent --level keeps the stored one, a new Secret defaults (ADR-0010).
+    var explicitLevel: Level?
+    if let raw = args.flags["level"] {
+        guard let parsed = Level(rawValue: raw) else { return fail("--level must be \(Level.allowed)\n", 64) }
+        explicitLevel = parsed
+    }
+
     // Validate --meta JSON before any prompt; an absent --meta preserves the
     // existing meta (resolved below).
     var explicitMeta: Any?
@@ -186,10 +195,14 @@ private func runPut(_ argv: [String], _ deps: Dependencies) -> CommandResult {
         }
         let kind = explicitKind ?? record?.kind ?? "static"
 
+        // On an existing Secret, --level with no field to write changes only the
+        // metadata: the values are kept and no popup appears (ADR-0010).
+        let isMetadataOnly = existing != nil && !isLabelledWrite && explicitLevel != nil
+
         // A Secret is either a lone bare value or a set of labelled fields; put can't
         // switch a secret between those shapes (rm first).
         if let existing {
-            if existing.isLabelled && !isLabelledWrite {
+            if existing.isLabelled && !isLabelledWrite && !isMetadataOnly {
                 return fail("\(service)/\(account) has named fields; name them with --set/--fields (or rm it first)\n", 64)
             }
             if !existing.isLabelled && isLabelledWrite {
@@ -214,9 +227,12 @@ private func runPut(_ argv: [String], _ deps: Dependencies) -> CommandResult {
         // Preserve an existing meta/description when this put doesn't provide one.
         let meta: Any? = haveExplicitMeta ? explicitMeta : record?.meta.flatMap(JSONUtil.parse)
         let description = args.flag("description") ?? record?.description
+        let level = explicitLevel ?? record?.level ?? .default
 
         let secret: SecretValue
-        if isLabelledWrite {
+        if isMetadataOnly, let existing {
+            secret = existing
+        } else if isLabelledWrite {
             // Only secret (--fields) values touch the popup; --set values came from the CLI.
             var popupValues: [String: String] = [:]
             if !fieldLabels.isEmpty {
@@ -255,7 +271,7 @@ private func runPut(_ argv: [String], _ deps: Dependencies) -> CommandResult {
         }
 
         try deps.store.upsert(service: service, account: account, secret: secret,
-                              kind: kind, meta: meta, description: description)
+                              kind: kind, meta: meta, description: description, level: level)
         return ok("stored \(service)/\(account)\n")
     } catch {
         return fail("\(error)\n", 1)
@@ -273,7 +289,22 @@ private func runGet(_ argv: [String], _ deps: Dependencies) -> CommandResult {
             return fail("no secret for \(service)/\(account)\n", 1)
         }
 
-        // Lone unlabelled value: --field is meaningless, --json is ignored (ADR-0002).
+        // --json is the whole Secret with its level (ADR-0010): `{"fields": {label: value},
+        // "level"}` for labelled Fields, `{"level", "value"}` for the lone unlabelled value.
+        // The level sits beside the values, never among them, so no Field label can collide.
+        if wantJSON && field == nil {
+            let level = try deps.store.list().first { $0.service == service && $0.account == account }?.level ?? .default
+            var obj: [String: Any] = ["level": level.rawValue]
+            if secret.isLabelled {
+                obj["fields"] = Dictionary(secret.fields.map { ($0.label, $0.value) }, uniquingKeysWith: { _, last in last })
+            } else {
+                obj["value"] = secret.fields[0].value
+            }
+            guard let json = JSONUtil.compact(obj) else { return fail("failed to encode fields\n", 1) }
+            return CommandResult(stdout: json, stderr: "", exitCode: 0)  // compact, key-sorted
+        }
+
+        // Lone unlabelled value: --field is meaningless (ADR-0002).
         guard secret.isLabelled else {
             if field != nil { return fail("\(service)/\(account) has no fields\n", 1) }
             return CommandResult(stdout: secret.fields[0].value, stderr: "", exitCode: 0)  // exact value, no newline
@@ -284,10 +315,6 @@ private func runGet(_ argv: [String], _ deps: Dependencies) -> CommandResult {
                 return fail("\(service)/\(account) has no field '\(field)'; fields: \(secret.labels.joined(separator: ", "))\n", 1)
             }
             return CommandResult(stdout: v, stderr: "", exitCode: 0)  // one field's raw value
-        }
-        if wantJSON {
-            guard let json = secret.compactJSON() else { return fail("failed to encode fields\n", 1) }
-            return CommandResult(stdout: json, stderr: "", exitCode: 0)  // whole object, compact
         }
         if let only = secret.loneValue {
             return CommandResult(stdout: only, stderr: "", exitCode: 0)  // degenerate 1-field ⇒ bare value
@@ -337,7 +364,7 @@ private func runList(_ argv: [String], _ deps: Dependencies) -> CommandResult {
         let records = try deps.store.list().sorted { ($0.service, $0.account) < ($1.service, $1.account) }
         if records.isEmpty { return CommandResult(stdout: "", stderr: "no secrets stored\n", exitCode: 0) }
         let rows = records.map { r -> String in
-            var line = "\(r.service)/\(r.account)\t\(r.kind)"
+            var line = "\(r.service)/\(r.account)\t\(r.kind)\t\(r.level.rawValue)"
             if let description = r.description { line += "  — " + description }
             if let fields = r.fields, !fields.isEmpty { line += "  fields: " + fields.joined(separator: ", ") }
             if let meta = r.meta { line += "  " + meta }
@@ -377,23 +404,25 @@ private func runSelftest() -> CommandResult {
     do {
         // Single-value leg: raw value in, raw value out.
         try store.upsert(service: service, account: "single", secret: SecretValue(single: "SELFTEST-OK"),
-                         kind: "static", meta: ["probe": true], description: nil)
+                         kind: "static", meta: ["probe": true], description: nil, level: .personal)
         let single = try store.get(service: service, account: "single")?.loneValue == "SELFTEST-OK"
 
         // Multi-field leg: Fields in, Fields back, ordered schema preserved.
         try store.upsert(service: service, account: "multi",
                          secret: SecretValue(fields: [(label: "A", value: "a"), (label: "B", value: "b")]),
-                         kind: "static", meta: nil, description: nil)
+                         kind: "static", meta: nil, description: nil, level: .server)
         let got = try store.get(service: service, account: "multi")
         let fieldsBack = got?.value(forField: "A") == "a" && got?.value(forField: "B") == "b"
-        let schemaBack = try store.list().first { $0.service == service && $0.account == "multi" }?.fields == ["A", "B"]
+        let multiRecord = try store.list().first { $0.service == service && $0.account == "multi" }
+        let schemaBack = multiRecord?.fields == ["A", "B"]
+        let levelBack = multiRecord?.level == .server
 
         let listed = try store.list().contains { $0.service == service && $0.account == "single" }
         let deleted = try store.delete(service: service, account: "single") && (try store.delete(service: service, account: "multi"))
         let gone = try store.get(service: service, account: "single") == nil && (try store.get(service: service, account: "multi")) == nil
 
-        let pass = single && fieldsBack && schemaBack && listed && deleted && gone
-        let report = "single=\(single) · fields=\(fieldsBack) · schema=\(schemaBack) · list=\(listed) · delete=\(deleted) · gone=\(gone)\n"
+        let pass = single && fieldsBack && schemaBack && levelBack && listed && deleted && gone
+        let report = "single=\(single) · fields=\(fieldsBack) · schema=\(schemaBack) · level=\(levelBack) · list=\(listed) · delete=\(deleted) · gone=\(gone)\n"
         return pass ? ok(report + "SELFTEST PASS\n") : fail(report + "SELFTEST FAIL\n", 1)
     } catch {
         return fail("SELFTEST FAIL: \(error)\n", 1)

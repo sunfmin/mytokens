@@ -60,11 +60,16 @@ that requirement.
 
 ## Verified
 
-On macs-Mac-Mini, 2026-11-03 19:42 JST, with v0.1.6 (the first release with this decision)
-installed and the console screen locked (`pmset displaysleepnow`, then
-`CGSSessionScreenIsLocked=Yes` in `ioreg -n Root -d1`), a background session with no
-console read and wrote Secrets: `mytokens list` exit 0, `mytokens get <service>` exit 0, and
-`mytokens selftest` → `SELFTEST PASS`. With 0.1.5 the same reads had failed with
-`keychain is locked (interaction not allowed)`, before anyone had logged in since boot
-(sunfmin/control#551). After a login, 0.1.5 also read while the screen was locked, so this
-check shows that nothing regressed. It does not show a before/after difference on this Mac.
+On macs-Mac-Mini, 2026-11-03, with felix's own console session locked after a login:
+
+- **0.1.5**, 18:53 JST: `mytokens get asc-api-key` → `keychain is locked (interaction not
+  allowed)`.
+- **0.1.6** (the first release with this decision), 20:25 JST, `felix onConsole=True
+  locked=True`: `mytokens list` and `mytokens get bark` exit 0. Again at 20:26 JST from a
+  background session with no console: both exit 0.
+
+The lock state is read from the operator's own entry in `IOConsoleUsers` (`ioreg -n Root -d1
+-a`): the entry whose `kCGSSessionUserNameKey` is the user, and its
+`CGSSessionScreenIsLocked`. A match anywhere in the tree is no reading: on this Mac, user
+`mark`'s session is always locked, and its entry comes first. `tools/console-locked.sh` reads
+the lock state this way, by the user's ID (sunfmin/control#551, #573).

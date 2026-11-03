@@ -11,7 +11,7 @@ gate_seconds: 1200                # the gate limit, starting after its turn is g
 
 The rest default (`ready_label: ready-for-agent`, `escalate_label:
 ready-for-human`, `lock_label: fleet-lock`). The gate (`gate.sh`) generates
-the Xcode project with the pinned XcodeGen and runs `make test`: 98 tests,
+the Xcode project with the pinned XcodeGen and runs `make test`: the release-need script check and 98 tests,
 10 s on macs-Mac-Mini (12 cores) on 2026-11-03.
 
 ## What the gate needs on a host
@@ -65,6 +65,13 @@ signing check runs the real archive and Developer ID export (`make signed`,
 is Xcode's cloud-managed Developer ID, with no certificate in the keychain. It
 names an unaccepted Program License Agreement or a missing profile or identity,
 all of which need an account holder's hands.
+
+While this user's console session is locked, Xcode's Apple account is out of
+reach (`exportArchive` reports `No Accounts`) and keychain reads can fail. A
+need that fails then says so first, with when the lock began
+(`tools/console-locked.sh`), and gives no other advice: only someone logging in,
+at the Mac or over Screen Sharing, fixes it. `make test` checks this with the
+lock reading faked (`tools/console-locked-test.sh`).
 
 ```yaml cut-needs
 checks:

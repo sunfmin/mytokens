@@ -52,6 +52,7 @@ build: project
 		-derivedDataPath $(DERIVED) -allowProvisioningUpdates build
 
 test: project
+	tools/console-locked-test.sh
 	xcodebuild -project $(PROJECT) -scheme $(APP) -derivedDataPath $(DERIVED) test
 
 install: build
@@ -124,25 +125,35 @@ installed-version-check:
 # The login keychain holds the signing keys. Locked, `security` fails at once
 # over SSH ("interaction not allowed") and waits for a password in a desktop
 # session, which the check's time limit ends.
+#
+# A need that fails while this user's console session is locked names that
+# first (tools/console-locked.sh): it explains every failure below, and only
+# logging in fixes it. Other advice is for a failure while unlocked.
+CONSOLE_LOCKED := $(CURDIR)/tools/console-locked.sh
+
 release-check-keychain:
 	@security show-keychain-info "$(HOME)/Library/Keychains/login.keychain-db" >/dev/null 2>&1 \
-		|| { echo "the login keychain is locked: unlock it (security unlock-keychain, a person's hands)" >&2; exit 1; }
+		|| { $(CONSOLE_LOCKED) || echo "the login keychain is locked: unlock it (security unlock-keychain, a person's hands)" >&2; exit 1; }
 
 # The signing path itself, into a throwaway derived-data dir: it fails on an
-# unaccepted Program License Agreement, a missing profile, or no Developer ID
-# identity (local or cloud-managed). xcodebuild prints its errors on stdout.
+# unaccepted Program License Agreement, a missing profile, no Developer ID
+# identity (local or cloud-managed), or — "No Accounts" — a locked console
+# session hiding Xcode's Apple account. xcodebuild prints its errors on stdout.
 release-check-signing:
 	@log=$$(mktemp); trap 'rm -f "$$log"' EXIT; \
 		$(MAKE) -s signed DERIVED=$(DERIVED)/release-check >"$$log" 2>&1 || { \
-			grep -E 'error|PLA|agree|No profiles|No signing' "$$log" | tail -15 >&2; \
-			echo "Developer ID signing fails on this host (see above): an account holder may have to accept the Program License Agreement at developer.apple.com, or install the Developer ID certificate" >&2; \
+			if $(CONSOLE_LOCKED); then locked=1; else locked=; fi; \
+			grep -E 'error|PLA|agree|No profiles|No signing|No Accounts' "$$log" | tail -15 >&2; \
+			test -n "$$locked" || echo "Developer ID signing fails on this host (see above): an account holder may have to accept the Program License Agreement at developer.apple.com, or install the Developer ID certificate" >&2; \
 			exit 1; }; \
 		rm -rf "$(DERIVED)/release-check"
 
 release-check-asc:
 	@for f in "Key ID" "Issuer ID" "Key (base64 .p8)"; do \
-		mytokens get $(ASC_SECRET) --field "$$f" >/dev/null \
-		|| { echo "mytokens has no '$$f' in $(ASC_SECRET) here (or its keychain is locked): store the App Store Connect key as the README says" >&2; exit 1; }; \
+		err=$$(mytokens get $(ASC_SECRET) --field "$$f" 2>&1 >/dev/null) \
+		|| { if $(CONSOLE_LOCKED); then locked=1; else locked=; fi; \
+			echo "$$err" >&2; \
+			test -n "$$locked" || echo "mytokens has no '$$f' in $(ASC_SECRET) here (or its keychain is locked): store the App Store Connect key as the README says" >&2; exit 1; }; \
 	done
 
 release-check-gh:

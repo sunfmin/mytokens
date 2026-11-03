@@ -202,3 +202,71 @@ final class LinkServerTests: XCTestCase {
                                              fields: [Field(label: "", masked: true)]), .unavailable)
     }
 }
+
+// HTTPS: a PEM certificate and key (as `tailscale cert` writes them) become an
+// in-memory identity, and the link is served over TLS with it.
+final class LinkTLSTests: XCTestCase {
+    private final class TrustAnything: NSObject, URLSessionDelegate {
+        func urlSession(_ session: URLSession, didReceive challenge: URLAuthenticationChallenge,
+                        completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void) {
+            guard let trust = challenge.protectionSpace.serverTrust else { return completionHandler(.performDefaultHandling, nil) }
+            completionHandler(.useCredential, URLCredential(trust: trust))
+        }
+    }
+
+    func testAPEMCertificateServesTheLinkOverHTTPS() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("mytokens-tls-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let cert = dir.appendingPathComponent("cert.pem").path, key = dir.appendingPathComponent("key.pem").path
+        let openssl = Process()
+        openssl.executableURL = URL(fileURLWithPath: "/usr/bin/openssl")
+        // A named curve, as a real (Let's Encrypt) certificate has: LibreSSL writes explicit
+        // parameters by default, which the Security framework cannot read.
+        openssl.arguments = ["req", "-x509", "-newkey", "ec", "-pkeyopt", "ec_paramgen_curve:prime256v1",
+                             "-pkeyopt", "ec_param_enc:named_curve", "-nodes",
+                             "-keyout", key, "-out", cert, "-days", "1", "-subj", "/CN=localhost"]
+        openssl.standardOutput = FileHandle.nullDevice
+        openssl.standardError = FileHandle.nullDevice
+        try openssl.run()
+        openssl.waitUntilExit()
+        XCTAssertEqual(openssl.terminationStatus, 0)
+
+        let identity: SecIdentity
+        switch TLSIdentity.load(certPEM: cert, keyPEM: key) {
+        case .success(let id): identity = id
+        case .failure(let refusal): return XCTFail(refusal.message)
+        }
+
+        var announced = ""
+        let ready = expectation(description: "announced")
+        let input = LinkSecretInput(
+            endpoint: { LinkEndpoint(bindAddress: "127.0.0.1", tls: (identity, "127.0.0.1"), plainHTTPReason: nil) },
+            announce: { announced = $0; ready.fulfill() }, lifetime: 30)
+        var result: PromptResult?
+        let finished = expectation(description: "returned")
+        DispatchQueue.global().async {
+            result = input.promptForSecret(service: "svc", account: "default", description: nil,
+                                           fields: [Field(label: "Token", masked: true)])
+            finished.fulfill()
+        }
+        wait(for: [ready], timeout: 10)
+        XCTAssertFalse(announced.contains("plain HTTP"), announced)
+        guard let url = announced.split(whereSeparator: \.isWhitespace).first(where: { $0.hasPrefix("https://") })
+            .flatMap({ URL(string: String($0)) }) else { return XCTFail("no https link in: \(announced)") }
+
+        var request = URLRequest(url: url, timeoutInterval: 5)
+        request.httpMethod = "POST"
+        request.httpBody = Data("f0=over-tls".utf8)
+        let posted = expectation(description: "posted")
+        var status: Int?
+        URLSession(configuration: .ephemeral, delegate: TrustAnything(), delegateQueue: nil)
+            .dataTask(with: request) { _, response, _ in
+                status = (response as? HTTPURLResponse)?.statusCode
+                posted.fulfill()
+            }.resume()
+        wait(for: [posted, finished], timeout: 10)
+        XCTAssertEqual(status, 200)
+        XCTAssertEqual(result, .entered(["Token": "over-tls"]))
+    }
+}

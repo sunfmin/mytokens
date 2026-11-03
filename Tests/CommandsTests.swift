@@ -506,8 +506,10 @@ final class CommandsTests: XCTestCase {
     }
 
     func testCommentCodecRoundTripsLevelAndDefaultsOld() throws {
-        let c = try CommentCodec.encode(kind: "static", meta: nil, fields: nil, description: nil, level: .server)
+        let c = try CommentCodec.encode(kind: "static", meta: nil, fields: nil, description: nil, level: .server, pushed: true)
         XCTAssertEqual(CommentCodec.decode(c).level, .server)
+        XCTAssertTrue(CommentCodec.decode(c).pushed)
+        XCTAssertFalse(CommentCodec.decode(#"{"kind":"parent","meta":null}"#).pushed)
         XCTAssertEqual(CommentCodec.decode(#"{"kind":"parent","meta":null}"#).level, .personal)
         XCTAssertEqual(CommentCodec.decode(nil).level, .personal)
     }

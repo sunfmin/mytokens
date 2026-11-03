@@ -82,6 +82,7 @@ The value is plaintext once `get` returns it (acceptable on this trusted machine
 | `mytokens list` | Stored services/accounts/kind/level/description/fields/meta; never values. |
 | `mytokens rm <service> [--account L]` | Delete the whole Secret. Whole-replace = `rm` then `put`. |
 | `mytokens selftest` | Real-keychain round-trip sanity check. |
+| `mytokens host [personal\|server]` | Print this Mac's role, or set it. On a `server` every command acts on the login keychain (readable while the screen is locked) and every Secret stored is `server`-level. |
 
 **`put` upserts** (ADR-0009): it updates/inserts the fields you name and **keeps the rest**, so `put svc --set MODEL=…` changes one field and `put svc --fields TOKEN` rotates one secret — the others are untouched. Works the same for a lone value, a composite credential, or a Profile. There is no whole-replace; to rebuild (or drop a stale field), `rm` then `put`.
 

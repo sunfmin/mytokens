@@ -73,3 +73,24 @@ final class RecordingSecretInput: SecretInput {
         return result
     }
 }
+
+/// In-memory role setting: a Mac whose role is `role` until `host` sets it.
+final class InMemoryHostRoleSetting: HostRoleSetting {
+    var role: HostRole?           // nil == never set
+    var unreadable = false        // simulate a setting the build can't read
+    init(_ role: HostRole? = nil) { self.role = role }
+
+    func read() throws -> HostRole {
+        if unreadable { throw HostRoleError.unknown("bogus", path: "<fake>") }
+        return role ?? .default
+    }
+    func write(_ role: HostRole) throws { self.role = role }
+}
+
+extension Dependencies {
+    /// A personal Mac (the default role) whose one store is `store` — for tests
+    /// that don't exercise the role.
+    init(store: SecretStore, input: SecretInput) {
+        self.init(role: InMemoryHostRoleSetting(), store: { _ in store }, input: input)
+    }
+}

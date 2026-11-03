@@ -22,7 +22,8 @@ ASC_SECRET ?= asc-api-key
 XCODEGEN_VERSION := 2.46.0
 XCODEGEN := mise exec xcodegen@$(XCODEGEN_VERSION) -- xcodegen
 
-.PHONY: project build test install selftest verify dist release icon screenshots clean xcodegen-check xcodegen-install
+.PHONY: project build test install selftest verify signed dist release icon screenshots clean xcodegen-check xcodegen-install \
+	set-version installed-version-check release-check-keychain release-check-signing release-check-asc release-check-gh
 
 xcodegen-check:
 	$(XCODEGEN) --version
@@ -63,17 +64,22 @@ install: build
 verify:
 	codesign -dv --entitlements - "$(INSTALL_DIR)/$(BUNDLE)" 2>&1 | rg 'Identifier|TeamIdentifier|keychain-access-groups' || true
 
-# Release build: Developer ID-signed, notarized, stapled .app zipped for GitHub
-# Releases. Single source of truth for the release artifact — CI just calls this.
-# The export re-signs with "Developer ID Application" and (via -allowProvisioningUpdates
-# + the API key) fetches a Developer ID profile carrying the Keychain Sharing capability.
-dist: project
+# The Developer ID-signed .app, not yet notarized: archive, then export it
+# re-signed with "Developer ID Application" (a local identity or Xcode's
+# cloud-managed one), with -allowProvisioningUpdates fetching a Developer ID
+# profile carrying the Keychain Sharing capability. `dist` builds on it, and the
+# cut's `release-check-signing` runs it to find signing broken before a cut.
+signed: project
 	xcodebuild -project $(PROJECT) -scheme $(APP) -configuration Release \
 		-derivedDataPath $(DERIVED) -archivePath $(ARCHIVE) \
 		-allowProvisioningUpdates archive
 	xcodebuild -exportArchive -archivePath $(ARCHIVE) \
 		-exportOptionsPlist ExportOptions.plist -exportPath $(EXPORT) \
 		-allowProvisioningUpdates
+
+# Release build: Developer ID-signed, notarized, stapled .app zipped for GitHub
+# Releases. Single source of truth for the release artifact — CI just calls this.
+dist: signed
 	ditto -c -k --keepParent "$(EXPORT)/$(BUNDLE)" "$(DIST_ZIP)"
 	@set -e; TMP=$$(mktemp -d); trap 'rm -rf "$$TMP"' EXIT; \
 		mytokens get $(ASC_SECRET) --field "Key (base64 .p8)" | base64 -d > "$$TMP/asc.p8"; \
@@ -96,6 +102,53 @@ release: dist
 
 selftest:
 	"$(BIN)" selftest
+
+# The app's version has one home: MARKETING_VERSION in project.yml, which becomes
+# CFBundleShortVersionString. A cut's `set` step runs this (docs/agents/afkconvoy.md).
+set-version:
+	@test -n "$(VERSION)" || { echo "usage: make set-version VERSION=0.1.5" >&2; exit 2; }
+	sed -i '' -E 's/^( *MARKETING_VERSION: )"[^"]*"/\1"$(VERSION)"/' project.yml
+	@grep -q '^ *MARKETING_VERSION: "$(VERSION)"$$' project.yml \
+		|| { echo "set-version: no MARKETING_VERSION line in project.yml took $(VERSION)" >&2; exit 1; }
+
+# The installed app reports VERSION: what a cut's `publish` ends with.
+installed-version-check:
+	@test -n "$(VERSION)" || { echo "usage: make installed-version-check VERSION=0.1.5" >&2; exit 2; }
+	@v=$$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' "$(INSTALL_DIR)/$(BUNDLE)/Contents/Info.plist"); \
+		test "$$v" = "$(VERSION)" \
+		|| { echo "installed $(INSTALL_DIR)/$(BUNDLE) reports $$v, not $(VERSION)" >&2; exit 1; }
+
+# What `make release` needs on a host, checked before a cut is claimed
+# (docs/agents/afkconvoy.md, the cut-needs block). Each says on stderr what is missing.
+#
+# The login keychain holds the signing keys. Locked, `security` fails at once
+# over SSH ("interaction not allowed") and waits for a password in a desktop
+# session, which the check's time limit ends.
+release-check-keychain:
+	@security show-keychain-info "$(HOME)/Library/Keychains/login.keychain-db" >/dev/null 2>&1 \
+		|| { echo "the login keychain is locked: unlock it (security unlock-keychain, a person's hands)" >&2; exit 1; }
+
+# The signing path itself, into a throwaway derived-data dir: it fails on an
+# unaccepted Program License Agreement, a missing profile, or no Developer ID
+# identity (local or cloud-managed). xcodebuild prints its errors on stdout.
+release-check-signing:
+	@log=$$(mktemp); trap 'rm -f "$$log"' EXIT; \
+		$(MAKE) -s signed DERIVED=$(DERIVED)/release-check >"$$log" 2>&1 || { \
+			grep -E 'error|PLA|agree|No profiles|No signing' "$$log" | tail -15 >&2; \
+			echo "Developer ID signing fails on this host (see above): an account holder may have to accept the Program License Agreement at developer.apple.com, or install the Developer ID certificate" >&2; \
+			exit 1; }; \
+		rm -rf "$(DERIVED)/release-check"
+
+release-check-asc:
+	@for f in "Key ID" "Issuer ID" "Key (base64 .p8)"; do \
+		mytokens get $(ASC_SECRET) --field "$$f" >/dev/null \
+		|| { echo "mytokens has no '$$f' in $(ASC_SECRET) here (or its keychain is locked): store the App Store Connect key as the README says" >&2; exit 1; }; \
+	done
+
+release-check-gh:
+	@gh auth status >/dev/null 2>&1 || { echo "gh is not logged in: gh auth login" >&2; exit 1; }
+	@test "$$(gh api 'repos/{owner}/{repo}' --jq .permissions.push)" = true \
+		|| { echo "the gh user may not push to this repo, so cannot create its Releases" >&2; exit 1; }
 
 clean:
 	rm -rf $(DERIVED) $(PROJECT)

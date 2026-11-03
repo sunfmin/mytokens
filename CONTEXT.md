@@ -63,7 +63,9 @@ token — used to point a tool at a provider (e.g. running Claude Code against a
 API). `mytokens env <service>` emits it as shell `export` lines to `eval`, so any tool
 launched in that shell inherits them. Unlike a Secret, a Profile is **not** a single
 credential: it bundles secret and non-secret config that are used together. Each variable is
-one **Field** whose label is the environment-variable name.
+one **Field** whose label is the environment-variable name. Two uses: a **provider Profile**
+named by provider (`glm`) points a tool elsewhere; a **project Profile** named by project holds
+all of one project's environment variables, which never go in a `.env` file, a shell rc, or the repo.
 _Avoid_: environment (too generic), config set, env file.
 
 **Level**:

@@ -6,8 +6,11 @@ description: >-
   asking the user for any credential, or assuming a token/key is unavailable — for
   Cloudflare, GitHub, OpenAI, databases, and the like. Also mints short-lived,
   least-privilege Cloudflare child tokens from a stored parent token, and stores
-  **Profiles** — named env-var bundles emitted as shell `export` lines — to point a
-  tool (e.g. Claude Code) at a different API provider, endpoint, and model.
+  **Profiles** — named env-var bundles emitted as shell `export` lines — to hold a
+  project's environment variables (one Profile per project, instead of a `.env` file)
+  or to point a tool (e.g. Claude Code) at a different API provider, endpoint, and
+  model. Use it whenever a project needs environment variables set, read, or added,
+  and before creating any new token, key, or deploy key.
 ---
 
 # mytokens
@@ -42,6 +45,10 @@ Before you ask the user for a credential, or conclude that a token/key isn't ava
 mytokens list                 # what's stored (services/accounts/kind; never values)
 mytokens get <service>        # the raw value on stdout; non-zero exit if absent
 ```
+
+**Look before minting.** Before you *create* any credential — a new API token, an API key, an
+SSH deploy key, a Child token — run `mytokens list` and read the descriptions: reuse a stored
+Secret or Profile that fits the job, and create a new one only when none does.
 
 If the Service has a Secret, use it. If `get` exits non-zero, the Secret isn't stored yet — offer to `put` it (secret values pop a secure popup and never pass through you; non-secret values you can pass on the CLI with `--set`):
 
@@ -116,12 +123,31 @@ Secret that deletes as a unit.
   Secret (`{"fields": {label: value}, "level": …}`).
 - **`list`** shows the field labels (never values).
 
+### One Profile per project
+
+A project's environment variables — secret or not — live in **one Profile named after the
+project** (e.g. `mytokens` for this repo). Run the project's commands with it loaded, scoped to
+that one command:
+
+```sh
+(eval "$(mytokens env <project>)"; <cmd>)
+```
+
+- **Never** put a project's env vars in a `.env` file, a shell rc (`~/.zshrc`, `~/.zshenv`, …),
+  or the repo. If you find them there, put them into the Profile and tell the user what to delete.
+- **Add or change** a var with `put`, which merges: `mytokens put <project> --set "NAME=value"`
+  for a non-secret value, `mytokens put <project> --fields "NAME"` for a secret one (the popup —
+  the value never passes through you). Create the Profile on its first var with
+  `--kind profile --description "<project>: <what it runs>"`.
+- **See what it holds**: `mytokens list` shows each Profile's var names, never the values.
+
 ### Profiles: point a tool at another provider (ADR-0008)
 
 A **Profile** is a named bundle of environment variables — a provider's endpoint, model, and
 token — stored as one item and emitted as shell `export` lines. Use it to launch a tool
-(Claude Code is the motivating case) against a *different* API provider. Name a Profile by
-**provider** (`glm`), not by tool — the same Profile then serves any tool that reads those vars.
+(Claude Code is the motivating case) against a *different* API provider. Name such a Profile
+by **provider** (`glm`), not by tool — the same Profile then serves any tool that reads those
+vars. (A project's own vars go in the project's Profile, above.)
 
 - **Create** (`--kind profile`): pass the non-secret config on the CLI with `--set`, and the
   secret token via `--fields` (the one popup). You know the provider, so you supply the env-var

@@ -250,9 +250,28 @@ mytokens selftest                                   # round-trips through the lo
 From then on `put`, `get`, `env`, `list` and `rm` act on the server's login keychain:
 
 - Every secret stored there is `server`-level; `put --level personal` is refused.
-- Nothing syncs to or from the server — what is on it was entered on it.
+- Nothing syncs to or from the server — what is on it was entered on it or pushed to it.
 - Secrets in your iCloud Keychain stay on your own Macs. `mytokens host personal` switches
   back (the login-keychain secrets stay where they are until you set `server` again).
+
+### Push the server-level secrets
+
+On one of your own Macs, mark the secrets a server needs `server`, then push:
+
+```sh
+mytokens put deploy --level server        # an existing secret: only its level changes
+mytokens push my-server                   # any host name ssh accepts
+```
+
+```
+added deploy/default
+```
+
+`push` makes the server hold exactly your `server`-level secrets: it adds and updates them,
+and removes ones it pushed earlier that are now `personal` or gone. It never touches a secret
+entered on the server itself. A second run prints `no changes`. The values travel only in the
+SSH pipe, to `mytokens put --stdin` on the server — never on a command line, in the
+environment, in a file or in what `push` prints. `put --stdin` is refused on your own Macs.
 
 The role is one small file, `~/Library/Application Support/mytokens/host-role`. Your own
 Macs never need it: without it a Mac is `personal` and nothing changes.

@@ -1,7 +1,7 @@
 import XCTest
 
-// The Mac's role picks the store every Secret command acts on (ADR-0010):
-// personal → the iCloud Keychain, server → the login keychain. Driven through
+// The Mac's role picks the store every Secret command acts on (ADR-0010, ADR-0013):
+// personal → the iCloud Keychain, server → local data-protection items. Driven through
 // fakes — one in-memory store per role — so no real keychain is touched.
 final class HostRoleTests: XCTestCase {
     private var personal = InMemorySecretStore()
@@ -102,6 +102,6 @@ final class HostRoleTests: XCTestCase {
 
     func testRoleSelectsTheKeychainLocation() {
         XCTAssertEqual(HostRole.personal.keychain, .iCloud)
-        XCTAssertEqual(HostRole.server.keychain, .login)
+        XCTAssertEqual(HostRole.server.keychain, .local)
     }
 }

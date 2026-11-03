@@ -69,8 +69,8 @@ final class InMemoryKeychain: Keychain {
     }
 }
 
-/// A personal Mac's Secret is readable while the screen is locked, once the Mac has
-/// been unlocked since boot (ADR-0011); a Server's login keychain is unchanged (ADR-0010).
+/// A Secret is readable while the screen is locked, once the Mac has been unlocked
+/// since boot (ADR-0011). A Server's items are local and non-synchronizable (ADR-0013).
 final class KeychainAccessibilityTests: XCTestCase {
     private let afterFirstUnlock = kSecAttrAccessibleAfterFirstUnlock as String
     private let whenUnlocked = kSecAttrAccessibleWhenUnlocked as String
@@ -145,13 +145,16 @@ final class KeychainAccessibilityTests: XCTestCase {
         XCTAssertEqual(try again.list().map(\.service).sorted(), ["cf", "gh"])
     }
 
-    func testTheServerLoginKeychainIsUnchanged() throws {
+    func testTheServerStoreIsLocalAndReadableAfterFirstUnlock() throws {
         let keychain = InMemoryKeychain()
-        let store = KeychainSecretStore.opened(.login, keychain: keychain)
-        XCTAssertEqual(store.migrateAccessibility(), errSecItemNotFound)   // nothing to move
+        let store = KeychainSecretStore.opened(.local, keychain: keychain)
         try store.upsert(service: "gh", account: "default", secret: SecretValue(single: "tok"),
                          kind: "static", meta: nil, description: nil, level: .server, pushed: false)
-        XCTAssertNil(keychain.accessibility(service: "gh"))
+        XCTAssertEqual(keychain.accessibility(service: "gh"), afterFirstUnlock)
+        XCTAssertEqual(keychain.items.first?[kSecAttrSynchronizable as String] as? Bool, false)
+
+        keychain.screenLocked = true
         XCTAssertEqual(try store.get(service: "gh", account: "default")?.loneValue, "tok")
+        XCTAssertEqual(store.migrateAccessibility(), errSecItemNotFound)
     }
 }

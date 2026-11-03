@@ -11,11 +11,17 @@ struct CommandResult {
 private func ok(_ s: String) -> CommandResult { CommandResult(stdout: s, stderr: "", exitCode: 0) }
 private func fail(_ s: String, _ code: Int32) -> CommandResult { CommandResult(stdout: "", stderr: s, exitCode: code) }
 
-/// The one injected seam. `.live` wires the real keychain + popup; tests pass fakes.
+/// The one injected seam. `.live` wires the real keychains, role setting and popup;
+/// tests pass fakes. The store is chosen per command from the Mac's role (ADR-0010).
 struct Dependencies {
-    var store: SecretStore
+    var role: HostRoleSetting
+    var store: (HostRole) -> SecretStore
     var input: SecretInput
-    static var live: Dependencies { .init(store: KeychainSecretStore(), input: PopupSecretInput()) }
+    static var live: Dependencies {
+        .init(role: FileHostRoleSetting(),
+              store: { KeychainSecretStore(location: $0.keychain) },
+              input: PopupSecretInput())
+    }
 }
 
 private struct ParsedArgs {
@@ -93,14 +99,34 @@ private func parseArgs(_ argv: [String]) -> ParsedArgs {
 func runCommand(_ argv: [String], _ deps: Dependencies) -> CommandResult {
     guard let cmd = argv.first else { return usage() }
     let rest = Array(argv.dropFirst())
+    if cmd == "host" { return runHost(rest, deps.role) }
+    guard ["put", "get", "env", "list", "rm", "selftest"].contains(cmd) else { return usage() }
+
+    // Every Secret command acts on the store the Mac's role picks (ADR-0010).
+    let role: HostRole
+    do { role = try deps.role.read() } catch { return fail("\(error)\n", 1) }
+    let store = deps.store(role)
     switch cmd {
-    case "put": return runPut(rest, deps)
-    case "get": return runGet(rest, deps)
-    case "env": return runEnv(rest, deps)
-    case "list": return runList(rest, deps)
-    case "rm": return runRm(rest, deps)
-    case "selftest": return runSelftest()
-    default: return usage()
+    case "put": return runPut(rest, store, deps.input, role)
+    case "get": return runGet(rest, store)
+    case "env": return runEnv(rest, store)
+    case "list": return runList(rest, store)
+    case "rm": return runRm(rest, store)
+    default: return runSelftest(store)
+    }
+}
+
+// `host` prints the Mac's role; `host personal|server` sets it (ADR-0010).
+private func runHost(_ argv: [String], _ setting: HostRoleSetting) -> CommandResult {
+    let args = parseArgs(argv)
+    guard args.positionals.count <= 1, args.flags.isEmpty, args.sets.isEmpty else { return usage() }
+    do {
+        guard let raw = args.positionals.first else { return ok(try setting.read().rawValue + "\n") }
+        guard let role = HostRole(rawValue: raw) else { return fail("host role must be \(HostRole.allowed)\n", 64) }
+        try setting.write(role)
+        return ok("\(role.rawValue)\n")
+    } catch {
+        return fail("\(error)\n", 1)
     }
 }
 
@@ -118,6 +144,9 @@ private func usage() -> CommandResult {
       mytokens env <service> [--account <label>]
       mytokens list
       mytokens rm  <service> [--account <label>]
+      mytokens host [personal|server]
+          prints this Mac's role, or sets it; a server keeps its secrets in the
+          login keychain and every secret stored there is server-level
 
     """, 64)
 }
@@ -129,7 +158,7 @@ private func usage() -> CommandResult {
 // replace" (that's `rm` then `put`), and it behaves the same for every kind.
 // With neither --set nor --fields it stores one bare value (ADR-0002) — unless the
 // Secret exists and --level is given, which updates only its metadata (ADR-0010).
-private func runPut(_ argv: [String], _ deps: Dependencies) -> CommandResult {
+private func runPut(_ argv: [String], _ store: SecretStore, _ input: SecretInput, _ role: HostRole) -> CommandResult {
     let args = parseArgs(argv)
     guard let service = args.service else { return usage() }
     let account = args.account
@@ -173,6 +202,13 @@ private func runPut(_ argv: [String], _ deps: Dependencies) -> CommandResult {
         guard let parsed = Level(rawValue: raw) else { return fail("--level must be \(Level.allowed)\n", 64) }
         explicitLevel = parsed
     }
+    // Every Secret stored on a Server is server-level (ADR-0010).
+    if role == .server {
+        if explicitLevel == .personal {
+            return fail("this Mac is a server: every secret stored here is 'server'-level\n", 64)
+        }
+        explicitLevel = .server
+    }
 
     // Validate --meta JSON before any prompt; an absent --meta preserves the
     // existing meta (resolved below).
@@ -186,8 +222,8 @@ private func runPut(_ argv: [String], _ deps: Dependencies) -> CommandResult {
     do {
         // Read the current item so unnamed fields — and kind/meta/description — survive
         // the merge. get() carries the values, list() the kind/meta/description; absent ⇒ create.
-        let existing = try deps.store.get(service: service, account: account)
-        let record = try deps.store.list().first { $0.service == service && $0.account == account }
+        let existing = try store.get(service: service, account: account)
+        let record = try store.list().first { $0.service == service && $0.account == account }
 
         // A merge can't change the kind (rm to change it); an absent item defaults to static.
         if let existingKind = record?.kind, let explicitKind, explicitKind != existingKind {
@@ -237,7 +273,7 @@ private func runPut(_ argv: [String], _ deps: Dependencies) -> CommandResult {
             var popupValues: [String: String] = [:]
             if !fieldLabels.isEmpty {
                 let promptFields = fieldLabels.map { Field(label: $0, masked: !showLabels.contains($0)) }
-                guard let values = deps.input.promptForSecret(service: service, account: account,
+                guard let values = input.promptForSecret(service: service, account: account,
                                                               description: description, fields: promptFields) else {
                     return fail("cancelled; nothing stored\n", 1)
                 }
@@ -261,7 +297,7 @@ private func runPut(_ argv: [String], _ deps: Dependencies) -> CommandResult {
             secret = SecretValue(fields: fields)
         } else {
             // Bare single value (ADR-0002): one masked popup field with the empty label.
-            guard let values = deps.input.promptForSecret(service: service, account: account,
+            guard let values = input.promptForSecret(service: service, account: account,
                                                           description: description,
                                                           fields: [Field(label: "", masked: true)]) else {
                 return fail("cancelled; nothing stored\n", 1)
@@ -270,7 +306,7 @@ private func runPut(_ argv: [String], _ deps: Dependencies) -> CommandResult {
             secret = SecretValue(single: v)
         }
 
-        try deps.store.upsert(service: service, account: account, secret: secret,
+        try store.upsert(service: service, account: account, secret: secret,
                               kind: kind, meta: meta, description: description, level: level)
         return ok("stored \(service)/\(account)\n")
     } catch {
@@ -278,14 +314,14 @@ private func runPut(_ argv: [String], _ deps: Dependencies) -> CommandResult {
     }
 }
 
-private func runGet(_ argv: [String], _ deps: Dependencies) -> CommandResult {
+private func runGet(_ argv: [String], _ store: SecretStore) -> CommandResult {
     let args = parseArgs(argv)
     guard let service = args.service else { return usage() }
     let account = args.account
     let field = args.flag("field")
     let wantJSON = args.present("json")
     do {
-        guard let secret = try deps.store.get(service: service, account: account) else {
+        guard let secret = try store.get(service: service, account: account) else {
             return fail("no secret for \(service)/\(account)\n", 1)
         }
 
@@ -293,7 +329,7 @@ private func runGet(_ argv: [String], _ deps: Dependencies) -> CommandResult {
         // "level"}` for labelled Fields, `{"level", "value"}` for the lone unlabelled value.
         // The level sits beside the values, never among them, so no Field label can collide.
         if wantJSON && field == nil {
-            let level = try deps.store.list().first { $0.service == service && $0.account == account }?.level ?? .default
+            let level = try store.list().first { $0.service == service && $0.account == account }?.level ?? .default
             var obj: [String: Any] = ["level": level.rawValue]
             if secret.isLabelled {
                 obj["fields"] = Dictionary(secret.fields.map { ($0.label, $0.value) }, uniquingKeysWith: { _, last in last })
@@ -330,18 +366,18 @@ private func runGet(_ argv: [String], _ deps: Dependencies) -> CommandResult {
 // single store call returns both — so read the kind from `list()`, then the values
 // from `get()`. Profile-only is enforced by the `kind` marker (the source of truth),
 // not by inferring it from label shape. Stays on ADR-0002's stdout side (no exec).
-private func runEnv(_ argv: [String], _ deps: Dependencies) -> CommandResult {
+private func runEnv(_ argv: [String], _ store: SecretStore) -> CommandResult {
     let args = parseArgs(argv)
     guard let service = args.service else { return usage() }
     let account = args.account
     do {
-        guard let record = try deps.store.list().first(where: { $0.service == service && $0.account == account }) else {
+        guard let record = try store.list().first(where: { $0.service == service && $0.account == account }) else {
             return fail("no secret for \(service)/\(account)\n", 1)
         }
         guard record.kind == "profile" else {
             return fail("\(service)/\(account) is kind '\(record.kind)', not a Profile — `env` only renders Profiles\n", 1)
         }
-        guard let secret = try deps.store.get(service: service, account: account) else {
+        guard let secret = try store.get(service: service, account: account) else {
             return fail("no secret for \(service)/\(account)\n", 1)   // vanished between list and get
         }
         // Emit one `export NAME='VALUE'` per Field, in stored order. Labels were
@@ -359,9 +395,9 @@ private func runEnv(_ argv: [String], _ deps: Dependencies) -> CommandResult {
     }
 }
 
-private func runList(_ argv: [String], _ deps: Dependencies) -> CommandResult {
+private func runList(_ argv: [String], _ store: SecretStore) -> CommandResult {
     do {
-        let records = try deps.store.list().sorted { ($0.service, $0.account) < ($1.service, $1.account) }
+        let records = try store.list().sorted { ($0.service, $0.account) < ($1.service, $1.account) }
         if records.isEmpty { return CommandResult(stdout: "", stderr: "no secrets stored\n", exitCode: 0) }
         let rows = records.map { r -> String in
             var line = "\(r.service)/\(r.account)\t\(r.kind)\t\(r.level.rawValue)"
@@ -376,12 +412,12 @@ private func runList(_ argv: [String], _ deps: Dependencies) -> CommandResult {
     }
 }
 
-private func runRm(_ argv: [String], _ deps: Dependencies) -> CommandResult {
+private func runRm(_ argv: [String], _ store: SecretStore) -> CommandResult {
     let args = parseArgs(argv)
     guard let service = args.service else { return usage() }
     let account = args.account
     do {
-        if try deps.store.delete(service: service, account: account) {
+        if try store.delete(service: service, account: account) {
             return ok("removed \(service)/\(account)\n")
         }
         return fail("no secret for \(service)/\(account)\n", 1)
@@ -390,14 +426,13 @@ private func runRm(_ argv: [String], _ deps: Dependencies) -> CommandResult {
     }
 }
 
-// Post-install sanity check (ADR-0003): exercises the REAL KeychainSecretStore
-// end-to-end against the data-protection keychain — upsert, get, list, delete,
+// Post-install sanity check (ADR-0003): exercises the REAL KeychainSecretStore the
+// Mac's role picks (ADR-0010) end-to-end — upsert, get, list, delete,
 // and confirm-gone — proving the entitlement and the store code path both work.
 // Runs two legs: a lone unlabelled value (raw round-trip, ADR-0002) and a
 // multi-field Secret (the labelled JSON encode/decode that lives in the store,
 // ADR-0005). Provides its own values, so no popup is involved.
-private func runSelftest() -> CommandResult {
-    let store = KeychainSecretStore()
+private func runSelftest(_ store: SecretStore) -> CommandResult {
     let service = "mytokens.selftest"
     _ = try? store.delete(service: service, account: "single")   // clear any leftover
     _ = try? store.delete(service: service, account: "multi")

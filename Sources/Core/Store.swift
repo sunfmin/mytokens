@@ -80,8 +80,8 @@ enum StoreError: Error, CustomStringConvertible {
     }
 }
 
-/// The lowest-level seam for stored Secrets. The real impl talks to the
-/// data-protection (iCloud) keychain; tests use an in-memory fake. Secrets cross
+/// The lowest-level seam for stored Secrets. The real impl talks to the keychain the
+/// Mac's role picks (iCloud or login); tests use an in-memory fake. Secrets cross
 /// this seam as structured `SecretValue` Fields — the single-vs-JSON on-disk
 /// encoding (ADR-0005) lives inside the implementation, not in the caller.
 protocol SecretStore {
@@ -97,21 +97,44 @@ protocol SecretStore {
 private let mytokensAccessGroup = "HL27PWAKDF.com.sunfmin.mytokens"
 private let mytokensLabelPrefix = "mytokens: "
 
-/// Real store: synchronizable generic-password items in the data-protection
-/// keychain, under our own access group (ADR-0001).
+/// Which keychain a `KeychainSecretStore` acts on — chosen by the Mac's role (ADR-0010).
+enum KeychainLocation {
+    /// Synchronizable items in the data-protection keychain under our own access group:
+    /// a personal Mac's store (ADR-0001).
+    case iCloud
+    /// Local items in the login keychain, readable while the screen is locked: a
+    /// Server's store, which does not sign into iCloud (ADR-0010 narrows ADR-0001).
+    case login
+}
+
+// The login keychain has no access groups, so our items there carry this creator code
+// ('mytk') and every query is scoped to it — never touching another app's items.
+private let mytokensCreator: UInt32 = 0x6D79_746B
+
+/// Real store: generic-password items in the keychain `location` names — the iCloud
+/// Keychain on a personal Mac (ADR-0001), the login keychain on a Server (ADR-0010).
 struct KeychainSecretStore: SecretStore {
-    /// The scoping every query shares: our own access group's synchronizable
-    /// generic-password items in the data-protection keychain (ADR-0001). This is
-    /// the one invariant that must never vary across operations — if `list` and
-    /// `upsert` disagreed on `synchronizable`, `list` would stop seeing stored
-    /// items — so it lives in exactly one place.
+    var location: KeychainLocation = .iCloud
+
+    /// The scoping every query shares. This is the one invariant that must never vary
+    /// across operations — if `list` and `upsert` disagreed on it, `list` would stop
+    /// seeing stored items — so it lives in exactly one place, per location.
     private var baseQuery: [String: Any] {
-        [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrAccessGroup as String: mytokensAccessGroup,
-            kSecAttrSynchronizable as String: kCFBooleanTrue!,
-            kSecUseDataProtectionKeychain as String: true,
-        ]
+        switch location {
+        case .iCloud:
+            return [
+                kSecClass as String: kSecClassGenericPassword,
+                kSecAttrAccessGroup as String: mytokensAccessGroup,
+                kSecAttrSynchronizable as String: kCFBooleanTrue!,
+                kSecUseDataProtectionKeychain as String: true,
+            ]
+        case .login:
+            return [
+                kSecClass as String: kSecClassGenericPassword,
+                kSecAttrCreator as String: mytokensCreator,
+                kSecUseDataProtectionKeychain as String: false,
+            ]
+        }
     }
 
     /// `baseQuery` narrowed to a single item by service + account.

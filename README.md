@@ -134,11 +134,12 @@ You rarely run these yourself — Claude does — but here's what they do.
 
 ```sh
 $ mytokens list
-cloudflare/default	parent
-aws/default	static  — CI deploy: S3 uploads  fields: Access Key ID, Secret Access Key
+cloudflare/default	parent	personal
+aws/default	static	server  — CI deploy: S3 uploads  fields: Access Key ID, Secret Access Key
 ```
 
-Each line shows the service/account, its kind, the description, and (for multi-part
+Each line shows the service/account, its kind, its level (`personal`, or `server` when it
+may be pushed to your servers — `put --level server`), the description, and (for multi-part
 credentials) the field names — **never the secret itself**.
 
 **Fetch a value** (Claude uses this inline, e.g. inside a `curl`):

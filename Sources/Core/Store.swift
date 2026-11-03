@@ -9,6 +9,19 @@ struct SecretRecord {
     var meta: String?         // compact JSON, or nil
     var fields: [String]?     // ordered field labels for a multi-field Secret, else nil
     var description: String?  // agent-authored purpose note (ADR-0006), or nil
+    var level: Level          // how far the Secret may travel (ADR-0010)
+}
+
+/// How far a Secret may travel (ADR-0010). `personal` stays in the iCloud Keychain on
+/// the user's own Macs; `server` may also be pushed to the user's servers. A Secret
+/// stored before levels existed has none recorded and reads as `personal`, the default.
+enum Level: String, CaseIterable {
+    case personal, server
+
+    static let `default`: Level = .personal
+
+    /// The allowed values as the CLI spells them, for error messages.
+    static var allowed: String { allCases.map { "'\($0.rawValue)'" }.joined(separator: " or ") }
 }
 
 // The value payload of a Secret: one or more ordered Fields (ADR-0005), each a
@@ -41,8 +54,7 @@ struct SecretValue {
     func value(forField label: String) -> String? { fields.first { $0.label == label }?.value }
 
     /// The `{label: value}` object as compact, key-sorted JSON: the on-disk form of
-    /// a labelled Secret (ADR-0005) and the `--json` output. One serializer, so what
-    /// `--json` prints is byte-for-byte what was stored.
+    /// a labelled Secret (ADR-0005).
     func compactJSON() -> String? {
         var obj: [String: String] = [:]
         for f in fields { obj[f.label] = f.value }
@@ -73,7 +85,7 @@ enum StoreError: Error, CustomStringConvertible {
 /// this seam as structured `SecretValue` Fields — the single-vs-JSON on-disk
 /// encoding (ADR-0005) lives inside the implementation, not in the caller.
 protocol SecretStore {
-    func upsert(service: String, account: String, secret: SecretValue, kind: String, meta: Any?, description: String?) throws
+    func upsert(service: String, account: String, secret: SecretValue, kind: String, meta: Any?, description: String?, level: Level) throws
     func get(service: String, account: String) throws -> SecretValue?   // nil if absent
     func list() throws -> [SecretRecord]
     func delete(service: String, account: String) throws -> Bool   // false if absent
@@ -114,11 +126,11 @@ struct KeychainSecretStore: SecretStore {
         s == errSecInteractionNotAllowed ? .locked : .keychain(s)
     }
 
-    func upsert(service: String, account: String, secret: SecretValue, kind: String, meta: Any?, description: String?) throws {
+    func upsert(service: String, account: String, secret: SecretValue, kind: String, meta: Any?, description: String?, level: Level) throws {
         // The label schema is recorded for a labelled Secret only; the value's
         // encoding follows from it — raw bytes for the lone unlabelled value, a
         // {label: value} JSON object for labelled Fields (ADR-0005).
-        let comment = try CommentCodec.encode(kind: kind, meta: meta, fields: secret.schema, description: description)
+        let comment = try CommentCodec.encode(kind: kind, meta: meta, fields: secret.schema, description: description, level: level)
         let storedValue: String
         if secret.isLabelled {
             guard let json = secret.compactJSON() else { throw StoreError.encoding }
@@ -154,7 +166,7 @@ struct KeychainSecretStore: SecretStore {
               let data = attrs[kSecValueData as String] as? Data,
               let str = String(data: data, encoding: .utf8)
         else { throw mapErr(s) }
-        let (_, _, schema, _) = CommentCodec.decode(attrs[kSecAttrComment as String] as? String)
+        let schema = CommentCodec.decode(attrs[kSecAttrComment as String] as? String).fields
 
         // No schema ⇒ the raw bytes are the lone unlabelled value (ADR-0002).
         guard let schema else { return SecretValue(single: str) }
@@ -186,9 +198,9 @@ struct KeychainSecretStore: SecretStore {
             // Defense-in-depth: only our own items carry this label prefix.
             let label = attrs[kSecAttrLabel as String] as? String
             guard label?.hasPrefix(mytokensLabelPrefix) == true else { return nil }
-            let (kind, meta, fields, description) = CommentCodec.decode(attrs[kSecAttrComment as String] as? String)
-            return SecretRecord(service: service, account: account, kind: kind, meta: meta,
-                                fields: fields, description: description)
+            let c = CommentCodec.decode(attrs[kSecAttrComment as String] as? String)
+            return SecretRecord(service: service, account: account, kind: c.kind, meta: c.meta,
+                                fields: c.fields, description: c.description, level: c.level)
         }
     }
 
@@ -201,13 +213,14 @@ struct KeychainSecretStore: SecretStore {
 }
 
 // kind + arbitrary user meta + (for a multi-field Secret) the ordered field-label
-// schema + an optional agent-authored description are packed into the keychain
-// comment attribute as one JSON object:
-// {"kind": "...", "meta": <json|null>, "fields": [<label>, …]?, "description": "…"?}.
-// "fields"/"description" are omitted when absent, so older items decode unchanged.
+// schema + an optional agent-authored description + the level are packed into the
+// keychain comment attribute as one JSON object:
+// {"kind": "...", "level": "...", "meta": <json|null>, "fields": [<label>, …]?, "description": "…"?}.
+// "fields"/"description" are omitted when absent; an item stored before levels has no
+// "level" and decodes as `personal` (ADR-0010), so older items decode unchanged.
 enum CommentCodec {
-    static func encode(kind: String, meta: Any?, fields: [String]?, description: String?) throws -> String {
-        var obj: [String: Any] = ["kind": kind]
+    static func encode(kind: String, meta: Any?, fields: [String]?, description: String?, level: Level) throws -> String {
+        var obj: [String: Any] = ["kind": kind, "level": level.rawValue]
         obj["meta"] = (meta == nil || meta is NSNull) ? NSNull() : meta!
         if let fields, !fields.isEmpty { obj["fields"] = fields }
         if let description, !description.isEmpty { obj["description"] = description }
@@ -217,15 +230,17 @@ enum CommentCodec {
         return s
     }
 
-    static func decode(_ comment: String?) -> (kind: String, meta: String?, fields: [String]?, description: String?) {
+    static func decode(_ comment: String?) -> (kind: String, meta: String?, fields: [String]?, description: String?, level: Level) {
         guard let comment, let data = comment.data(using: .utf8),
               let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
-        else { return ("static", nil, nil, nil) }
+        else { return ("static", nil, nil, nil, .default) }
         let kind = (obj["kind"] as? String) ?? "static"
         let fields = obj["fields"] as? [String]
         let description = obj["description"] as? String
         let meta = (obj["meta"].map { $0 is NSNull ? nil : JSONUtil.compact($0) }) ?? nil
-        return (kind, meta, fields, description)
+        // No level, or one this build doesn't know, travels nowhere: personal.
+        let level = (obj["level"] as? String).flatMap(Level.init(rawValue:)) ?? .default
+        return (kind, meta, fields, description, level)
     }
 }
 

@@ -2,15 +2,15 @@ import Foundation
 
 // In-memory SecretStore for tests — never touches the real keychain.
 final class InMemorySecretStore: SecretStore {
-    struct Entry { var secret: SecretValue; var kind: String; var meta: Any?; var description: String? }
+    struct Entry { var secret: SecretValue; var kind: String; var meta: Any?; var description: String?; var level: Level }
     private(set) var items: [String: Entry] = [:]
     var locked = false
 
     private func key(_ s: String, _ a: String) -> String { "\(s)\u{1}\(a)" }
 
-    func upsert(service: String, account: String, secret: SecretValue, kind: String, meta: Any?, description: String?) throws {
+    func upsert(service: String, account: String, secret: SecretValue, kind: String, meta: Any?, description: String?, level: Level) throws {
         if locked { throw StoreError.locked }
-        items[key(service, account)] = Entry(secret: secret, kind: kind, meta: meta, description: description)
+        items[key(service, account)] = Entry(secret: secret, kind: kind, meta: meta, description: description, level: level)
     }
 
     func get(service: String, account: String) throws -> SecretValue? {
@@ -28,9 +28,18 @@ final class InMemorySecretStore: SecretStore {
                 kind: e.kind,
                 meta: e.meta.flatMap(JSONUtil.compact),
                 fields: e.secret.schema,
-                description: e.description
+                description: e.description,
+                level: e.level
             )
         }
+    }
+
+    /// Store an item as a build from before levels wrote it: its comment has no level,
+    /// so it decodes through the real codec exactly as an old keychain item does.
+    func putLegacy(service: String, account: String, secret: SecretValue, kind: String = "static") {
+        let legacyComment = #"{"kind":"\#(kind)","meta":null}"#
+        let level = CommentCodec.decode(legacyComment).level
+        items[key(service, account)] = Entry(secret: secret, kind: kind, meta: nil, description: nil, level: level)
     }
 
     func delete(service: String, account: String) throws -> Bool {

@@ -38,14 +38,24 @@ users 9999:locked "$uid:unlocked"
 printf '#!/bin/sh\necho "error: exportArchive No Accounts"\nexit 1\n' >"$tmp/signed"
 chmod +x "$tmp/signed"
 users "$uid:locked"
-! make -s release-check-signing MAKE="$tmp/signed" DERIVED="$tmp/build" 2>"$tmp/err" >/dev/null || fail "signing check passed"
+! make -s release-check-signing MAKE="$tmp/signed" 2>"$tmp/err" >/dev/null || fail "signing check passed"
 head -1 "$tmp/err" | grep -qF "$cause" || fail "signing: the locked cause is not first: $(cat "$tmp/err")"
 sed -n 2p "$tmp/err" | grep -qF "No Accounts" || fail "signing: Xcode's line does not follow: $(cat "$tmp/err")"
 ! grep -q "Program License Agreement" "$tmp/err" || fail "signing: PLA advice while locked"
 users "$uid:unlocked"
-! make -s release-check-signing MAKE="$tmp/signed" DERIVED="$tmp/build" 2>"$tmp/err" >/dev/null || fail "signing check passed"
+! make -s release-check-signing MAKE="$tmp/signed" 2>"$tmp/err" >/dev/null || fail "signing check passed"
 ! grep -q "console session" "$tmp/err" || fail "signing: locked cause while unlocked"
 grep -q "Program License Agreement" "$tmp/err" || fail "signing: no PLA advice while unlocked"
+
+# release-check-signing: each run signs a copy of the checkout in a directory
+# of its own and removes it, so overlapping runs cannot break each other. A
+# fake `make` records the directory it was given (-C) and succeeds.
+printf '#!/bin/sh\nwhile [ $# -gt 0 ] && [ "$1" != -C ]; do shift; done\ntest -f "$2/project.yml" && echo "$2" >>"%s"\n' "$tmp/dirs" >"$tmp/signed"
+make -s release-check-signing MAKE="$tmp/signed" & a=$!
+make -s release-check-signing MAKE="$tmp/signed" || fail "signing check failed"
+wait $a || fail "signing check failed"
+[ "$(sort -u "$tmp/dirs" | wc -l)" -eq 2 ] || fail "signing: two runs did not each get a copy of the checkout: $(cat "$tmp/dirs")"
+while read -r d; do [ ! -e "$d" ] || fail "signing: left $d behind"; done <"$tmp/dirs"
 
 # release-check-keychain: no login keychain under a fake HOME.
 users "$uid:locked"

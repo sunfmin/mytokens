@@ -135,18 +135,22 @@ release-check-keychain:
 	@security show-keychain-info "$(HOME)/Library/Keychains/login.keychain-db" >/dev/null 2>&1 \
 		|| { $(CONSOLE_LOCKED) || echo "the login keychain is locked: unlock it (security unlock-keychain, a person's hands)" >&2; exit 1; }
 
-# The signing path itself, into a throwaway derived-data dir: it fails on an
+# The signing path itself, run on a copy of this checkout's files in a
+# directory of its own (mktemp -d), removed on exit: its project, archive and
+# derived data are no other run's, so overlapping runs (a fleet tick,
+# `afkconvoy plan`, a person) each give the true answer. It fails on an
 # unaccepted Program License Agreement, a missing profile, no Developer ID
 # identity (local or cloud-managed), or — "No Accounts" — a locked console
 # session hiding Xcode's Apple account. xcodebuild prints its errors on stdout.
 release-check-signing:
-	@log=$$(mktemp); trap 'rm -f "$$log"' EXIT; \
-		$(MAKE) -s signed DERIVED=$(DERIVED)/release-check >"$$log" 2>&1 || { \
+	@set -e; run=$$(mktemp -d -t mytokens-release-check); trap 'rm -rf "$$run"' EXIT; \
+		mkdir "$$run/src"; \
+		git ls-files -z --cached --others --exclude-standard | tar -cf - --null -T - | tar -xf - -C "$$run/src"; \
+		$(MAKE) -s -C "$$run/src" signed >"$$run/log" 2>&1 || { \
 			if $(CONSOLE_LOCKED); then locked=1; else locked=; fi; \
-			grep -E 'error|PLA|agree|No profiles|No signing|No Accounts' "$$log" | tail -15 >&2; \
+			grep -E 'error|PLA|agree|No profiles|No signing|No Accounts' "$$run/log" | tail -15 >&2; \
 			test -n "$$locked" || echo "Developer ID signing fails on this host (see above): an account holder may have to accept the Program License Agreement at developer.apple.com, or install the Developer ID certificate" >&2; \
-			exit 1; }; \
-		rm -rf "$(DERIVED)/release-check"
+			exit 1; }
 
 release-check-asc:
 	@for f in "Key ID" "Issuer ID" "Key (base64 .p8)"; do \

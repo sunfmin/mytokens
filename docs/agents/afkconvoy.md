@@ -61,7 +61,7 @@ publish: |
 
 What publishing needs on a host is checked before a cut is claimed. The
 signing check runs the real archive and Developer ID export (`make signed`,
-~20 s on macs-Mac-Mini, 2026-11-03), not `security find-identity`: signing here
+~20 s on macs-Mac-Mini, 2026-11-03; two at once 24 s), on a copy of the checkout in a directory of its own per run, so overlapping runs cannot break each other; not `security find-identity`: signing here
 is Xcode's cloud-managed Developer ID, with no certificate in the keychain. It
 names an unaccepted Program License Agreement or a missing profile or identity,
 all of which need an account holder's hands.

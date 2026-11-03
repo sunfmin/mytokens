@@ -340,7 +340,11 @@ icon is generated from code (`make icon`).
 
 ### Releasing (maintainers)
 
-Built and published locally — no CI. Notarization creds live in **mytokens itself**
+The afkconvoy fleet cuts each version itself once landed work is past the newest tag: it
+sets `MARKETING_VERSION` in `project.yml` (the version's one home), tags, runs `make release`
+and installs the Release on its host — see the cut blocks in
+[`docs/agents/afkconvoy.md`](./docs/agents/afkconvoy.md). By hand it is the same path, built
+and published locally — no CI. Notarization creds live in **mytokens itself**
 (dogfooding): a secret named `asc-api-key` with fields **Key ID**, **Issuer ID**, and
 **Key (base64 .p8)** — an App Store Connect API key. Create the key in App Store Connect →
 *Users and Access → Integrations → Team Keys* (role: Developer), then store it:

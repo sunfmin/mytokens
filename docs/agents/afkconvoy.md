@@ -36,6 +36,60 @@ The XcodeGen version lives in the `Makefile` (`XCODEGEN_VERSION`) alone.
 
 ## Cutting a version
 
-Not configured. A release is Developer ID-signed and notarized (`make
-release`), which needs the signing identity and the App Store Connect key held
-in mytokens itself; the fleet does not cut.
+The fleet cuts: once landed work is past the newest `v*` tag and the fleet is
+idle, it sets the version, lands that, tags it, publishes a GitHub Release and
+installs it on this host (`afkconvoy cut --help`). No `initial`: the tags
+(v0.1.4 and earlier) pick the next version.
+
+```yaml cut
+set: make set-version VERSION="$VERSION"
+publish: |
+  make release TAG="v$VERSION"
+  bash skills/mytokens/scripts/install.sh
+  make -s installed-version-check VERSION="$VERSION"
+```
+
+- `set` writes the version into its one home, `MARKETING_VERSION` in
+  `project.yml`, which the build turns into the app's `CFBundleShortVersionString`.
+- `publish` is `make release` — the one release path: Developer ID-signed,
+  notarized, stapled, uploaded with `gh release create`. It then installs with
+  `scripts/install.sh` rather than `make install`: that installs the very
+  notarized zip the Release serves, as every other Mac gets it, and proves it
+  downloads and passes `selftest`; `make install` would rebuild with the
+  development identity, a different binary. Last, the installed app must report
+  `$VERSION`.
+
+What publishing needs on a host is checked before a cut is claimed. The
+signing check runs the real archive and Developer ID export (`make signed`,
+~20 s on macs-Mac-Mini, 2026-11-03), not `security find-identity`: signing here
+is Xcode's cloud-managed Developer ID, with no certificate in the keychain. It
+names an unaccepted Program License Agreement or a missing profile or identity,
+all of which need an account holder's hands.
+
+```yaml cut-needs
+checks:
+  - name: xcode
+    command: |
+      xcodebuild -version >/dev/null 2>&1 && xcrun --find notarytool >/dev/null 2>&1 && xcrun --find stapler >/dev/null 2>&1 || {
+        echo "publishing needs Xcode with notarytool and stapler: install Xcode and select it with xcode-select" >&2
+        exit 1
+      }
+    seconds: 60
+  - name: xcodegen
+    command: make -s xcodegen-check
+    seconds: 60
+    install: make -s xcodegen-install
+    install_seconds: 300
+  - name: login-keychain-unlocked
+    command: make -s release-check-keychain
+    seconds: 15
+  - name: asc-api-key
+    command: make -s release-check-asc
+    seconds: 30
+  - name: gh
+    command: make -s release-check-gh
+    seconds: 30
+  - name: developer-id-signing
+    command: make -s release-check-signing
+    seconds: 600
+```

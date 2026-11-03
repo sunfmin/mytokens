@@ -43,7 +43,9 @@ Felix's decisions (sunfmin/control#575, 2026-11-03):
 - Values cross only in the SSH pipes, both ways: never argv, the environment, a file or
   printed output. `get --unpushed` and `put --stdin` are both refused on a personal Mac.
 - The output names what was `adopted`, `added`, `updated`, `removed` and in `conflict`, or
-  `no changes`. A conflict makes the exit status non-zero after everything else is done.
+  `no changes` after both runs succeed. A conflict makes the exit status non-zero after
+  everything else is done. A failed SSH run also exits non-zero, names the Adopt or push step
+  and relays the Server's error; it never prints Secret values or reports `no changes`.
 - A second `sync` with nothing changed on either side changes nothing.
 - `mytokens push` prints a hint that names `sync`, and exits 64.
 

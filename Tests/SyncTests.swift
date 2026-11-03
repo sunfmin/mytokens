@@ -140,6 +140,32 @@ final class SyncTests: XCTestCase {
         XCTAssertTrue(r.stderr.contains("Could not resolve hostname"))
     }
 
+    func testFailedGetUnpushedNamesAdoptAndReportsTheServerError() {
+        remote.respond = { _, _ in CommandResult(stdout: "", stderr: "keychain error -61: Write permissions error.\n", exitCode: 1) }
+        let r = sync()
+        XCTAssertNotEqual(r.exitCode, 0)
+        XCTAssertTrue(r.stderr.contains("adopt"), r.stderr)
+        XCTAssertTrue(r.stderr.contains("keychain error -61: Write permissions error."), r.stderr)
+        XCTAssertFalse(r.stdout.contains("no changes") || r.stderr.contains("no changes"))
+        XCTAssertEqual(remote.runs.map(\.command), [remoteExportCommand])
+    }
+
+    func testFailedPutStdinNamesPushAndReportsTheServerErrorWithoutValues() {
+        _ = onLaptop(["put", "deploy", "--level", "server"], input: ["": "VALUE-THAT-MUST-NOT-LEAK"])
+        let real = remote.respond
+        remote.respond = { command, payload in
+            command == remotePutCommand
+                ? CommandResult(stdout: "no changes\n", stderr: "keychain error -61: Write permissions error.\n", exitCode: 1)
+                : real(command, payload)
+        }
+        let r = sync()
+        XCTAssertNotEqual(r.exitCode, 0)
+        XCTAssertTrue(r.stderr.contains("push"), r.stderr)
+        XCTAssertTrue(r.stderr.contains("keychain error -61: Write permissions error."), r.stderr)
+        XCTAssertFalse(r.stdout.contains("no changes") || r.stderr.contains("no changes"))
+        XCTAssertFalse(r.stdout.contains("VALUE-THAT-MUST-NOT-LEAK") || r.stderr.contains("VALUE-THAT-MUST-NOT-LEAK"))
+    }
+
     func testPutStdinRejectsAPersonalLevelSecretAndStoresNothing() {
         let bad = #"{"secrets":[{"service":"x","account":"default","kind":"static","level":"personal","fields":[{"label":"","value":"v"}]}]}"#
         let r = onServer(["put", "--stdin"], stdin: Data(bad.utf8))

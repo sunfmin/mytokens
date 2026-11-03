@@ -2,6 +2,8 @@
 
 > **Status:** **narrowed by ADR-0010** — on a **Server** (which does not sign into iCloud) the
 > login keychain is the store. On the user's personal Macs this ADR stands unchanged.
+> **Extended by ADR-0011**: items are written `kSecAttrAccessibleAfterFirstUnlock`, so a
+> Secret is readable while the screen is locked once the Mac has been unlocked since boot.
 
 We store machine-usable secrets in the macOS **data-protection (iCloud) keychain**
 through a **code-signed Swift helper** (Apple Developer identity + `keychain-access-groups`

@@ -495,6 +495,9 @@ private func runSelftest(_ store: SecretStore) -> CommandResult {
     _ = try? store.delete(service: service, account: "multi")
     do {
         // Single-value leg: raw value in, raw value out.
+        try store.upsert(service: service, account: "single", secret: SecretValue(single: "SELFTEST-FIRST"),
+                         kind: "static", meta: ["probe": true], description: nil, level: .personal, pushed: false)
+        // Rewrite it: the update path, which also sets the item's accessibility (ADR-0011).
         try store.upsert(service: service, account: "single", secret: SecretValue(single: "SELFTEST-OK"),
                          kind: "static", meta: ["probe": true], description: nil, level: .personal, pushed: false)
         let single = try store.get(service: service, account: "single")?.loneValue == "SELFTEST-OK"

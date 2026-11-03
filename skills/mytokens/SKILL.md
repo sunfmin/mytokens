@@ -20,6 +20,10 @@ Keychain and hands them to you on demand. It is **service-agnostic**: it only st
 returns values. Anything service-specific (e.g. Cloudflare token minting) is something
 **you** do at runtime with the returned value — see the Cloudflare example below.
 
+A Secret is readable while the screen is locked (SSH, background jobs), once the Mac has
+been unlocked since it booted. `keychain is locked (interaction not allowed)` means it has
+not been since a reboot: the human must log in once (at the Mac or over Screen Sharing).
+
 ## Install (do this before first use)
 
 The `mytokens` CLI is a separate signed app, not part of this skill folder. Before running

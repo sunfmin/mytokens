@@ -103,7 +103,8 @@ autofills in a browser. Explicitly NOT managed by this skill.
 The macOS data-protection keychain that syncs across a user's Apple devices and backs
 Apple Passwords. mytokens stores every Secret here, under its **own access group**, via
 the Helper. Items therefore sync across the user's Macs (where the Helper is installed)
-but do NOT appear in the Passwords.app list (see ADR-0001).
+but do NOT appear in the Passwords.app list (see ADR-0001). A Secret there is readable
+while the screen is locked, once the Mac has been unlocked since it booted (ADR-0011).
 _Avoid_: "the keychain" (ambiguous), "Apple Passwords vault" (we are not in its list).
 
 **Helper**:

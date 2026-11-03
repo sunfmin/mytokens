@@ -81,8 +81,8 @@ enum StoreError: Error, CustomStringConvertible {
     }
 }
 
-/// The lowest-level seam for stored Secrets. The real impl talks to the keychain the
-/// Mac's role picks (iCloud or login); tests use an in-memory fake. Secrets cross
+/// The lowest-level seam for stored Secrets. The real impl talks to the data-protection
+/// keychain location the Mac's role picks; tests use an in-memory fake. Secrets cross
 /// this seam as structured `SecretValue` Fields — the single-vs-JSON on-disk
 /// encoding (ADR-0005) lives inside the implementation, not in the caller.
 protocol SecretStore {
@@ -103,9 +103,9 @@ enum KeychainLocation {
     /// Synchronizable items in the data-protection keychain under our own access group:
     /// a personal Mac's store (ADR-0001).
     case iCloud
-    /// Local items in the login keychain, readable while the screen is locked: a
-    /// Server's store, which does not sign into iCloud (ADR-0010 narrows ADR-0001).
-    case login
+    /// Non-synchronizable items in the same data-protection keychain: a Server's store,
+    /// readable over SSH after its first unlock since boot (ADR-0013 amends ADR-0010).
+    case local
 }
 
 /// The four SecItem calls the store makes, behind a seam so tests can drive the real
@@ -129,12 +129,8 @@ struct SystemKeychain: Keychain {
     func delete(_ query: [String: Any]) -> OSStatus { SecItemDelete(query as CFDictionary) }
 }
 
-// The login keychain has no access groups, so our items there carry this creator code
-// ('mytk') and every query is scoped to it — never touching another app's items.
-private let mytokensCreator: UInt32 = 0x6D79_746B
-
-/// Real store: generic-password items in the keychain `location` names — the iCloud
-/// Keychain on a personal Mac (ADR-0001), the login keychain on a Server (ADR-0010).
+/// Real store: generic-password items in the data-protection keychain, synchronizable on
+/// a personal Mac (ADR-0001) and local-only on a Server (ADR-0013).
 struct KeychainSecretStore: SecretStore {
     var location: KeychainLocation = .iCloud
     var keychain: Keychain = SystemKeychain()
@@ -152,40 +148,21 @@ struct KeychainSecretStore: SecretStore {
     /// across operations — if `list` and `upsert` disagreed on it, `list` would stop
     /// seeing stored items — so it lives in exactly one place, per location.
     private var baseQuery: [String: Any] {
-        switch location {
-        case .iCloud:
-            return [
-                kSecClass as String: kSecClassGenericPassword,
-                kSecAttrAccessGroup as String: mytokensAccessGroup,
-                kSecAttrSynchronizable as String: kCFBooleanTrue!,
-                kSecUseDataProtectionKeychain as String: true,
-            ]
-        case .login:
-            return [
-                kSecClass as String: kSecClassGenericPassword,
-                kSecAttrCreator as String: mytokensCreator,
-                kSecUseDataProtectionKeychain as String: false,
-            ]
-        }
+        [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrAccessGroup as String: mytokensAccessGroup,
+            kSecAttrSynchronizable as String: location == .iCloud ? kCFBooleanTrue! : kCFBooleanFalse!,
+            kSecUseDataProtectionKeychain as String: true,
+        ]
     }
 
-    /// When an item's value may be read, set on every write. A personal Mac's Secret is
-    /// readable once the Mac has been unlocked since boot, screen locked or not — the
-    /// synchronizable class, not a `ThisDeviceOnly` one, so iCloud sync keeps working
-    /// (ADR-0011). Not a query key: an item still at the old default must stay findable.
-    /// The login keychain has no data-protection classes; a Server's items are unchanged.
-    private var accessibility: CFString? {
-        switch location {
-        case .iCloud: return kSecAttrAccessibleAfterFirstUnlock
-        case .login: return nil
-        }
-    }
+    /// When an item's value may be read, set on every write. A Secret is readable once
+    /// the Mac has been unlocked since boot, screen locked or not (ADR-0011, ADR-0013).
+    /// Not a query key: an item still at the old default must stay findable.
+    private var accessibility: CFString { kSecAttrAccessibleAfterFirstUnlock }
 
-    /// The accessibility an older build left items at: the system default, never set
-    /// explicitly. Nil where `accessibility` is nil — nothing to move.
-    private var formerAccessibility: CFString? {
-        accessibility == nil ? nil : kSecAttrAccessibleWhenUnlocked
-    }
+    /// The accessibility an older build left items at: the system default, never set explicitly.
+    private var formerAccessibility: CFString { kSecAttrAccessibleWhenUnlocked }
 
     /// Move every item still at `formerAccessibility` to `accessibility`, values and
     /// attributes untouched, no popup. Idempotent: once moved, nothing matches. Best
@@ -194,7 +171,6 @@ struct KeychainSecretStore: SecretStore {
     /// Returns the keychain status, for tests; `errSecItemNotFound` means nothing to move.
     @discardableResult
     func migrateAccessibility() -> OSStatus {
-        guard let accessibility, let formerAccessibility else { return errSecItemNotFound }
         var q = baseQuery
         q[kSecAttrAccessible as String] = formerAccessibility
         return keychain.update(q, [kSecAttrAccessible as String: accessibility])
@@ -224,12 +200,12 @@ struct KeychainSecretStore: SecretStore {
         } else {
             storedValue = secret.fields[0].value
         }
-        var changes: [String: Any] = [
+        let changes: [String: Any] = [
             kSecValueData as String: Data(storedValue.utf8),
             kSecAttrComment as String: comment,
             kSecAttrLabel as String: mytokensLabelPrefix + "\(service)/\(account)",
+            kSecAttrAccessible as String: accessibility,
         ]
-        if let accessibility { changes[kSecAttrAccessible as String] = accessibility }
         let updated = keychain.update(itemQuery(service, account), changes)
         if updated == errSecSuccess { return }
         guard updated == errSecItemNotFound else { throw mapErr(updated) }

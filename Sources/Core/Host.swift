@@ -1,8 +1,8 @@
 import Foundation
 
 /// A Mac's role (ADR-0010): a `personal` Mac keeps its Secrets in the iCloud Keychain; a
-/// `server` does not sign into iCloud and keeps them in its own login keychain, readable
-/// while its screen is locked — an unattended server's normal state. Every Secret stored
+/// `server` does not sign into iCloud and keeps them in local, non-synchronizable items,
+/// readable over SSH after the first unlock since boot (ADR-0013). Every Secret stored
 /// on a server is `server`-level.
 enum HostRole: String, CaseIterable {
     case personal, server
@@ -20,7 +20,7 @@ enum HostRole: String, CaseIterable {
     var keychain: KeychainLocation {
         switch self {
         case .personal: return .iCloud
-        case .server: return .login
+        case .server: return .local
         }
     }
 }

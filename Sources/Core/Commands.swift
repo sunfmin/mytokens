@@ -177,8 +177,8 @@ private func usage() -> CommandResult {
       mytokens put --stdin
           (on a server, run by sync) stores the synced secrets read from stdin
       mytokens host [personal|server]
-          prints this Mac's role, or sets it; a server keeps its secrets in the
-          login keychain and every secret stored there is server-level
+          prints this Mac's role, or sets it; a server keeps its secrets in local,
+          non-synchronizable keychain items and every secret there is server-level
 
     """, 64)
 }

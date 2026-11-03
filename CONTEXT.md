@@ -76,9 +76,9 @@ _Avoid_: scope (that is a Child token's permissions), visibility, tier.
 
 **Server**:
 A Mac of the user's that runs unattended (reached over SSH / the tailnet) and does **not**
-sign into iCloud. It holds only `server`-level Secrets, in its own login keychain, received
-by **Sync** or entered on it directly — and a Secret entered on it is **Adopted** by the next
-Sync (ADR-0010, ADR-0012). The other Macs are **personal Macs**.
+sign into iCloud. It holds only `server`-level Secrets, in local, non-synchronizable keychain
+items, received by **Sync** or entered on it directly — and a Secret entered on it is **Adopted**
+by the next Sync (ADR-0010, ADR-0012, ADR-0013). The other Macs are **personal Macs**.
 _Avoid_: host (the generic machine word; `sync <host>` names one), remote.
 
 **Sync**:
@@ -120,15 +120,15 @@ _Avoid_: "the keychain" (ambiguous), "Apple Passwords vault" (we are not in its 
 
 **Helper**:
 The code-signed Swift binary (Apple Developer identity + `keychain-access-groups`
-entitlement) that is the **sole** read/write path to the iCloud Keychain for this skill.
+entitlement) that is the **sole** read/write path to mytokens' keychain items.
 The `/usr/bin/security` CLI and unsigned scripts cannot substitute — they get
-`errSecMissingEntitlement` (-34018) or cannot see the iCloud Keychain at all.
+`errSecMissingEntitlement` (-34018) or cannot see the data-protection keychain at all.
 _Avoid_: "the script", "the CLI" (reserve "CLI" for the user-facing `mytokens` command).
 
 **Login keychain (not used)**:
-The legacy, local-only `login.keychain-db` that `/usr/bin/security` reads/writes. iCloud
-Keychain sync does not carry it. mytokens does NOT use it on the user's personal Macs (ADR-0001); on a **Server**
-it is the store, since a Server does not sign into iCloud (ADR-0010 narrows ADR-0001).
+The legacy, local-only `login.keychain-db` that `/usr/bin/security` reads/writes. mytokens does
+NOT use it on personal Macs or Servers; a Server uses local, non-synchronizable items in the
+data-protection keychain instead (ADR-0013 amends ADR-0010).
 
 **Passwords.app (not a storage target)**:
 Apple's GUI vault. mytokens Secrets are NOT listed here — making third-party tokens

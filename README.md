@@ -218,6 +218,34 @@ Helper. That means:
 
 ---
 
+## Set up a server
+
+A **server** is a Mac of yours that runs unattended — reached over SSH or the tailnet, its
+screen locked whenever nobody sits at it — and that you do **not** sign into iCloud. It keeps
+its secrets in its own **login keychain** instead of the iCloud Keychain, so jobs on it can
+read them while the screen is locked (ADR-0010).
+
+On the server, once:
+
+```sh
+bash ~/.claude/skills/mytokens/scripts/install.sh   # the same signed app as on your own Macs
+mytokens host server                                # this Mac's role; default: personal
+mytokens host                                       # prints it: server
+mytokens selftest                                   # round-trips through the login keychain
+```
+
+From then on `put`, `get`, `env`, `list` and `rm` act on the server's login keychain:
+
+- Every secret stored there is `server`-level; `put --level personal` is refused.
+- Nothing syncs to or from the server — what is on it was entered on it.
+- Secrets in your iCloud Keychain stay on your own Macs. `mytokens host personal` switches
+  back (the login-keychain secrets stay where they are until you set `server` again).
+
+The role is one small file, `~/Library/Application Support/mytokens/host-role`. Your own
+Macs never need it: without it a Mac is `personal` and nothing changes.
+
+---
+
 ## Is it safe?
 
 The value is only ever typed into the Helper's secure field and written straight to the

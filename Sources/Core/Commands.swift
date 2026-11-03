@@ -14,7 +14,7 @@ extension CommandResult: Error {}
 private func ok(_ s: String) -> CommandResult { CommandResult(stdout: s, stderr: "", exitCode: 0) }
 private func fail(_ s: String, _ code: Int32) -> CommandResult { CommandResult(stdout: "", stderr: s, exitCode: code) }
 
-/// The one injected seam. `.live` wires the real keychains, role setting and popup;
+/// The one injected seam. `.live` wires the real keychains, role setting and inputs;
 /// tests pass fakes. The store is chosen per command from the Mac's role (ADR-0010).
 struct Dependencies {
     var role: HostRoleSetting
@@ -23,7 +23,8 @@ struct Dependencies {
     static var live: Dependencies {
         .init(role: FileHostRoleSetting(),
               store: { KeychainSecretStore(location: $0.keychain) },
-              input: SelectingSecretInput(session: .current, terminal: TerminalSecretInput(), popup: PopupSecretInput()))
+              input: SelectingSecretInput(session: .current, terminal: TerminalSecretInput(), popup: PopupSecretInput(),
+                                          link: LinkSecretInput.live))
     }
 }
 
@@ -146,7 +147,7 @@ private func usage() -> CommandResult {
       mytokens put <service> [--account <label>] [--kind static|parent|profile] [--meta <json>]
                              [--description "<text>"] [--level personal|server]
                              [--set "<NAME>=<value>" …]                  non-secret fields, from the CLI
-                             [--fields "<Label>","<Label>" [--show "<Label>",…]]   secret fields, via popup
+                             [--fields "<Label>","<Label>" [--show "<Label>",…]]   secret fields: terminal, popup or one-time link
           upserts the named fields into the secret, keeping the rest; with no
           --set/--fields it stores one bare value — or, on an existing secret given
           --level, changes only its metadata. Whole-replace: rm then put.
@@ -213,9 +214,11 @@ private func runPut(_ argv: [String], _ store: SecretStore, _ input: SecretInput
             return values
         case .cancelled:
             throw fail("cancelled; nothing stored\n", 1)
+        case .expired:
+            throw fail("the link expired unused; nothing stored\n", 1)
         case .unavailable:
             let command = (["mytokens", "put"] + argv).map(shellWord).joined(separator: " ")
-            throw fail("no terminal or desktop session to enter the secret in; nothing stored.\n"
+            throw fail("no terminal, desktop session or tailnet to enter the secret in; nothing stored.\n"
                        + "Run this in a terminal (e.g. over ssh -t):\n  \(command)\n", 1)
         }
     }

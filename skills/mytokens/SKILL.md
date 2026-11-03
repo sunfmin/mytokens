@@ -93,13 +93,14 @@ The value is plaintext once `get` returns it (acceptable on this trusted machine
 | `mytokens list` | Stored services/accounts/kind/level/description/fields/meta; never values. |
 | `mytokens rm <service> [--account L]` | Delete the whole Secret. Whole-replace = `rm` then `put`. |
 | `mytokens selftest` | Real-keychain round-trip sanity check. |
-| `mytokens push <host>` | On a personal Mac: make the Server `<host>` hold exactly the `server`-level Secrets, over SSH (values only in the pipe). Prints `added`/`updated`/`removed` names, or `no changes`. Never touches a Secret entered on the Server. |
+| `mytokens sync <host>` | On a personal Mac, over SSH (values only in the pipes): first **adopt** each Secret entered on the Server `<host>` — store it here, whole, `server`-level, Description noting the Server and date — then make the Server hold exactly the `server`-level Secrets. Prints `adopted`/`added`/`updated`/`removed`/`conflict` names, or `no changes`. A same-name Secret here is a `conflict`: neither side changes, exit non-zero — leave it for the human. `push` is gone. |
 | `mytokens host [personal\|server]` | Print this Mac's role, or set it. On a `server` every command acts on the login keychain (readable while the screen is locked) and every Secret stored is `server`-level. |
 
 **`put` upserts** (ADR-0009): it updates/inserts the fields you name and **keeps the rest**, so `put svc --set MODEL=…` changes one field and `put svc --fields TOKEN` rotates one secret — the others are untouched. Works the same for a lone value, a composite credential, or a Profile. There is no whole-replace; to rebuild (or drop a stale field), `rm` then `put`.
 
 `--level` says how far a Secret may travel (ADR-0010): `personal` (default — only the user's own
-Macs) or `server` (also pushed to the user's Servers). A `put` without `--level` keeps the stored
+Macs) or `server` (also held by the user's Servers, via `sync`). A Secret entered on a Server becomes
+a `server`-level Secret here at the next `sync`. A `put` without `--level` keeps the stored
 level. Mark a Secret `server` only when a job on a Server needs it.
 
 `--account` lets one Service hold several Secrets (`cloudflare/personal` vs `cloudflare/work`).

@@ -102,12 +102,14 @@ extension Dependencies {
 /// answers with `respond`, which by default plays the Server's end of the pipe.
 final class RecordingRemote: Remote {
     private(set) var runs: [(host: String, command: String, stdin: Data)] = []
-    var respond: (Data) -> CommandResult
-    init(respond: @escaping (Data) -> CommandResult = { _ in CommandResult(stdout: "", stderr: "", exitCode: 0) }) {
+    var respond: (_ command: String, _ stdin: Data) -> CommandResult
+    init(respond: @escaping (_ command: String, _ stdin: Data) -> CommandResult = { _, _ in
+        CommandResult(stdout: "", stderr: "", exitCode: 0)
+    }) {
         self.respond = respond
     }
     func run(host: String, command: String, stdin: Data) throws -> CommandResult {
         runs.append((host, command, stdin))
-        return respond(stdin)
+        return respond(command, stdin)
     }
 }

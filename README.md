@@ -139,7 +139,7 @@ aws/default	static	server  — CI deploy: S3 uploads  fields: Access Key ID, Sec
 ```
 
 Each line shows the service/account, its kind, its level (`personal`, or `server` when it
-may be pushed to your servers — `put --level server`), the description, and (for multi-part
+your servers may hold it — `put --level server`, then `sync`), the description, and (for multi-part
 credentials) the field names — **never the secret itself**.
 
 **Fetch a value** (Claude uses this inline, e.g. inside a `curl`):
@@ -251,7 +251,7 @@ in a terminal.
 In **your** iCloud Keychain, under mytokens' own private area, written only by the signed
 Helper. That means:
 
-- ✅ They sync to your **other Macs** that have MyTokens installed (same Apple ID).
+- ✅ iCloud Keychain sync carries them to your **other Macs** that have MyTokens installed (same Apple ID).
 - ✅ You can see them with `mytokens list` or in **Keychain Access.app**.
 - ❌ They do **not** appear in the **Passwords app** — that only lists website logins, not
   third-party API tokens. This is expected, not a bug.
@@ -282,28 +282,42 @@ mytokens selftest                                   # round-trips through the lo
 From then on `put`, `get`, `env`, `list` and `rm` act on the server's login keychain:
 
 - Every secret stored there is `server`-level; `put --level personal` is refused.
-- Nothing syncs to or from the server — what is on it was entered on it or pushed to it.
+- iCloud Keychain sync never reaches the server. What is on it was entered on it or came by
+  `mytokens sync` from one of your own Macs — and what was entered on it is adopted by the
+  next `sync`, so your own Macs become its home.
 - Secrets in your iCloud Keychain stay on your own Macs. `mytokens host personal` switches
   back (the login-keychain secrets stay where they are until you set `server` again).
 
-### Push the server-level secrets
+### Sync with a server
 
-On one of your own Macs, mark the secrets a server needs `server`, then push:
+On one of your own Macs, mark the secrets a server needs `server`, then sync:
 
 ```sh
 mytokens put deploy --level server        # an existing secret: only its level changes
-mytokens push my-server                   # any host name ssh accepts
+mytokens sync my-server                   # any host name ssh accepts
 ```
 
 ```
+adopted ci-hook/default
 added deploy/default
 ```
 
-`push` makes the server hold exactly your `server`-level secrets: it adds and updates them,
-and removes ones it pushed earlier that are now `personal` or gone. It never touches a secret
-entered on the server itself. A second run prints `no changes`. The values travel only in the
-SSH pipe, to `mytokens put --stdin` on the server — never on a command line, in the
-environment, in a file or in what `push` prints. `put --stdin` is refused on your own Macs.
+`sync` does two things, over SSH:
+
+1. **Adopt.** Each secret entered on the server itself (`put` over SSH, or through a one-time
+   link) comes back to this Mac as a `server`-level secret, whole, its description noting
+   `adopted from my-server on <date>`. From then on this Mac is its home: change, lower or
+   remove it here, and the next `sync` carries that to the server. If this Mac already has a
+   secret of the same name, at any level, `sync` changes **neither** side, prints
+   `conflict <name>: …` and exits non-zero once the rest is done — a server can never
+   overwrite a secret on your own Macs. Settle it by hand (e.g. `rm` one of them).
+2. **Push.** The server then holds exactly your `server`-level secrets: `sync` adds and
+   updates them, and removes ones it sent earlier that are now `personal` or gone.
+
+A second run prints `no changes`. The values travel only in the SSH pipes, between
+`mytokens get --unpushed` / `mytokens put --stdin` on the server and this Mac — never on a
+command line, in the environment, in a file or in what `sync` prints. Both are refused on your
+own Macs. (`push`, the old name, is gone: it prints a hint naming `sync`.)
 
 The role is one small file, `~/Library/Application Support/mytokens/host-role`. Your own
 Macs never need it: without it a Mac is `personal` and nothing changes.

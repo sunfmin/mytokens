@@ -10,7 +10,7 @@ struct SecretRecord {
     var fields: [String]?     // ordered field labels for a multi-field Secret, else nil
     var description: String?  // agent-authored purpose note (ADR-0006), or nil
     var level: Level          // how far the Secret may travel (ADR-0010)
-    var pushed: Bool          // a Server's copy written by `push`, which may also remove it (ADR-0010)
+    var pushed: Bool          // a Server's copy written or adopted by `sync`, which may also remove it (ADR-0012)
 }
 
 /// How far a Secret may travel (ADR-0010). `personal` stays in the iCloud Keychain on

@@ -70,21 +70,32 @@ _Avoid_: environment (too generic), config set, env file.
 
 **Level**:
 How far a Secret may travel: `personal` (the default — it stays in the iCloud Keychain on
-the user's own Macs) or `server` (it may also be **Pushed** to the user's **Servers**). Set
+the user's own Macs) or `server` (it may also be held by the user's **Servers**, by **Sync**). Set
 by `put --level`; a Secret stored before levels existed reads as `personal` (ADR-0010).
 _Avoid_: scope (that is a Child token's permissions), visibility, tier.
 
 **Server**:
 A Mac of the user's that runs unattended (reached over SSH / the tailnet) and does **not**
 sign into iCloud. It holds only `server`-level Secrets, in its own login keychain, received
-by **Push** or entered on it directly (ADR-0010). The other Macs are **personal Macs**.
-_Avoid_: host (the generic machine word; `push <host>` names one), remote.
+by **Sync** or entered on it directly — and a Secret entered on it is **Adopted** by the next
+Sync (ADR-0010, ADR-0012). The other Macs are **personal Macs**.
+_Avoid_: host (the generic machine word; `sync <host>` names one), remote.
 
-**Push**:
-To make a Server hold exactly a personal Mac's `server`-level Secrets: `mytokens push <host>`
-writes them there over SSH and removes ones it pushed earlier that are no longer `server`-level
-(ADR-0010). The only way a Secret reaches a Server other than being entered on it.
-_Avoid_: sync (that is the iCloud Keychain's job between personal Macs), deploy, copy.
+**Sync**:
+To bring a personal Mac and one Server into agreement, the personal Mac the home of every
+Secret on it: `mytokens sync <host>`, over SSH, first **Adopts** the Secrets entered on the
+Server, then makes the Server hold exactly the personal Mac's `server`-level Secrets — removing
+ones it pushed earlier that are gone or no longer `server`-level (ADR-0012). The only way a
+Secret reaches a Server other than being entered on it. A Secret's pushed mark says the Server
+got it from a personal Mac.
+_Avoid_: push (the old name of this command), two-way sync (each Secret has one home), deploy, copy.
+
+**Adopt**:
+What Sync does with a Secret entered on a Server: store it on the personal Mac, whole, as a
+`server`-level Secret whose Description notes the Server and date, and mark it pushed on the
+Server — so from then on the personal Mac is its home. A Secret of the same name already on the
+personal Mac, at any level, is a **conflict**: neither side changes, and the human decides.
+_Avoid_: import, pull, merge.
 
 **One-time link**:
 How `put` collects a Secret's values where no terminal or watched desktop reaches the human: a
@@ -100,10 +111,10 @@ autofills in a browser. Explicitly NOT managed by this skill.
 ## Storage
 
 **iCloud Keychain**:
-The macOS data-protection keychain that syncs across a user's Apple devices and backs
-Apple Passwords. mytokens stores every Secret here, under its **own access group**, via
-the Helper. Items therefore sync across the user's Macs (where the Helper is installed)
-but do NOT appear in the Passwords.app list (see ADR-0001). A Secret there is readable
+The macOS data-protection keychain that backs Apple Passwords; iCloud Keychain sync carries
+it across a user's Apple devices. mytokens stores every Secret here, under its **own access
+group**, via the Helper. iCloud Keychain sync therefore carries the items to the user's Macs
+where the Helper is installed, but they do NOT appear in the Passwords.app list (see ADR-0001). A Secret there is readable
 while the screen is locked, once the Mac has been unlocked since it booted (ADR-0011).
 _Avoid_: "the keychain" (ambiguous), "Apple Passwords vault" (we are not in its list).
 
@@ -115,8 +126,8 @@ The `/usr/bin/security` CLI and unsigned scripts cannot substitute — they get
 _Avoid_: "the script", "the CLI" (reserve "CLI" for the user-facing `mytokens` command).
 
 **Login keychain (not used)**:
-The legacy, local-only `login.keychain-db` that `/usr/bin/security` reads/writes. Does
-not sync. mytokens does NOT use it on the user's personal Macs (ADR-0001); on a **Server**
+The legacy, local-only `login.keychain-db` that `/usr/bin/security` reads/writes. iCloud
+Keychain sync does not carry it. mytokens does NOT use it on the user's personal Macs (ADR-0001); on a **Server**
 it is the store, since a Server does not sign into iCloud (ADR-0010 narrows ADR-0001).
 
 **Passwords.app (not a storage target)**:

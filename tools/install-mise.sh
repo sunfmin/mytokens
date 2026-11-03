@@ -15,7 +15,7 @@ tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 curl -fsSL "$base/$asset" -o "$tmp/$asset"
 curl -fsSL "$base/SHASUMS256.txt" -o "$tmp/SHASUMS256.txt"
-expected=$(awk -v asset="$asset" '$2 == asset { print $1 }' "$tmp/SHASUMS256.txt")
+expected=$(awk -v asset="$asset" '$2 == asset || $2 == "./" asset { print $1 }' "$tmp/SHASUMS256.txt")
 [ -n "$expected" ] || { echo "mise release $asset has no SHA-256 in $base/SHASUMS256.txt" >&2; exit 1; }
 actual=$(shasum -a 256 "$tmp/$asset" | awk '{ print $1 }')
 [ "$actual" = "$expected" ] || { echo "mise release $asset failed SHA-256 verification; nothing was installed" >&2; exit 1; }

@@ -37,7 +37,7 @@ esac
 EOF
 chmod +x "$release/package/mise/bin/mise"
 tar -czf "$release/$asset" -C "$release/package" mise
-(cd "$release" && shasum -a 256 "$asset" >SHASUMS256.txt)
+(cd "$release" && shasum -a 256 "$asset" | sed 's#  #  ./#' >SHASUMS256.txt)
 
 cat >"$tmp/bin/curl" <<'EOF'
 #!/bin/sh

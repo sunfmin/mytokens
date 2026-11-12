@@ -49,6 +49,21 @@ Felix's decisions (sunfmin/control#575, 2026-11-03):
 - A second `sync` with nothing changed on either side changes nothing.
 - `mytokens push` prints a hint that names `sync`, and exits 64.
 
+## A Server's write into a pushed Secret is refused
+
+Added for sunfmin/control#800 (2026-11-12). On a Server, `put` into a Secret that carries the
+pushed mark is refused (exit 64, nothing stored, before any value is asked for): its home is a
+personal Mac, and the next push would put that Mac's copy back over the change, silently.
+The message names the personal Mac as the place to change it, and says that values made on the
+Server go in a Secret of their own there, which the next `sync` adopts. A Secret entered on the
+Server and not yet adopted carries no pushed mark, so the Server may still change it.
+
+- **Clear the pushed mark on such a write**, so the next `sync` reports a conflict. Rejected:
+  the conflict has no way out short of `rm` on one side, and Background Sync would fail on it
+  every 15 minutes until a human acts.
+- **Adopt the Server's Fields one by one into the personal Mac's Secret.** Rejected by the
+  rule above: a Server must never write over a Secret on the user's own Macs.
+
 ## Narrows ADR-0010
 
 ADR-0010's "a Secret entered on the Server itself is never touched" now holds only for a

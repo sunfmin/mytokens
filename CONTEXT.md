@@ -79,7 +79,8 @@ _Avoid_: scope (that is a Child token's permissions), visibility, tier.
 A Mac of the user's that runs unattended (reached over SSH / the tailnet) and does **not**
 sign into iCloud. It holds only `server`-level Secrets, in local, non-synchronizable keychain
 items, received by **Sync** or entered on it directly — and a Secret entered on it is **Adopted**
-by the next Sync (ADR-0010, ADR-0012, ADR-0013). The other Macs are **personal Macs**.
+by the next Sync (ADR-0010, ADR-0012, ADR-0013). A Server refuses to `put` into a Secret Sync
+brought there: its home is a personal Mac. The other Macs are **personal Macs**.
 _Avoid_: host (the generic machine word; `sync <host>` names one), remote.
 
 **Sync**:

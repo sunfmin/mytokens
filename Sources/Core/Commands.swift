@@ -374,6 +374,13 @@ private func runPut(_ argv: [String], _ store: SecretStore, _ input: SecretInput
         let existing = try store.get(service: service, account: account)
         let record = try store.list().first { $0.service == service && $0.account == account }
 
+        // A pushed Secret's home is a personal Mac: the next sync would put its copy back over
+        // any change made here, so a Server refuses the change before asking for a value
+        // (sunfmin/control#800, ADR-0012).
+        if role == .server, let record, record.pushed {
+            return fail(pushedSecretRefusal(service: service, account: account), 64)
+        }
+
         // A merge can't change the kind (rm to change it); an absent item defaults to static.
         if let existingKind = record?.kind, let explicitKind, explicitKind != existingKind {
             return fail("\(service)/\(account) already exists as kind '\(existingKind)'; rm it first to change kind\n", 64)
@@ -445,13 +452,27 @@ private func runPut(_ argv: [String], _ store: SecretStore, _ input: SecretInput
 
         try store.upsert(service: service, account: account, secret: secret,
                               kind: kind, meta: meta, description: description, level: level,
-                              pushed: record?.pushed ?? false)
+                              pushed: false)
         return ok("stored \(service)/\(account)\n")
     } catch let failure as CommandResult {
         return failure                       // a prompt that stored nothing
     } catch {
         return fail("\(error)\n", 1)
     }
+}
+
+/// Why a Server will not `put` into a Secret `sync` pushed there, and what to run instead.
+func pushedSecretRefusal(service: String, account: String) -> String {
+    let name = account == "default" ? service : "\(service) --account \(shellWord(account))"
+    return """
+    \(service)/\(account) came here from a personal Mac by sync, and the next sync would put \
+    that Mac's copy back over a change made here; nothing stored.
+    Change it on a personal Mac, its home:
+      mytokens put \(name) --level server ...
+    and the next sync brings it here. To keep values made on this server, put them in a \
+    secret of their own here instead: the next sync adopts it.
+
+    """
 }
 
 // `sync <host>` brings a Server and this personal Mac into agreement (ADR-0012). A success

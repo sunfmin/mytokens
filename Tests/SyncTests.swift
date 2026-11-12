@@ -85,12 +85,53 @@ final class SyncTests: XCTestCase {
         XCTAssertTrue(server.items.isEmpty)
     }
 
-    func testAnEditOnTheServerKeepsThePushedMark() {
-        _ = onLaptop(["put", "llm", "--level", "server", "--set", "A=1"])
+    // sunfmin/control#800: a write on the Server into a pushed Secret would be put back by the
+    // next sync, so it fails loudly instead, before asking for anything, and changes nothing.
+    func testAServerPutIntoAPushedSecretIsRefusedAndTheNextSyncChangesNothing() {
+        _ = onLaptop(["put", "guild", "--kind", "profile", "--level", "server", "--set", "MIRROR=1"])
         _ = sync()
-        _ = onServer(["put", "llm", "--set", "A=2"])
-        XCTAssertEqual(sync().stdout, "updated llm/default\n")
-        XCTAssertEqual(onServer(["get", "llm", "--field", "A"]).stdout, "1")
+        let before = try! server.list().map { "\($0)" }
+
+        for argv in [["put", "guild", "--set", "FORGEJO_TOKEN=t"],
+                     ["put", "guild", "--fields", "FORGEJO_TOKEN"],
+                     ["put", "guild", "--description", "changed here", "--set", "MIRROR=2"]] {
+            let r = onServer(argv, input: ["FORGEJO_TOKEN": "t"])
+            XCTAssertEqual(r.exitCode, 64, argv.joined(separator: " "))
+            XCTAssertEqual(r.stderr, pushedSecretRefusal(service: "guild", account: "default"))
+            XCTAssertTrue(r.stderr.contains("nothing stored"))
+            XCTAssertTrue(r.stderr.contains("mytokens put guild --level server"))
+            XCTAssertFalse(r.stderr.contains("FORGEJO_TOKEN=t") || r.stderr.contains("MIRROR=2"))
+        }
+        XCTAssertEqual(try! server.list().map { "\($0)" }, before)
+        XCTAssertNil(try server.get(service: "guild", account: "default")?.value(forField: "FORGEJO_TOKEN"))
+        XCTAssertEqual(sync().stdout, "no changes\n")
+        XCTAssertEqual(onServer(["get", "guild", "--field", "MIRROR"]).stdout, "1")
+    }
+
+    func testTheRefusalNamesANonDefaultAccount() {
+        _ = onLaptop(["put", "gh", "--account", "bot", "--level", "server"], input: ["": "tok"])
+        _ = sync()
+        let r = onServer(["put", "gh", "--account", "bot"], input: ["": "new"])
+        XCTAssertEqual(r.exitCode, 64)
+        XCTAssertTrue(r.stderr.contains("mytokens put gh --account bot --level server"), r.stderr)
+        XCTAssertEqual(onServer(["get", "gh", "--account", "bot"]).stdout, "tok")
+    }
+
+    // The way to keep values made on a Server: a Secret of their own there, which sync adopts.
+    func testValuesMadeOnTheServerInASecretOfTheirOwnAreAdopted() {
+        _ = onLaptop(["put", "guild", "--kind", "profile", "--level", "server", "--set", "MIRROR=1"])
+        _ = sync()
+        XCTAssertEqual(onServer(["put", "guild-hub", "--kind", "profile", "--set", "FORGEJO_TOKEN=t"]).exitCode, 0)
+        XCTAssertEqual(sync().stdout, "adopted guild-hub/default\n")
+        XCTAssertEqual(onLaptop(["get", "guild-hub", "--field", "FORGEJO_TOKEN"]).stdout, "t")
+        XCTAssertEqual(onServer(["get", "guild-hub", "--field", "FORGEJO_TOKEN"]).stdout, "t")
+    }
+
+    // A Secret entered on the Server is not pushed: the Server may still change it until adopted.
+    func testAServerMayStillChangeASecretEnteredThere() {
+        _ = onServer(["put", "hook", "--set", "A=1"])
+        XCTAssertEqual(onServer(["put", "hook", "--set", "A=2"]).exitCode, 0)
+        XCTAssertEqual(onServer(["get", "hook", "--field", "A"]).stdout, "2")
     }
 
     func testValuesTravelOnlyInThePipe() {

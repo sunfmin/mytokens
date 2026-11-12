@@ -409,6 +409,10 @@ added deploy/default
 2. **Push.** The server then holds exactly your `server`-level secrets: `sync` adds and
    updates them, and removes ones it sent earlier that are now `personal` or gone.
 
+On the server, `put` into a secret that `sync` sent there is refused, and stores nothing: the
+next `sync` would put this Mac's copy back over the change. Change it here instead, or have the
+server put its own values in a secret of their own, which the next `sync` adopts.
+
 A second run prints `no changes`. The values travel only in the SSH pipes, between
 `mytokens get --unpushed` / `mytokens put --stdin` on the server and this Mac — never on a
 command line, in the environment, in a file or in what `sync` prints. Both are refused on your

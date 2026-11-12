@@ -1,7 +1,7 @@
 import Foundation
 import Security
 
-// The Server list (ADR-0014): the hosts `server add` set up, kept on the personal Macs. One
+// The Server list (ADR-0015): the hosts `server add` set up, kept on the personal Macs. One
 // synchronizable item in mytokens' access group, so iCloud Keychain sync gives every personal
 // Mac the same list. It is not a Secret: its label lacks the Secrets' prefix, so `list`, Sync
 // and `get --unpushed` never see it, and it holds host names only — nothing secret.

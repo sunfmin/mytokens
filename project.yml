@@ -16,7 +16,7 @@ targets:
     sources:
       - path: Sources
       - path: Assets.xcassets
-      # The installer `server add` feeds a Server over ssh (ADR-0014).
+      # The installer `server add` feeds a Server over ssh (ADR-0015).
       - path: skills/mytokens/scripts/install.sh
         buildPhase: resources
     settings:

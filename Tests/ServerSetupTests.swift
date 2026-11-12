@@ -1,6 +1,6 @@
 import XCTest
 
-// `server add|list|rm` (ADR-0014): a personal Mac sets up a Server in one command and keeps
+// `server add|list|rm` (ADR-0015): a personal Mac sets up a Server in one command and keeps
 // the Server list. A fake remote plays the Server — its installed version, the installer, and
 // its own `mytokens` driven through `runCommand` with a store and role of its own — so every
 // step runs both ends without ssh or a keychain.

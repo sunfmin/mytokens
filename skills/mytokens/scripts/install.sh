@@ -9,7 +9,7 @@
 #
 # `mytokens server add <host>` sends this very script, from inside the app, over
 # ssh to a Server and runs it with MYTOKENS_SELFTEST=0: it sets the Server's
-# role first and runs selftest there itself (ADR-0014).
+# role first and runs selftest there itself (ADR-0015).
 set -euo pipefail
 
 REPO="${MYTOKENS_REPO:-sunfmin/mytokens}"

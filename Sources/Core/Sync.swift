@@ -99,7 +99,7 @@ func adoptionNote(host: String, on date: Date) -> String {
 private func byName(_ a: SecretRecord, _ b: SecretRecord) -> Bool { (a.service, a.account) < (b.service, b.account) }
 
 /// What a Sync leaves the Server holding: every `server`-level Secret here (`sync`, `server
-/// add`), or nothing at all (`server rm`, before the host leaves the Server list, ADR-0014).
+/// add`), or nothing at all (`server rm`, before the host leaves the Server list, ADR-0015).
 enum SyncTarget { case serverLevel, nothing }
 
 /// `sync <host>`, on a personal Mac: adopt what was entered on the Server, then push.

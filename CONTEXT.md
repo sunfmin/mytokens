@@ -40,7 +40,7 @@ A target API or tool that a Secret authenticates to — or, for a Profile, the p
 tool is pointed at — identified by a stable slug (`cloudflare`, `github`, `openai`, `glm`,
 …). The slug is how Claude looks a Secret or Profile up. The Helper treats every Service
 uniformly — service-specific behavior (e.g. Cloudflare minting) lives in Claude's runtime
-usage and the skill's recipes, **not** in the Helper (ADR-0004).
+usage and the skill's recipes, **not** in the Helper (ADR-0004), with one exception: a Server pushes its own **Misses** through Bark (ADR-0014).
 
 **Parent token**:
 A stored Secret that holds permission to *create other tokens* on its Service (e.g. a
@@ -96,7 +96,7 @@ synchronizable item in mytokens' access group — so iCloud Keychain sync gives 
 the same list. Not a Secret (`list` does not show it) and nothing secret: host names only. Only a
 host named by `server add` is on it; nothing is discovered from the tailnet. `server rm <host>`
 Syncs the host to hold no Secrets, then takes it off. Background Sync keeps every listed Server
-current (ADR-0014).
+current (ADR-0015).
 _Avoid_: fleet, inventory, known hosts (that is ssh's file).
 
 **Adopt**:
@@ -105,6 +105,13 @@ What Sync does with a Secret entered on a Server: store it on the personal Mac, 
 Server — so from then on the personal Mac is its home. A Secret of the same name already on the
 personal Mac, at any level, is a **conflict**: neither side changes, and the human decides.
 _Avoid_: import, pull, merge.
+
+**Miss**:
+A job on a Server asking (`get`, `env`) for a Secret the Server does not hold. Instead of only
+failing, the Server says why, names the `put <service> --level server` line to run on a personal
+Mac and the Sync that brings it, and pushes the same through Bark with its own `bark` Secret — at
+most once per Secret per Server per hour (ADR-0014). On a personal Mac a missing Secret is just absent.
+_Avoid_: not found, error (say which).
 
 **One-time link**:
 How `put` collects a Secret's values where no terminal or watched desktop reaches the human: a

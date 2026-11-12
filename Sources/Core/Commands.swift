@@ -23,8 +23,11 @@ struct Dependencies {
     var input: (HostRole) -> SecretInput
     var remote: Remote             // how `sync` reaches a Server
     var stdin: () -> Data          // what `put --stdin` reads
-    var now: () -> Date = Date.init   // the date an adopted Secret's Description records
-    var servers: ServerList = KeychainServerList()   // the personal Macs' Server list (ADR-0014)
+    var now: () -> Date = Date.init   // the date an adopted Secret's Description records; a miss's push time
+    var hostName: () -> String = currentHostName   // how a Server names itself in a miss
+    var bark: BarkTransport = NoBarkTransport()    // how a Server's miss reaches the human
+    var pushLedger: PushLedger = MemoryPushLedger()   // at most one miss push per Secret per hour
+    var servers: ServerList = KeychainServerList()   // the personal Macs' Server list (ADR-0015)
     var app: () -> AppRelease = { .current }         // what `server add` installs on a Server
     static var live: Dependencies {
         .init(role: FileHostRoleSetting(),
@@ -32,7 +35,9 @@ struct Dependencies {
               input: { SelectingSecretInput(session: .current, role: $0, terminal: TerminalSecretInput(),
                                             popup: PopupSecretInput(), link: LinkSecretInput.live) },
               remote: SSHRemote(),
-              stdin: { FileHandle.standardInput.readDataToEndOfFile() })
+              stdin: { FileHandle.standardInput.readDataToEndOfFile() },
+              bark: HTTPBarkTransport(),
+              pushLedger: FilePushLedger())
     }
 }
 
@@ -77,13 +82,13 @@ private func isValidEnvName(_ s: String) -> Bool {
 /// cannot inject shell: wrap in `'…'`, and rewrite each embedded `'` as `'\''`
 /// (close-quote, escaped literal quote, reopen-quote). Handles spaces, `$`,
 /// backticks, newlines — everything (ADR-0008).
-private func shellSingleQuote(_ value: String) -> String {
+func shellSingleQuote(_ value: String) -> String {
     "'" + value.replacingOccurrences(of: "'", with: "'\\''") + "'"
 }
 
 /// Quote one shell word only when it needs it, so a printed command reads like
 /// what a human would type (`mytokens put svc --fields Token`) yet pastes exactly.
-private func shellWord(_ s: String) -> String {
+func shellWord(_ s: String) -> String {
     let safe = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_@%+=:,./-")
     return !s.isEmpty && s.unicodeScalars.allSatisfy(safe.contains) ? s : shellSingleQuote(s)
 }
@@ -128,7 +133,7 @@ func runCommand(_ argv: [String], _ deps: Dependencies) -> CommandResult {
     let role: HostRole
     do { role = try deps.role.read() } catch { return fail("\(error)\n", 1) }
     let store = deps.store(role)
-    // The Server list's item is not a Secret: no Secret may take its service (ADR-0014).
+    // The Server list's item is not a Secret: no Secret may take its service (ADR-0015).
     if ["put", "rm"].contains(cmd), rest.first == serverListService {
         return fail("\(serverListService) is reserved for the server list\n", 64)
     }
@@ -138,11 +143,21 @@ func runCommand(_ argv: [String], _ deps: Dependencies) -> CommandResult {
     case "sync": return runSync(rest, store, deps.remote, role, deps.now())
     case "server": return runServer(rest, store, deps, role)
     case "get" where rest.contains("--unpushed"): return runGetUnpushed(rest, store, role)
-    case "get": return runGet(rest, store)
-    case "env": return runEnv(rest, store)
+    case "get": return runGet(rest, store, missing(role, store, deps))
+    case "env": return runEnv(rest, store, missing(role, store, deps))
     case "list": return runList(rest, store)
     case "rm": return runRm(rest, store)
     default: return runSelftest(store)
+    }
+}
+
+/// What `get`/`env` answer for a Secret not in the store: on a personal Mac the plain
+/// "no secret"; on a Server, why it is not there and the line to run (sunfmin/control#744).
+private func missing(_ role: HostRole, _ store: SecretStore, _ deps: Dependencies) -> (String, String) -> CommandResult {
+    { service, account in
+        role == .server
+            ? reportMiss(service: service, account: account, store: store, deps: deps)
+            : fail("no secret for \(service)/\(account)\n", 1)
     }
 }
 
@@ -383,7 +398,7 @@ private func runSync(_ argv: [String], _ store: SecretStore, _ remote: Remote, _
     return sync(with: host, store: store, via: remote, now: now)
 }
 
-// `server add|list|rm` keep the personal Macs' Server list (ADR-0014). Like `sync`, they
+// `server add|list|rm` keep the personal Macs' Server list (ADR-0015). Like `sync`, they
 // run only on a personal Mac, the home of every Secret.
 private func runServer(_ argv: [String], _ store: SecretStore, _ deps: Dependencies, _ role: HostRole) -> CommandResult {
     let args = parseArgs(argv)
@@ -426,7 +441,7 @@ private func runPutStdin(_ argv: [String], _ store: SecretStore, _ stdin: () -> 
     return receivePush(stdin(), into: store)
 }
 
-private func runGet(_ argv: [String], _ store: SecretStore) -> CommandResult {
+private func runGet(_ argv: [String], _ store: SecretStore, _ missing: (String, String) -> CommandResult) -> CommandResult {
     let args = parseArgs(argv)
     guard let service = args.service else { return usage() }
     let account = args.account
@@ -434,7 +449,7 @@ private func runGet(_ argv: [String], _ store: SecretStore) -> CommandResult {
     let wantJSON = args.present("json")
     do {
         guard let secret = try store.get(service: service, account: account) else {
-            return fail("no secret for \(service)/\(account)\n", 1)
+            return missing(service, account)
         }
 
         // --json is the whole Secret with its level (ADR-0010): `{"fields": {label: value},
@@ -478,13 +493,13 @@ private func runGet(_ argv: [String], _ store: SecretStore) -> CommandResult {
 // single store call returns both — so read the kind from `list()`, then the values
 // from `get()`. Profile-only is enforced by the `kind` marker (the source of truth),
 // not by inferring it from label shape. Stays on ADR-0002's stdout side (no exec).
-private func runEnv(_ argv: [String], _ store: SecretStore) -> CommandResult {
+private func runEnv(_ argv: [String], _ store: SecretStore, _ missing: (String, String) -> CommandResult) -> CommandResult {
     let args = parseArgs(argv)
     guard let service = args.service else { return usage() }
     let account = args.account
     do {
         guard let record = try store.list().first(where: { $0.service == service && $0.account == account }) else {
-            return fail("no secret for \(service)/\(account)\n", 1)
+            return missing(service, account)
         }
         guard record.kind == "profile" else {
             return fail("\(service)/\(account) is kind '\(record.kind)', not a Profile — `env` only renders Profiles\n", 1)

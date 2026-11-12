@@ -1,6 +1,6 @@
 import Foundation
 
-// `server add <host>` and `server rm <host>`, on a personal Mac (ADR-0014): set up a Server in
+// `server add <host>` and `server rm <host>`, on a personal Mac (ADR-0015): set up a Server in
 // one command, and take one off the Server list. Every remote step goes over `Remote` (ssh),
 // and Secret values cross only in Sync's SSH pipes, as `sync` alone does (ADR-0012).
 

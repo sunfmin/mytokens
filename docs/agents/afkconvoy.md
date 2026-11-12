@@ -11,9 +11,15 @@ gate_seconds: 1200                # the gate limit, starting after its turn is g
 
 The rest default (`ready_label: ready-for-agent`, `escalate_label:
 ready-for-human`, `lock_label: fleet-lock`). The gate (`gate.sh`) generates
-the Xcode project with the pinned XcodeGen and runs `make test`: the release-need
-and xcodegen-need script checks and 111 tests, 6 s on macs-Mac-Mini (12 cores) on
+the Xcode project with the pinned XcodeGen and runs `make test`: the release-need,
+xcodegen-need and test-runner script checks and 113 tests, 6 s on macs-Mac-Mini (12 cores) on
 2026-11-03.
+
+`make test` builds the tests with `xcodebuild build-for-testing` and runs the
+bundle with `xcrun xctest` (`tools/xctest-run.sh`), not `xcodebuild test`: that
+needs launchd's `com.apple.testmanagerd`, which the gate's session (over SSH)
+cannot reach, and fails before any test runs. The runner is red on a missing
+bundle, a failing test, or a run of no tests (`tools/xctest-run-test.sh`).
 
 ## What the gate needs on a host
 

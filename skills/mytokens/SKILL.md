@@ -95,6 +95,7 @@ The value is plaintext once `get` returns it (acceptable on this trusted machine
 | `mytokens put <service> --level personal\|server` | On an existing Secret: change only its Level — no popup, values kept. |
 | `mytokens put <service> --set "<NAME>=<value>" …` | Upsert non-secret field(s) from the CLI — **no popup**. Repeatable. |
 | `mytokens put <service> --fields "<A>","<B>" [--show "<A>"]` | Upsert secret field(s) via one popup; masked unless `--show`. |
+| `<command> \| mytokens put <service> --field-from-stdin "<A>"` | Upsert one secret field from a command's output — **no popup**. Only for a value a command makes (see below). |
 | `mytokens get <service> [--account L]` | Raw value to stdout; non-zero exit if absent. |
 | `mytokens get <service> --field "<A>"` / `--json` | One field's raw value / the whole Secret as JSON: `{"fields":{…},"level":…}` (or `{"level":…,"value":…}` for a lone value). |
 | `mytokens env <service> [--account L]` | A Profile's env vars as shell `export` lines for `eval`. Errors on a non-Profile. |
@@ -131,6 +132,15 @@ Secret that deletes as a unit.
 - **Update one field** without touching the rest (ADR-0009): `mytokens put aws --fields "Secret Access Key"`
   re-pops just that field; the Access Key ID is left as-is. Non-secret parts can go via
   `--set` instead of the popup, e.g. `mytokens put db --set "Username=svc_ci"`.
+- **A value a command makes** — a `.p12` from `security export`, a password from `openssl rand` —
+  is piped straight in, with no popup: `openssl rand -base64 32 | mytokens put dev-id
+  --field-from-stdin "P12 password"` (ADR-0017). All of stdin is the one field's value (no length
+  limit; one trailing newline stripped; base64 any binary). It upserts like `--fields` and
+  combines with `--set`/`--description`/`--level`; one call per field. **Use it only when a
+  command generates the value and pipes it in directly.** Never use it to relay a value the
+  human typed or pasted into chat, and never `echo`/`printf` a known secret into it. A value
+  the human knows goes through `--fields` (terminal, popup or link). Never write the value
+  to a file or a variable first. It is refused when stdin is a terminal or empty.
 - **Get one field**: `mytokens get aws --field "Secret Access Key"` → that field's raw value
   (the label is the key — quote the spaces). Consume inline, e.g.
   `AWS_SECRET_ACCESS_KEY=$(mytokens get aws --field "Secret Access Key")`.

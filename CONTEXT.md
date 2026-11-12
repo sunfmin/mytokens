@@ -19,7 +19,8 @@ A labeled value inside a Secret. Most Secrets have exactly one (the token itself
 composite credentials have several that belong together and rotate as a unit — e.g.
 AWS *Access Key ID* + *Secret Access Key*, or a database *Username* + *Password*. A
 Field is addressed by its **label** (the label is the key), and is masked on input
-unless explicitly revealed for paste-verification.
+unless explicitly revealed for paste-verification. A secret Field comes from the terminal, the
+popup or a One-time link, or — for a value a command makes — piped in on stdin (ADR-0017).
 _Avoid_: sub-secret, key/value pair (a Field's label is its identity, not an arbitrary key).
 
 **Description**:

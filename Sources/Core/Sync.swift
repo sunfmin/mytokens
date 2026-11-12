@@ -98,11 +98,20 @@ func adoptionNote(host: String, on date: Date) -> String {
 
 private func byName(_ a: SecretRecord, _ b: SecretRecord) -> Bool { (a.service, a.account) < (b.service, b.account) }
 
+/// What a Sync leaves the Server holding: every `server`-level Secret here (`sync`, `server
+/// add`), or nothing at all (`server rm`, before the host leaves the Server list, ADR-0014).
+enum SyncTarget { case serverLevel, nothing }
+
 /// `sync <host>`, on a personal Mac: adopt what was entered on the Server, then push.
 /// Prints what changed by name — `adopted`, `added`, `updated`, `removed`, `conflict` —
 /// or `no changes` after both runs succeed. A conflict or failed run makes the exit status 1;
 /// a failure names its step and relays the Server's error without printing Secret values.
-func sync(with host: String, store: SecretStore, via remote: Remote, now: Date) -> CommandResult {
+///
+/// Holding `.nothing`, a conflict stops before anything is removed; otherwise the Server first
+/// takes the adopted Secrets (marking them pushed, removing every other pushed one), then an
+/// empty set, which removes those too.
+func sync(with host: String, store: SecretStore, via remote: Remote, now: Date,
+          holding target: SyncTarget = .serverLevel) -> CommandResult {
     guard !host.isEmpty, !host.hasPrefix("-") else {
         return CommandResult(stdout: "", stderr: "sync needs a host name (got \"\(host)\")\n", exitCode: 64)
     }
@@ -148,17 +157,35 @@ func sync(with host: String, store: SecretStore, via remote: Remote, now: Date) 
 
         // 2. Push.
         step = "push"
-        let records = try store.list().filter { $0.level == .server }.sorted(by: byName)
-        let secrets = try records.compactMap { r in
-            try store.get(service: r.service, account: r.account).map { WireSecret(r, $0) }
+        func push(_ records: [SecretRecord], adopt: [String]) throws -> CommandResult? {
+            let secrets = try records.sorted(by: byName).compactMap { r in
+                try store.get(service: r.service, account: r.account).map { WireSecret(r, $0) }
+            }
+            let payload = try JSONEncoder().encode(WirePayload(secrets: secrets, adopt: adopt))
+            let pushed = try remote.run(host: host, command: remotePutCommand, stdin: payload)
+            guard pushed.exitCode == 0 else { return failed(pushed.stderr) }
+            lines += pushed.stdout.split(separator: "\n").map(String.init).filter { $0 != "no changes" }
+            return nil
         }
-        let payload = try JSONEncoder().encode(WirePayload(secrets: secrets, adopt: adopt))
-        let pushed = try remote.run(host: host, command: remotePutCommand, stdin: payload)
-        guard pushed.exitCode == 0 else { return failed(pushed.stderr) }
-        lines += pushed.stdout.split(separator: "\n").map(String.init).filter { $0 != "no changes" }
+        let serverLevel = try store.list().filter { $0.level == .server }
+        switch target {
+        case .serverLevel:
+            if let failure = try push(serverLevel, adopt: adopt) { return failure }
+        case .nothing:
+            guard conflicts.isEmpty else {
+                return CommandResult(stdout: (lines + conflicts).map { $0 + "\n" }.joined(),
+                                     stderr: "\(host) holds secrets entered there that conflict with this Mac's; nothing removed\n",
+                                     exitCode: 1)
+            }
+            if !adopt.isEmpty {
+                let adopted = serverLevel.filter { adopt.contains("\($0.service)/\($0.account)") }
+                if let failure = try push(adopted, adopt: adopt) { return failure }
+            }
+            if let failure = try push([], adopt: []) { return failure }
+        }
         lines += conflicts
         if lines.isEmpty { lines.append("no changes") }
-        return CommandResult(stdout: lines.map { $0 + "\n" }.joined(), stderr: pushed.stderr,
+        return CommandResult(stdout: lines.map { $0 + "\n" }.joined(), stderr: "",
                              exitCode: conflicts.isEmpty ? 0 : 1)
     } catch {
         return failed("\(error)\n")

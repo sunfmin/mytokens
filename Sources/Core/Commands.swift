@@ -24,6 +24,8 @@ struct Dependencies {
     var remote: Remote             // how `sync` reaches a Server
     var stdin: () -> Data          // what `put --stdin` reads
     var now: () -> Date = Date.init   // the date an adopted Secret's Description records
+    var servers: ServerList = KeychainServerList()   // the personal Macs' Server list (ADR-0014)
+    var app: () -> AppRelease = { .current }         // what `server add` installs on a Server
     static var live: Dependencies {
         .init(role: FileHostRoleSetting(),
               store: { KeychainSecretStore.opened($0.keychain) },
@@ -120,16 +122,21 @@ func runCommand(_ argv: [String], _ deps: Dependencies) -> CommandResult {
     if cmd == "push" {
         return fail("push is now `mytokens sync <host>`: it also adopts the secrets entered on the server\n", 64)
     }
-    guard ["put", "get", "env", "list", "rm", "sync", "selftest"].contains(cmd) else { return usage() }
+    guard ["put", "get", "env", "list", "rm", "sync", "server", "selftest"].contains(cmd) else { return usage() }
 
     // Every Secret command acts on the store the Mac's role picks (ADR-0010).
     let role: HostRole
     do { role = try deps.role.read() } catch { return fail("\(error)\n", 1) }
     let store = deps.store(role)
+    // The Server list's item is not a Secret: no Secret may take its service (ADR-0014).
+    if ["put", "rm"].contains(cmd), rest.first == serverListService {
+        return fail("\(serverListService) is reserved for the server list\n", 64)
+    }
     switch cmd {
     case "put" where rest.contains("--stdin"): return runPutStdin(rest, store, deps.stdin, role)
     case "put": return runPut(rest, store, deps.input(role), role)
     case "sync": return runSync(rest, store, deps.remote, role, deps.now())
+    case "server": return runServer(rest, store, deps, role)
     case "get" where rest.contains("--unpushed"): return runGetUnpushed(rest, store, role)
     case "get": return runGet(rest, store)
     case "env": return runEnv(rest, store)
@@ -172,6 +179,15 @@ private func usage() -> CommandResult {
           each secret entered on the server as a server-level secret here (a
           same-name secret here is a conflict: neither side changes), then makes
           the server hold exactly this Mac's server-level secrets
+      mytokens server add <host>
+          sets up the server <host> over ssh: installs or upgrades MyTokens there,
+          sets its role to server, runs selftest there, syncs, and adds it to the
+          server list every personal Mac shares; again on a listed host it repairs
+      mytokens server list
+          prints the hosts on the server list
+      mytokens server rm <host>
+          syncs <host> to hold no secrets (adopting what was entered there first),
+          then takes it off the server list
       mytokens get --unpushed
           (on a server, run by sync) writes the secrets entered on it to stdout
       mytokens put --stdin
@@ -365,6 +381,23 @@ private func runSync(_ argv: [String], _ store: SecretStore, _ remote: Remote, _
         return fail("this Mac is a server: sync from a personal Mac, the home of every secret\n", 64)
     }
     return sync(with: host, store: store, via: remote, now: now)
+}
+
+// `server add|list|rm` keep the personal Macs' Server list (ADR-0014). Like `sync`, they
+// run only on a personal Mac, the home of every Secret.
+private func runServer(_ argv: [String], _ store: SecretStore, _ deps: Dependencies, _ role: HostRole) -> CommandResult {
+    let args = parseArgs(argv)
+    guard args.flags.isEmpty, args.sets.isEmpty, let verb = args.positionals.first else { return usage() }
+    let hosts = Array(args.positionals.dropFirst())
+    guard role == .personal else {
+        return fail("this Mac is a server: run server \(verb) on a personal Mac, the home of every secret\n", 64)
+    }
+    switch (verb, hosts.count) {
+    case ("add", 1): return serverAdd(hosts[0], store: store, list: deps.servers, via: deps.remote, app: deps.app(), now: deps.now())
+    case ("rm", 1): return serverRm(hosts[0], store: store, list: deps.servers, via: deps.remote, now: deps.now())
+    case ("list", 0): return serverList(deps.servers)
+    default: return usage()
+    }
 }
 
 // `get --unpushed` is the Server's end of `sync`'s adoption: it takes nothing else, and is

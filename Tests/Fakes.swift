@@ -113,3 +113,11 @@ final class RecordingRemote: Remote {
         return respond(command, stdin)
     }
 }
+
+/// In-memory Server list: the item both personal Macs share, without a keychain.
+final class InMemoryServerList: ServerList {
+    var hosts: [String] = []
+    var writes = 0
+    func read() throws -> [String] { Array(Set(hosts)).sorted() }
+    func write(_ hosts: [String]) throws { self.hosts = Array(Set(hosts)).sorted(); writes += 1 }
+}

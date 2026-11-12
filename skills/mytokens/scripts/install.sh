@@ -6,6 +6,10 @@
 # pulls from GitHub, so it works no matter the current directory. Idempotent:
 # re-running upgrades in place. To build from source instead (your own signing
 # identity), see the repo README.
+#
+# `mytokens server add <host>` sends this very script, from inside the app, over
+# ssh to a Server and runs it with MYTOKENS_SELFTEST=0: it sets the Server's
+# role first and runs selftest there itself (ADR-0014).
 set -euo pipefail
 
 REPO="${MYTOKENS_REPO:-sunfmin/mytokens}"
@@ -51,5 +55,9 @@ case ":$PATH:" in
 esac
 
 # Prove the entitlement + keychain path actually work on this machine.
+if [[ "${MYTOKENS_SELFTEST:-1}" == "0" ]]; then
+  echo "selftest skipped (MYTOKENS_SELFTEST=0)"
+  exit 0
+fi
 echo "verifying…"
 "$BIN" selftest

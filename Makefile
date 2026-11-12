@@ -13,10 +13,13 @@ ARCHIVE      := $(DERIVED)/$(APP).xcarchive
 EXPORT       := $(DERIVED)/export
 DIST_ZIP     := $(DERIVED)/$(APP).zip
 
-# Notarization creds come from mytokens itself (dogfooding): a secret named
-# $(ASC_SECRET) with fields "Key ID", "Issuer ID", "Key (base64 .p8)" — an App
-# Store Connect API key. Signing uses the Developer ID cert already in your
-# keychain + your Xcode-logged-in account.
+# The App Store Connect API key (tools/asc-key.sh, ADR-0017): from the
+# environment when ASC_KEY_P8_BASE64 is set (GitHub Actions, with ASC_KEY_ID and
+# ASC_ISSUER_ID), else from mytokens itself (dogfooding): the Secret
+# $(ASC_SECRET) with fields "Key ID", "Issuer ID", "Key (base64 .p8)". It
+# notarizes; in Actions it also signs (an Admin-role key: Xcode's cloud-managed
+# Developer ID), where by hand signing uses your Xcode-logged-in account.
+export ASC_SECRET
 ASC_SECRET ?= asc-api-key
 
 # XcodeGen and mise, pinned: every build and the gate use these versions.
@@ -27,7 +30,7 @@ MISE := $(shell command -v mise 2>/dev/null || printf '%s\n' '$(BIN_DIR)/mise')
 XCODEGEN := "$(MISE)" exec xcodegen@$(XCODEGEN_VERSION) -- xcodegen
 
 .PHONY: project build test install selftest verify signed dist release icon screenshots clean xcodegen-check xcodegen-install \
-	set-version installed-version-check release-check-keychain release-check-signing release-check-asc release-check-gh
+	release-verify release-wait set-version installed-version-check release-check-gh
 
 xcodegen-check:
 	@command -v mise >/dev/null 2>&1 || [ -x "$(BIN_DIR)/mise" ] || { echo "mise is missing: run make -s xcodegen-install to install it from its official, checksum-verified release" >&2; exit 1; }
@@ -61,7 +64,8 @@ build: project
 
 test: project
 	tools/xcodegen-need-test.sh
-	tools/console-locked-test.sh
+	tools/asc-key-test.sh
+	tools/release-wait-test.sh
 	tools/xctest-run-test.sh
 	xcodebuild -project $(PROJECT) -scheme $(APP) -derivedDataPath $(DERIVED) build-for-testing
 	tools/xctest-run.sh $(TEST_BUNDLE)
@@ -80,38 +84,65 @@ verify:
 # The Developer ID-signed .app, not yet notarized: archive, then export it
 # re-signed with "Developer ID Application" (a local identity or Xcode's
 # cloud-managed one), with -allowProvisioningUpdates fetching a Developer ID
-# profile carrying the Keychain Sharing capability. `dist` builds on it, and the
-# cut's `release-check-signing` runs it to find signing broken before a cut.
+# profile carrying the Keychain Sharing capability. By hand xcodebuild uses your
+# Xcode-logged-in account; with ASC_KEY_P8_BASE64 set (GitHub Actions, where no
+# account is signed in) it authenticates with the API key instead, its .p8 in a
+# mktemp -d directory removed on exit.
 signed: project
+	@set -e; auth=; \
+	if [ -n "$${ASC_KEY_P8_BASE64:-}" ]; then \
+		key=$$(mktemp -d); trap 'rm -rf "$$key"' EXIT; tools/asc-key.sh "$$key"; \
+		auth="-authenticationKeyPath $$key/AuthKey.p8 -authenticationKeyID $$(cat "$$key/key-id") -authenticationKeyIssuerID $$(cat "$$key/issuer-id")"; \
+	fi; \
 	xcodebuild -project $(PROJECT) -scheme $(APP) -configuration Release \
 		-derivedDataPath $(DERIVED) -archivePath $(ARCHIVE) \
-		-allowProvisioningUpdates archive
+		-allowProvisioningUpdates $$auth archive; \
 	xcodebuild -exportArchive -archivePath $(ARCHIVE) \
 		-exportOptionsPlist ExportOptions.plist -exportPath $(EXPORT) \
-		-allowProvisioningUpdates
+		-allowProvisioningUpdates $$auth
 
-# Release build: Developer ID-signed, notarized, stapled .app zipped for GitHub
-# Releases. Single source of truth for the release artifact — CI just calls this.
+# Release build: Developer ID-signed, notarized, stapled and verified .app zipped
+# for GitHub Releases. The one release path: the Actions workflow
+# (.github/workflows/release.yml) and a person by hand both run it (ADR-0017).
 dist: signed
 	ditto -c -k --keepParent "$(EXPORT)/$(BUNDLE)" "$(DIST_ZIP)"
-	@set -e; TMP=$$(mktemp -d); trap 'rm -rf "$$TMP"' EXIT; \
-		mytokens get $(ASC_SECRET) --field "Key (base64 .p8)" | base64 -d > "$$TMP/asc.p8"; \
-		xcrun notarytool submit "$(DIST_ZIP)" \
-			--key "$$TMP/asc.p8" \
-			--key-id "$$(mytokens get $(ASC_SECRET) --field 'Key ID')" \
-			--issuer "$$(mytokens get $(ASC_SECRET) --field 'Issuer ID')" --wait
+	@set -e; key=$$(mktemp -d); trap 'rm -rf "$$key"' EXIT; tools/asc-key.sh "$$key"; \
+		xcrun notarytool submit "$(DIST_ZIP)" --key "$$key/AuthKey.p8" \
+			--key-id "$$(cat "$$key/key-id")" --issuer "$$(cat "$$key/issuer-id")" --wait
 	xcrun stapler staple "$(EXPORT)/$(BUNDLE)"
+	$(MAKE) -s release-verify
 	ditto -c -k --keepParent "$(EXPORT)/$(BUNDLE)" "$(DIST_ZIP)"
-	@echo "dist: $(DIST_ZIP) (Developer ID-signed, notarized, stapled)"
+	@echo "dist: $(DIST_ZIP) (Developer ID-signed, notarized, stapled, verified)"
 
-# Local publish: build the notarized zip and upload it to a GitHub Release.
-# `scripts/install.sh` downloads MyTokens.zip from the latest Release, so bump TAG
-# each time. Needs `gh` authenticated (and the same ASC_* creds as `dist`).
-release: dist
-	@test -n "$(TAG)" || { echo "usage: make release TAG=v0.1.0"; exit 2; }
-	gh release create "$(TAG)" "$(DIST_ZIP)" --generate-notes \
+# What a Release may serve: the signature holds, Gatekeeper accepts the app as
+# notarized Developer ID, its ticket is stapled, and it carries the
+# keychain-access-groups entitlement the iCloud Keychain needs (ADR-0001).
+RELEASE_APP ?= $(EXPORT)/$(BUNDLE)
+release-verify:
+	codesign --verify --deep --strict --verbose=2 "$(RELEASE_APP)"
+	@spctl --assess --type execute --verbose=4 "$(RELEASE_APP)" 2>&1 | tee /dev/stderr | grep -q 'source=Notarized Developer ID' \
+		|| { echo "release-verify: Gatekeeper does not accept $(RELEASE_APP) as notarized Developer ID" >&2; exit 1; }
+	xcrun stapler validate "$(RELEASE_APP)"
+	@codesign -d --entitlements - --xml "$(RELEASE_APP)" 2>/dev/null | grep -q keychain-access-groups \
+		|| { echo "release-verify: $(RELEASE_APP) lacks the keychain-access-groups entitlement" >&2; exit 1; }
+	@echo "release-verify: $(RELEASE_APP) is signed, notarized, stapled and entitled"
+
+# Publish: build the verified zip and upload it to the Release of TAG, an
+# existing tag. The release workflow runs it on a pushed v* tag; by hand it
+# needs `gh` authenticated and the mytokens Secret above. `scripts/install.sh`
+# downloads MyTokens.zip from the latest Release, so each version is a new TAG.
+release:
+	@test -n "$(TAG)" || { echo "usage: make release TAG=v0.1.0" >&2; exit 2; }
+	$(MAKE) dist
+	gh release create "$(TAG)" "$(DIST_ZIP)" --verify-tag --generate-notes \
 		|| gh release upload "$(TAG)" "$(DIST_ZIP)" --clobber
 	@echo "released $(TAG): $(DIST_ZIP)"
+
+# A cut's `publish` (docs/agents/afkconvoy.md): the cut pushed the tag TAG; wait
+# for the release workflow's run on it, failing when that run fails.
+release-wait:
+	@test -n "$(TAG)" || { echo "usage: make release-wait TAG=v0.1.0" >&2; exit 2; }
+	tools/release-wait.sh "$(TAG)"
 
 selftest:
 	"$(BIN)" selftest
@@ -131,51 +162,13 @@ installed-version-check:
 		test "$$v" = "$(VERSION)" \
 		|| { echo "installed $(INSTALL_DIR)/$(BUNDLE) reports $$v, not $(VERSION)" >&2; exit 1; }
 
-# What `make release` needs on a host, checked before a cut is claimed
-# (docs/agents/afkconvoy.md, the cut-needs block). Each says on stderr what is missing.
-#
-# The login keychain holds the signing keys. Locked, `security` fails at once
-# over SSH ("interaction not allowed") and waits for a password in a desktop
-# session, which the check's time limit ends.
-#
-# A need that fails while this user's console session is locked names that
-# first (tools/console-locked.sh): it explains every failure below, and only
-# logging in fixes it. Other advice is for a failure while unlocked.
-CONSOLE_LOCKED := $(CURDIR)/tools/console-locked.sh
-
-release-check-keychain:
-	@security show-keychain-info "$(HOME)/Library/Keychains/login.keychain-db" >/dev/null 2>&1 \
-		|| { $(CONSOLE_LOCKED) || echo "the login keychain is locked: unlock it (security unlock-keychain, a person's hands)" >&2; exit 1; }
-
-# The signing path itself, run on a copy of this checkout's files in a
-# directory of its own (mktemp -d), removed on exit: its project, archive and
-# derived data are no other run's, so overlapping runs (a fleet tick,
-# `afkconvoy plan`, a person) each give the true answer. It fails on an
-# unaccepted Program License Agreement, a missing profile, no Developer ID
-# identity (local or cloud-managed), or — "No Accounts" — a locked console
-# session hiding Xcode's Apple account. xcodebuild prints its errors on stdout.
-release-check-signing:
-	@set -e; run=$$(mktemp -d -t mytokens-release-check); trap 'rm -rf "$$run"' EXIT; \
-		mkdir "$$run/src"; \
-		git ls-files -z --cached --others --exclude-standard | tar -cf - --null -T - | tar -xf - -C "$$run/src"; \
-		$(MAKE) -s -C "$$run/src" signed >"$$run/log" 2>&1 || { \
-			if $(CONSOLE_LOCKED); then locked=1; else locked=; fi; \
-			grep -E 'error|PLA|agree|No profiles|No signing|No Accounts' "$$run/log" | tail -15 >&2; \
-			test -n "$$locked" || echo "Developer ID signing fails on this host (see above): an account holder may have to accept the Program License Agreement at developer.apple.com, or install the Developer ID certificate" >&2; \
-			exit 1; }
-
-release-check-asc:
-	@for f in "Key ID" "Issuer ID" "Key (base64 .p8)"; do \
-		err=$$(mytokens get $(ASC_SECRET) --field "$$f" 2>&1 >/dev/null) \
-		|| { if $(CONSOLE_LOCKED); then locked=1; else locked=; fi; \
-			echo "$$err" >&2; \
-			test -n "$$locked" || echo "mytokens has no '$$f' in $(ASC_SECRET) here (or its keychain is locked): store the App Store Connect key as the README says" >&2; exit 1; }; \
-	done
-
+# What a cut needs on a host (docs/agents/afkconvoy.md, the cut-needs block):
+# `gh`, logged in as a user who may push, to watch the tag's release run and
+# download the Release. Building and signing are the workflow's (ADR-0017).
 release-check-gh:
 	@gh auth status >/dev/null 2>&1 || { echo "gh is not logged in: gh auth login" >&2; exit 1; }
 	@test "$$(gh api 'repos/{owner}/{repo}' --jq .permissions.push)" = true \
-		|| { echo "the gh user may not push to this repo, so cannot create its Releases" >&2; exit 1; }
+		|| { echo "the gh user may not push to this repo, so cannot cut its Releases" >&2; exit 1; }
 
 clean:
 	rm -rf $(DERIVED) $(PROJECT)

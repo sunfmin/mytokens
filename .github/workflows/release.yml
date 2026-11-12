@@ -1,0 +1,60 @@
+# Each version's Release (ADR-0017): on a pushed v* tag, build, Developer
+# ID-sign, notarize, staple, verify and publish MyTokens.zip with the one
+# release path, `make release`. Run by hand (workflow_dispatch) on any ref, it
+# does all but publish and keeps the zip as the run's artifact.
+#
+# The App Store Connect API key (an Admin-role key: Xcode's cloud-managed
+# Developer ID signing needs it) comes from the repo secrets ASC_KEY_ID,
+# ASC_ISSUER_ID and ASC_KEY_P8_BASE64, to the one step that uses it. Its .p8
+# exists only under that step's TMPDIR, in the runner's temp dir, and is
+# removed after it, whatever the outcome.
+name: release
+on:
+  push:
+    tags: ['v*']
+    branches: ['sunfmin/sunfmin-control-757-mytokens-github-actions-builds-signs-not']
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: release-${{ github.ref }}
+jobs:
+  release:
+    runs-on: macos-26
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: The tag is the version project.yml carries
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          grep -q "^ *MARKETING_VERSION: \"${GITHUB_REF_NAME#v}\"$" project.yml || {
+            echo "::error::tag $GITHUB_REF_NAME, but project.yml has $(grep MARKETING_VERSION project.yml)"
+            exit 1
+          }
+      - name: Install the pinned XcodeGen
+        run: |
+          xcodebuild -version
+          make -s xcodegen-install
+          echo "$HOME/.local/bin" >>"$GITHUB_PATH"
+      - name: Build, sign, notarize, verify${{ startsWith(github.ref, 'refs/tags/v') && ' and publish' || '' }}
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_KEY_P8_BASE64: ${{ secrets.ASC_KEY_P8_BASE64 }}
+          GH_TOKEN: ${{ github.token }}
+          TMPDIR: ${{ runner.temp }}/release
+        run: |
+          mkdir -p "$TMPDIR"
+          case "$GITHUB_REF" in
+            refs/tags/v*) make release TAG="$GITHUB_REF_NAME" ;;
+            *) make dist ;;
+          esac
+      - name: Remove the key
+        if: always()
+        run: rm -rf "${{ runner.temp }}/release"
+      - name: Keep the zip (not a tag)
+        if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: MyTokens.zip
+          path: build/MyTokens.zip

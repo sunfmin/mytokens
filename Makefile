@@ -96,7 +96,7 @@ SIGN_KEYCHAIN ?=
 signed: project
 	@set -e; auth=; set --; \
 	if [ -n "$(SIGN_KEYCHAIN)" ]; then \
-		set -- "CODE_SIGN_IDENTITY=Developer ID Application" "OTHER_CODE_SIGN_FLAGS=--keychain $(SIGN_KEYCHAIN)"; \
+		set -- CODE_SIGN_STYLE=Manual "CODE_SIGN_IDENTITY=Developer ID Application" "OTHER_CODE_SIGN_FLAGS=--keychain $(SIGN_KEYCHAIN)"; \
 	fi; \
 	if [ -n "$${ASC_KEY_P8_BASE64:-}" ]; then \
 		key=$$(mktemp -d); trap 'rm -rf "$$key"' EXIT; tools/asc-key.sh "$$key"; \

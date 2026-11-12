@@ -459,14 +459,26 @@ icon is generated from code (`make icon`).
 
 ### Releasing (maintainers)
 
-The afkconvoy fleet cuts each version itself once landed work is past the newest tag: it
-sets `MARKETING_VERSION` in `project.yml` (the version's one home), tags, runs `make release`
-and installs the Release on its host — see the cut blocks in
-[`docs/agents/afkconvoy.md`](./docs/agents/afkconvoy.md). By hand it is the same path, built
-and published locally — no CI. Notarization creds live in **mytokens itself**
-(dogfooding): a secret named `asc-api-key` with fields **Key ID**, **Issuer ID**, and
-**Key (base64 .p8)** — an App Store Connect API key. Create the key in App Store Connect →
-*Users and Access → Integrations → Team Keys* (role: Developer), then store it:
+GitHub Actions makes each Release (ADR-0017). On a pushed `v*` tag, the `release` workflow
+([`.github/workflows/release.yml`](./.github/workflows/release.yml)) runs `make release` on an
+Apple silicon macOS runner: archive, Developer ID export, notarize, staple, verify, zip, and
+`gh release create`. The afkconvoy fleet cuts each version once landed work is past the
+newest tag. It sets `MARKETING_VERSION` in `project.yml` (the version's one home), tags,
+pushes the tag, waits for the run, and installs the Release on its host. See the cut blocks in
+[`docs/agents/afkconvoy.md`](./docs/agents/afkconvoy.md). Run from the Actions tab, the
+workflow builds, signs, notarizes and verifies without publishing, and keeps the zip as the
+run's artifact.
+
+The workflow signs and notarizes with an App Store Connect API key in the repo secrets
+`ASC_KEY_ID`, `ASC_ISSUER_ID` and `ASC_KEY_P8_BASE64`. It must be an **Admin**-role key,
+because with no Apple account in Xcode on a runner, cloud-managed Developer ID signing
+authenticates with it. Its `.p8` exists only in the runner's temp dir for the build step.
+
+By hand it is the same path. Signing uses your Xcode-logged-in account. Notarization creds
+live in **mytokens itself** (dogfooding): a secret named `asc-api-key` with fields **Key
+ID**, **Issuer ID** and **Key (base64 .p8)**, an App Store Connect API key. Create the key in
+App Store Connect → *Users and Access → Integrations → Team Keys* (role: Developer is enough
+for notarizing), then store it:
 
 ```sh
 base64 -i ~/Downloads/AuthKey_XXXX.p8 | tr -d '\n' | pbcopy   # single-line .p8 → clipboard
@@ -477,15 +489,16 @@ mytokens put asc-api-key --description "App Store Connect API key — notarize M
 Then build and publish:
 
 ```sh
-make dist                # archive → Developer ID export → notarize → staple → zip
-make release TAG=v0.1.0  # gh release create + upload build/MyTokens.zip
+make dist                # archive → Developer ID export → notarize → staple → verify → zip
+make release TAG=v0.1.0  # an existing, pushed tag: gh release create + upload build/MyTokens.zip
 ```
 
-`make dist` reads the API key from mytokens into a temp file (deleted right after), signs
-with your Developer ID cert (already in the keychain), and builds with the **Hardened
-Runtime** (required for notarization). `scripts/install.sh` downloads `MyTokens.zip` from the
-**latest** Release, so bump `TAG` each time. Screenshots are regenerated with
-`make screenshots`.
+`tools/asc-key.sh` reads the API key from the `ASC_*` variables when they are set, and from
+mytokens otherwise, into a temp file that is deleted right after. The build uses the
+**Hardened Runtime**, which notarization requires. `make release-verify` checks the signature,
+the notarization, the stapled ticket and the keychain-access-groups entitlement before the
+zip is made. `scripts/install.sh` downloads `MyTokens.zip` from the **latest** Release, so
+each version needs a new tag. Screenshots are regenerated with `make screenshots`.
 
 ### How it's built
 
@@ -493,7 +506,7 @@ Runtime** (required for notarization). `scripts/install.sh` downloads `MyTokens.
 - Decisions: [`docs/adr/`](./docs/adr/) — iCloud Keychain via a signed helper (0001), `get`
   returns the raw value (0002), a `.app` bundle (0003), minting (0004), multi-field
   Secrets (0005), per-Secret description (0006),
-  readable after first unlock (0011)
+  readable after first unlock (0011), releases built in GitHub Actions (0017)
 - Skill behavior for Claude: [`skills/mytokens/SKILL.md`](./skills/mytokens/SKILL.md)
 
 ## License

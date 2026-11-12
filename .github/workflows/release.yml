@@ -12,7 +12,6 @@ name: release
 on:
   push:
     tags: ['v*']
-    branches: ['sunfmin/sunfmin-control-757-mytokens-github-actions-builds-signs-not']
   workflow_dispatch:
 permissions:
   contents: write

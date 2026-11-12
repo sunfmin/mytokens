@@ -38,7 +38,7 @@ def api(method, path, body = nil)
     req.body = JSON.dump(body)
   end
   res = Net::HTTP.start(u.host, u.port, use_ssl: true) { |h| h.request(req) }
-  abort "developer-id-profile: #{method.upcase} #{u.path} answered #{res.code}" unless res.code.start_with?('2')
+  abort "developer-id-profile: #{method.upcase} #{u.path} answered #{res.code}: #{(JSON.parse(res.body)['errors'] || []).map { |e| e['detail'] }.join('; ') rescue ''}" unless res.code.start_with?('2')
   JSON.parse(res.body)
 end
 

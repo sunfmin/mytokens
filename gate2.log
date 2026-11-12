@@ -1,0 +1,314 @@
+[afkconvoy] exclusive: waits behind 1 exclusive command on this host to run `./gate.sh`
+"/Users/felix/homebrew/bin/mise" exec xcodegen@2.46.0 -- xcodegen generate
+⚙️  Generating plists...
+⚙️  Generating project...
+⚙️  Writing project...
+Created project at /Users/felix/orca/workspaces/mytokens/sunfmin-control-746-repair-the-red-main-tip-bd15f2bc3c68/MyTokens.xcodeproj
+tools/xcodegen-need-test.sh
+xcodegen-need-test: ok
+tools/console-locked-test.sh
+console-locked-test: ok
+tools/xctest-run-test.sh
+xctest-run-test: ok
+xcodebuild -project MyTokens.xcodeproj -scheme MyTokens -derivedDataPath build build-for-testing
+Command line invocation:
+    /Applications/Xcode.app/Contents/Developer/usr/bin/xcodebuild -project MyTokens.xcodeproj -scheme MyTokens -derivedDataPath build build-for-testing
+
+--- xcodebuild: WARNING: Using the first of multiple matching destinations:
+{ platform:macOS, arch:arm64, id:00006041-001449992281401C, name:My Mac }
+{ platform:macOS, arch:x86_64, id:00006041-001449992281401C, name:My Mac }
+{ platform:macOS, name:Any Mac }
+ComputePackagePrebuildTargetDependencyGraph
+
+Prepare packages
+
+CreateBuildRequest
+
+SendProjectDescription
+
+CreateBuildOperation
+
+ComputeTargetDependencyGraph
+note: Building targets in dependency order
+note: Target dependency graph (1 target)
+    Target 'MyTokensTests' in project 'MyTokens' (no dependencies)
+
+GatherProvisioningInputs
+
+CreateBuildDescription
+
+ClangStatCache /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang-stat-cache /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX27.0.sdk /Users/felix/orca/workspaces/mytokens/sunfmin-control-746-repair-the-red-main-tip-bd15f2bc3c68/build/SDKStatCaches.noindex/macosx27.0-26A425-7231f6df4def33e022ae2eb8f782df1a.sdkstatcache
+    cd /Users/felix/orca/workspaces/mytokens/sunfmin-control-746-repair-the-red-main-tip-bd15f2bc3c68/MyTokens.xcodeproj
+    /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang-stat-cache /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX27.0.sdk -o /Users/felix/orca/workspaces/mytokens/sunfmin-control-746-repair-the-red-main-tip-bd15f2bc3c68/build/SDKStatCaches.noindex/macosx27.0-26A425-7231f6df4def33e022ae2eb8f782df1a.sdkstatcache
+
+PruneExplicitPrecompiledModules /Users/felix/orca/workspaces/mytokens/sunfmin-control-746-repair-the-red-main-tip-bd15f2bc3c68/build/SDKExplicitPrecompiledModules
+
+PruneExplicitPrecompiledModules /Users/felix/orca/workspaces/mytokens/sunfmin-control-746-repair-the-red-main-tip-bd15f2bc3c68/build/Build/Intermediates.noindex/SwiftExplicitPrecompiledModules
+
+PruneExplicitPrecompiledModules /Users/felix/orca/workspaces/mytokens/sunfmin-control-746-repair-the-red-main-tip-bd15f2bc3c68/build/Build/Intermediates.noindex/ExplicitPrecompiledModules
+
+** TEST BUILD SUCCEEDED **
+
+tools/xctest-run.sh build/Build/Products/Debug/MyTokensTests.xctest
+Test Suite 'All tests' started at 2026-11-12 09:34:00.815.
+Test Suite 'MyTokensTests.xctest' started at 2026-11-12 09:34:00.816.
+Test Suite 'CommandsTests' started at 2026-11-12 09:34:00.816.
+Test Case '-[MyTokensTests.CommandsTests testAddThenGetRoundtrip]' started.
+Test Case '-[MyTokensTests.CommandsTests testAddThenGetRoundtrip]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.CommandsTests testAnyEmptyFieldStoresNothing]' started.
+Test Case '-[MyTokensTests.CommandsTests testAnyEmptyFieldStoresNothing]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.CommandsTests testCancelledPopupStoresNothing]' started.
+Test Case '-[MyTokensTests.CommandsTests testCancelledPopupStoresNothing]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.CommandsTests testCommentCodecRoundTripsLevelAndDefaultsOld]' started.
+Test Case '-[MyTokensTests.CommandsTests testCommentCodecRoundTripsLevelAndDefaultsOld]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.CommandsTests testDescriptionAlongsideFields]' started.
+Test Case '-[MyTokensTests.CommandsTests testDescriptionAlongsideFields]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.CommandsTests testDescriptionShownInListButNotInGet]' started.
+Test Case '-[MyTokensTests.CommandsTests testDescriptionShownInListButNotInGet]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.CommandsTests testEnvOnAbsentServiceErrors]' started.
+Test Case '-[MyTokensTests.CommandsTests testEnvOnAbsentServiceErrors]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.CommandsTests testEnvOnMultiFieldNonProfileErrors]' started.
+Test Case '-[MyTokensTests.CommandsTests testEnvOnMultiFieldNonProfileErrors]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.CommandsTests testEnvOnParentSecretErrors]' started.
+Test Case '-[MyTokensTests.CommandsTests testEnvOnParentSecretErrors]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.CommandsTests testEnvOnSingleValueSecretErrors]' started.
+Test Case '-[MyTokensTests.CommandsTests testEnvOnSingleValueSecretErrors]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.CommandsTests testEnvSelectsAccount]' started.
+Test Case '-[MyTokensTests.CommandsTests testEnvSelectsAccount]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.CommandsTests testEnvSingleQuotesValuesSafely]' started.
+Test Case '-[MyTokensTests.CommandsTests testEnvSingleQuotesValuesSafely]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.CommandsTests testGetAbsentIsNonZeroAndPrintsNothing]' started.
+Test Case '-[MyTokensTests.CommandsTests testGetAbsentIsNonZeroAndPrintsNothing]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.CommandsTests testGetFieldOnSingleSecretErrors]' started.
+Test Case '-[MyTokensTests.CommandsTests testGetFieldOnSingleSecretErrors]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.CommandsTests testGetJSONIncludesLevel]' started.
+Test Case '-[MyTokensTests.CommandsTests testGetJSONIncludesLevel]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.CommandsTests testGetUnknownFieldErrors]' started.
+Test Case '-[MyTokensTests.CommandsTests testGetUnknownFieldErrors]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.CommandsTests testInvalidMetaRejectedWithoutPrompting]' started.
+Test Case '-[MyTokensTests.CommandsTests testInvalidMetaRejectedWithoutPrompting]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.CommandsTests testListHidesValues]' started.
+Test Case '-[MyTokensTests.CommandsTests testListHidesValues]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.CommandsTests testListShowsFieldLabelsNotValues]' started.
+Test Case '-[MyTokensTests.CommandsTests testListShowsFieldLabelsNotValues]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.CommandsTests testListShowsLevel]' started.
+Test Case '-[MyTokensTests.CommandsTests testListShowsLevel]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.CommandsTests testListShowsProfileKindAndLabelsNotValues]' started.
+Test Case '-[MyTokensTests.CommandsTests testListShowsProfileKindAndLabelsNotValues]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.CommandsTests testLockedKeychainSurfacesDistinctError]' started.
+Test Case '-[MyTokensTests.CommandsTests testLockedKeychainSurfacesDistinctError]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.CommandsTests testMultiFieldAddGetByFieldAndJSON]' started.
+Test Case '-[MyTokensTests.CommandsTests testMultiFieldAddGetByFieldAndJSON]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.CommandsTests testMultiFieldBareGetErrorsAndListsFields]' started.
+Test Case '-[MyTokensTests.CommandsTests testMultiFieldBareGetErrorsAndListsFields]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.CommandsTests testMultipleAccountsPerService]' started.
+Test Case '-[MyTokensTests.CommandsTests testMultipleAccountsPerService]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.CommandsTests testNewSecretWithoutLevelIsPersonal]' started.
+Test Case '-[MyTokensTests.CommandsTests testNewSecretWithoutLevelIsPersonal]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.CommandsTests testOldSecretWithoutLevelReadsAsPersonal]' started.
+Test Case '-[MyTokensTests.CommandsTests testOldSecretWithoutLevelReadsAsPersonal]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.CommandsTests testParentCannotCombineWithFields]' started.
+Test Case '-[MyTokensTests.CommandsTests testParentCannotCombineWithFields]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.CommandsTests testProfileAddThenEnvEmitsExportLinesInOrder]' started.
+Test Case '-[MyTokensTests.CommandsTests testProfileAddThenEnvEmitsExportLinesInOrder]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.CommandsTests testProfileInvalidEnvNameRejectedBeforePrompting]' started.
+Test Case '-[MyTokensTests.CommandsTests testProfileInvalidEnvNameRejectedBeforePrompting]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.CommandsTests testProfileWithoutFieldsErrors]' started.
+Test Case '-[MyTokensTests.CommandsTests testProfileWithoutFieldsErrors]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.CommandsTests testPutBareOnLabelledSecretErrors]' started.
+Test Case '-[MyTokensTests.CommandsTests testPutBareOnLabelledSecretErrors]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.CommandsTests testPutCannotChangeKindOnMerge]' started.
+Test Case '-[MyTokensTests.CommandsTests testPutCannotChangeKindOnMerge]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.CommandsTests testPutFieldsRotatesSecretKeepingConfig]' started.
+Test Case '-[MyTokensTests.CommandsTests testPutFieldsRotatesSecretKeepingConfig]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.CommandsTests testPutLevelAloneOnExistingSecretChangesOnlyLevelWithoutPopup]' started.
+Test Case '-[MyTokensTests.CommandsTests testPutLevelAloneOnExistingSecretChangesOnlyLevelWithoutPopup]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.CommandsTests testPutLevelSetsServer]' started.
+Test Case '-[MyTokensTests.CommandsTests testPutLevelSetsServer]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.CommandsTests testPutMergePreservesKindAndDescription]' started.
+Test Case '-[MyTokensTests.CommandsTests testPutMergePreservesKindAndDescription]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.CommandsTests testPutSetCreatesFromCLIWithNoPopup]' started.
+Test Case '-[MyTokensTests.CommandsTests testPutSetCreatesFromCLIWithNoPopup]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.CommandsTests testPutSetOnSingleValueSecretErrors]' started.
+Test Case '-[MyTokensTests.CommandsTests testPutSetOnSingleValueSecretErrors]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.CommandsTests testPutSetRejectsEmptyValue]' started.
+Test Case '-[MyTokensTests.CommandsTests testPutSetRejectsEmptyValue]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.CommandsTests testPutSetSplitsOnFirstEquals]' started.
+Test Case '-[MyTokensTests.CommandsTests testPutSetSplitsOnFirstEquals]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.CommandsTests testPutSetUpdatesOneFieldKeepingOthers]' started.
+Test Case '-[MyTokensTests.CommandsTests testPutSetUpdatesOneFieldKeepingOthers]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.CommandsTests testPutUpdatesOneCredentialFieldKeepingOther]' started.
+Test Case '-[MyTokensTests.CommandsTests testPutUpdatesOneCredentialFieldKeepingOther]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.CommandsTests testPutWithoutLevelKeepsStoredLevel]' started.
+Test Case '-[MyTokensTests.CommandsTests testPutWithoutLevelKeepsStoredLevel]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.CommandsTests testReaddOverwrites]' started.
+Test Case '-[MyTokensTests.CommandsTests testReaddOverwrites]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.CommandsTests testRmThenGet]' started.
+Test Case '-[MyTokensTests.CommandsTests testRmThenGet]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.CommandsTests testRmThenPutReplacesWhole]' started.
+Test Case '-[MyTokensTests.CommandsTests testRmThenPutReplacesWhole]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.CommandsTests testShowMustReferenceAField]' started.
+Test Case '-[MyTokensTests.CommandsTests testShowMustReferenceAField]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.CommandsTests testUnknownLevelRefusedWithAllowedValuesBeforePrompting]' started.
+Test Case '-[MyTokensTests.CommandsTests testUnknownLevelRefusedWithAllowedValuesBeforePrompting]' passed (0.000 seconds).
+Test Suite 'CommandsTests' passed at 2026-11-12 09:34:00.824.
+	 Executed 49 tests, with 0 failures (0 unexpected) in 0.006 (0.008) seconds
+Test Suite 'HostRoleTests' started at 2026-11-12 09:34:00.824.
+Test Case '-[MyTokensTests.HostRoleTests testEverySecretStoredOnAServerIsServerLevel]' started.
+Test Case '-[MyTokensTests.HostRoleTests testEverySecretStoredOnAServerIsServerLevel]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.HostRoleTests testFileHostRoleSetting]' started.
+Test Case '-[MyTokensTests.HostRoleTests testFileHostRoleSetting]' passed (0.002 seconds).
+Test Case '-[MyTokensTests.HostRoleTests testHostDefaultsToPersonal]' started.
+Test Case '-[MyTokensTests.HostRoleTests testHostDefaultsToPersonal]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.HostRoleTests testHostRefusesAnUnknownRole]' started.
+Test Case '-[MyTokensTests.HostRoleTests testHostRefusesAnUnknownRole]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.HostRoleTests testHostSetsAndPrintsTheRole]' started.
+Test Case '-[MyTokensTests.HostRoleTests testHostSetsAndPrintsTheRole]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.HostRoleTests testPersonalMacActsOnTheICloudStore]' started.
+Test Case '-[MyTokensTests.HostRoleTests testPersonalMacActsOnTheICloudStore]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.HostRoleTests testRoleSelectsTheKeychainLocation]' started.
+Test Case '-[MyTokensTests.HostRoleTests testRoleSelectsTheKeychainLocation]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.HostRoleTests testServerActsOnTheLoginStoreForEveryCommand]' started.
+Test Case '-[MyTokensTests.HostRoleTests testServerActsOnTheLoginStoreForEveryCommand]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.HostRoleTests testUnreadableRoleFailsInsteadOfDefaulting]' started.
+Test Case '-[MyTokensTests.HostRoleTests testUnreadableRoleFailsInsteadOfDefaulting]' passed (0.000 seconds).
+Test Suite 'HostRoleTests' passed at 2026-11-12 09:34:00.828.
+	 Executed 9 tests, with 0 failures (0 unexpected) in 0.003 (0.003) seconds
+Test Suite 'InputSelectionTests' started at 2026-11-12 09:34:00.828.
+Test Case '-[MyTokensTests.InputSelectionTests testAnExpiredLinkStoresNothingAndFails]' started.
+Test Case '-[MyTokensTests.InputSelectionTests testAnExpiredLinkStoresNothingAndFails]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.InputSelectionTests testNeitherFailsStoresNothingAndPrintsTheCommand]' started.
+Test Case '-[MyTokensTests.InputSelectionTests testNeitherFailsStoresNothingAndPrintsTheCommand]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.InputSelectionTests testNoTerminalNoDesktopUsesTheLink]' started.
+Test Case '-[MyTokensTests.InputSelectionTests testNoTerminalNoDesktopUsesTheLink]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.InputSelectionTests testNoTerminalWithDesktopUsesThePopup]' started.
+Test Case '-[MyTokensTests.InputSelectionTests testNoTerminalWithDesktopUsesThePopup]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.InputSelectionTests testOnAServerALoggedInDesktopIsSkippedForTheLink]' started.
+Test Case '-[MyTokensTests.InputSelectionTests testOnAServerALoggedInDesktopIsSkippedForTheLink]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.InputSelectionTests testOnAServerTheTerminalStillWins]' started.
+Test Case '-[MyTokensTests.InputSelectionTests testOnAServerTheTerminalStillWins]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.InputSelectionTests testOverSSHWithoutDesktopTheTerminalReadsIt]' started.
+Test Case '-[MyTokensTests.InputSelectionTests testOverSSHWithoutDesktopTheTerminalReadsIt]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.InputSelectionTests testShowFieldsAreUnmaskedAndTheRestMasked]' started.
+Test Case '-[MyTokensTests.InputSelectionTests testShowFieldsAreUnmaskedAndTheRestMasked]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.InputSelectionTests testTerminalAndPopupBothWinOverTheLink]' started.
+Test Case '-[MyTokensTests.InputSelectionTests testTerminalAndPopupBothWinOverTheLink]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.InputSelectionTests testTerminalWinsWhenPresentEvenWithADesktop]' started.
+Test Case '-[MyTokensTests.InputSelectionTests testTerminalWinsWhenPresentEvenWithADesktop]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.InputSelectionTests testUnavailableFromTheChosenInputAlsoFails]' started.
+Test Case '-[MyTokensTests.InputSelectionTests testUnavailableFromTheChosenInputAlsoFails]' passed (0.000 seconds).
+Test Suite 'InputSelectionTests' passed at 2026-11-12 09:34:00.829.
+	 Executed 11 tests, with 0 failures (0 unexpected) in 0.001 (0.002) seconds
+Test Suite 'KeychainAccessibilityTests' started at 2026-11-12 09:34:00.829.
+Test Case '-[MyTokensTests.KeychainAccessibilityTests testAnOldDefaultItemIsMigratedWhenTheStoreOpensUnlocked]' started.
+Test Case '-[MyTokensTests.KeychainAccessibilityTests testAnOldDefaultItemIsMigratedWhenTheStoreOpensUnlocked]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.KeychainAccessibilityTests testAStoredSecretIsWrittenReadableAfterFirstUnlockAndSynchronizable]' started.
+Test Case '-[MyTokensTests.KeychainAccessibilityTests testAStoredSecretIsWrittenReadableAfterFirstUnlockAndSynchronizable]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.KeychainAccessibilityTests testRewritingAnOldItemMovesItToo]' started.
+Test Case '-[MyTokensTests.KeychainAccessibilityTests testRewritingAnOldItemMovesItToo]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.KeychainAccessibilityTests testTheServerStoreIsLocalAndReadableAfterFirstUnlock]' started.
+Test Case '-[MyTokensTests.KeychainAccessibilityTests testTheServerStoreIsLocalAndReadableAfterFirstUnlock]' passed (0.000 seconds).
+Test Suite 'KeychainAccessibilityTests' passed at 2026-11-12 09:34:00.830.
+	 Executed 4 tests, with 0 failures (0 unexpected) in 0.001 (0.001) seconds
+Test Suite 'LinkServerTests' started at 2026-11-12 09:34:00.830.
+Test Case '-[MyTokensTests.LinkServerTests testAnUnusedLinkExpiresAndCloses]' started.
+Test Case '-[MyTokensTests.LinkServerTests testAnUnusedLinkExpiresAndCloses]' passed (1.125 seconds).
+Test Case '-[MyTokensTests.LinkServerTests testNoTailnetIsUnavailable]' started.
+Test Case '-[MyTokensTests.LinkServerTests testNoTailnetIsUnavailable]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.LinkServerTests testTheLinkIsServedUsedOnceAndClosed]' started.
+Test Case '-[MyTokensTests.LinkServerTests testTheLinkIsServedUsedOnceAndClosed]' passed (0.006 seconds).
+Test Suite 'LinkServerTests' passed at 2026-11-12 09:34:01.962.
+	 Executed 3 tests, with 0 failures (0 unexpected) in 1.131 (1.131) seconds
+Test Suite 'LinkTLSTests' started at 2026-11-12 09:34:01.962.
+Test Case '-[MyTokensTests.LinkTLSTests testAPEMCertificateServesTheLinkOverHTTPS]' started.
+Test Case '-[MyTokensTests.LinkTLSTests testAPEMCertificateServesTheLinkOverHTTPS]' passed (0.222 seconds).
+Test Suite 'LinkTLSTests' passed at 2026-11-12 09:34:02.184.
+	 Executed 1 test, with 0 failures (0 unexpected) in 0.222 (0.222) seconds
+Test Suite 'OneTimeLinkTests' started at 2026-11-12 09:34:02.184.
+Test Case '-[MyTokensTests.OneTimeLinkTests testAfterTenMinutesItIsRefused]' started.
+Test Case '-[MyTokensTests.OneTimeLinkTests testAfterTenMinutesItIsRefused]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.OneTimeLinkTests testAnEmptyFieldIsAskedAgainWithoutUsingTheLink]' started.
+Test Case '-[MyTokensTests.OneTimeLinkTests testAnEmptyFieldIsAskedAgainWithoutUsingTheLink]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.OneTimeLinkTests testAWrongTokenIsRefusedAndConsumesNothing]' started.
+Test Case '-[MyTokensTests.OneTimeLinkTests testAWrongTokenIsRefusedAndConsumesNothing]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.OneTimeLinkTests testOtherMethodsAreRefused]' started.
+Test Case '-[MyTokensTests.OneTimeLinkTests testOtherMethodsAreRefused]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.OneTimeLinkTests testRequestParsing]' started.
+Test Case '-[MyTokensTests.OneTimeLinkTests testRequestParsing]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.OneTimeLinkTests testTheBareSecretIsLabelledSecretOnThePage]' started.
+Test Case '-[MyTokensTests.OneTimeLinkTests testTheBareSecretIsLabelledSecretOnThePage]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.OneTimeLinkTests testThePageShowsServiceDescriptionAndFields]' started.
+Test Case '-[MyTokensTests.OneTimeLinkTests testThePageShowsServiceDescriptionAndFields]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.OneTimeLinkTests testTheRightTokenSubmitsOnce]' started.
+Test Case '-[MyTokensTests.OneTimeLinkTests testTheRightTokenSubmitsOnce]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.OneTimeLinkTests testTokenIsFresh128BitHex]' started.
+Test Case '-[MyTokensTests.OneTimeLinkTests testTokenIsFresh128BitHex]' passed (0.000 seconds).
+Test Suite 'OneTimeLinkTests' passed at 2026-11-12 09:34:02.186.
+	 Executed 9 tests, with 0 failures (0 unexpected) in 0.002 (0.002) seconds
+Test Suite 'SecretPromptRenderTests' started at 2026-11-12 09:34:02.186.
+Test Case '-[MyTokensTests.SecretPromptRenderTests testRendersMultiFieldPrompt]' started.
+Test Case '-[MyTokensTests.SecretPromptRenderTests testRendersMultiFieldPrompt]' passed (0.131 seconds).
+Test Case '-[MyTokensTests.SecretPromptRenderTests testRendersPromptWithDescription]' started.
+Test Case '-[MyTokensTests.SecretPromptRenderTests testRendersPromptWithDescription]' passed (0.010 seconds).
+Test Case '-[MyTokensTests.SecretPromptRenderTests testRendersSecretPrompt]' started.
+Test Case '-[MyTokensTests.SecretPromptRenderTests testRendersSecretPrompt]' passed (0.009 seconds).
+Test Case '-[MyTokensTests.SecretPromptRenderTests testStoreDisabledUntilAllFieldsFilled]' started.
+Test Case '-[MyTokensTests.SecretPromptRenderTests testStoreDisabledUntilAllFieldsFilled]' passed (0.001 seconds).
+Test Suite 'SecretPromptRenderTests' passed at 2026-11-12 09:34:02.337.
+	 Executed 4 tests, with 0 failures (0 unexpected) in 0.151 (0.151) seconds
+Test Suite 'SyncTests' started at 2026-11-12 09:34:02.337.
+Test Case '-[MyTokensTests.SyncTests testAdoptedValuesTravelOnlyInThePipe]' started.
+Test Case '-[MyTokensTests.SyncTests testAdoptedValuesTravelOnlyInThePipe]' passed (0.001 seconds).
+Test Case '-[MyTokensTests.SyncTests testAnAdoptionCutShortIsFinishedByTheNextSync]' started.
+Test Case '-[MyTokensTests.SyncTests testAnAdoptionCutShortIsFinishedByTheNextSync]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.SyncTests testAnEditOnTheServerKeepsThePushedMark]' started.
+Test Case '-[MyTokensTests.SyncTests testAnEditOnTheServerKeepsThePushedMark]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.SyncTests testAPushedSecretIsNeverAdopted]' started.
+Test Case '-[MyTokensTests.SyncTests testAPushedSecretIsNeverAdopted]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.SyncTests testASameNameSecretHereIsAConflictAndNeitherSideChanges]' started.
+Test Case '-[MyTokensTests.SyncTests testASameNameSecretHereIsAConflictAndNeitherSideChanges]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.SyncTests testASecondSyncAfterAdoptionChangesNothing]' started.
+Test Case '-[MyTokensTests.SyncTests testASecondSyncAfterAdoptionChangesNothing]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.SyncTests testASecretEnteredOnTheServerIsAdoptedWhole]' started.
+Test Case '-[MyTokensTests.SyncTests testASecretEnteredOnTheServerIsAdoptedWhole]' passed (0.001 seconds).
+Test Case '-[MyTokensTests.SyncTests testASecretRemovedHereAfterAdoptionIsRemovedFromTheServer]' started.
+Test Case '-[MyTokensTests.SyncTests testASecretRemovedHereAfterAdoptionIsRemovedFromTheServer]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.SyncTests testFailedGetUnpushedNamesAdoptAndReportsTheServerError]' started.
+Test Case '-[MyTokensTests.SyncTests testFailedGetUnpushedNamesAdoptAndReportsTheServerError]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.SyncTests testFailedPutStdinNamesPushAndReportsTheServerErrorWithoutValues]' started.
+Test Case '-[MyTokensTests.SyncTests testFailedPutStdinNamesPushAndReportsTheServerErrorWithoutValues]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.SyncTests testFailedSSHIsReportedAndNonZero]' started.
+Test Case '-[MyTokensTests.SyncTests testFailedSSHIsReportedAndNonZero]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.SyncTests testGetUnpushedIsRefusedOnAPersonalMac]' started.
+Test Case '-[MyTokensTests.SyncTests testGetUnpushedIsRefusedOnAPersonalMac]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.SyncTests testPushIsGoneAndNamesSync]' started.
+Test Case '-[MyTokensTests.SyncTests testPushIsGoneAndNamesSync]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.SyncTests testPutStdinIsRefusedOnAPersonalMac]' started.
+Test Case '-[MyTokensTests.SyncTests testPutStdinIsRefusedOnAPersonalMac]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.SyncTests testPutStdinRefusesAnAdoptionNotSent]' started.
+Test Case '-[MyTokensTests.SyncTests testPutStdinRefusesAnAdoptionNotSent]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.SyncTests testPutStdinRejectsAPersonalLevelSecretAndStoresNothing]' started.
+Test Case '-[MyTokensTests.SyncTests testPutStdinRejectsAPersonalLevelSecretAndStoresNothing]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.SyncTests testSecondSyncReportsNoChanges]' started.
+Test Case '-[MyTokensTests.SyncTests testSecondSyncReportsNoChanges]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.SyncTests testSyncAddsServerLevelSecretsOnly]' started.
+Test Case '-[MyTokensTests.SyncTests testSyncAddsServerLevelSecretsOnly]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.SyncTests testSyncIsRefusedOnAServer]' started.
+Test Case '-[MyTokensTests.SyncTests testSyncIsRefusedOnAServer]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.SyncTests testSyncPrunesSecretsNoLongerServerLevelOrGone]' started.
+Test Case '-[MyTokensTests.SyncTests testSyncPrunesSecretsNoLongerServerLevelOrGone]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.SyncTests testSyncRefusesAHostThatLooksLikeAnOption]' started.
+Test Case '-[MyTokensTests.SyncTests testSyncRefusesAHostThatLooksLikeAnOption]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.SyncTests testSyncUpdatesAChangedSecret]' started.
+Test Case '-[MyTokensTests.SyncTests testSyncUpdatesAChangedSecret]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.SyncTests testValuesTravelOnlyInThePipe]' started.
+Test Case '-[MyTokensTests.SyncTests testValuesTravelOnlyInThePipe]' passed (0.000 seconds).
+Test Suite 'SyncTests' passed at 2026-11-12 09:34:02.343.
+	 Executed 23 tests, with 0 failures (0 unexpected) in 0.005 (0.006) seconds
+Test Suite 'MyTokensTests.xctest' passed at 2026-11-12 09:34:02.343.
+	 Executed 113 tests, with 0 failures (0 unexpected) in 1.520 (1.527) seconds
+Test Suite 'All tests' passed at 2026-11-12 09:34:02.343.
+	 Executed 113 tests, with 0 failures (0 unexpected) in 1.520 (1.527) seconds
+rendered → /Users/felix/orca/workspaces/mytokens/sunfmin-control-746-repair-the-red-main-tip-bd15f2bc3c68/out/secret-prompt-multi.png
+rendered → /Users/felix/orca/workspaces/mytokens/sunfmin-control-746-repair-the-red-main-tip-bd15f2bc3c68/out/secret-prompt-description.png
+rendered → /Users/felix/orca/workspaces/mytokens/sunfmin-control-746-repair-the-red-main-tip-bd15f2bc3c68/out/secret-prompt.png

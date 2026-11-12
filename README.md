@@ -213,6 +213,23 @@ SSH:
 ssh -t my-mac mytokens put cloudflare --description "DNS edits" --fields Token
 ```
 
+### From a command: `--field-from-stdin`
+
+A value no human knows, which a command makes on the spot, is piped straight in. No popup or
+prompt appears:
+
+```sh
+openssl rand -base64 32 | mytokens put deploy-db --description "CI deploy database" \
+  --set "Username=svc_ci" --field-from-stdin "Password"
+```
+
+All of stdin is the one Field's value, with no length limit: one trailing newline is stripped
+and nothing else changes. Binary data goes in base64. It upserts like `--fields`, keeping the
+Secret's other Fields, and combines with `--set`, `--description` and `--level` the same way.
+For several Fields, run it several times. It is refused when stdin is a terminal or empty: a
+value a human knows goes in with `--fields`. The value stays in the pipe, out of argv, shell
+history, the output and files (ADR-0017).
+
 ### From your phone: the one-time link
 
 With neither a terminal nor a desktop — an agent running `put` on a server — `put` serves

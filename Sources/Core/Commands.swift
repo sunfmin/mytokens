@@ -22,7 +22,8 @@ struct Dependencies {
     var store: (HostRole) -> SecretStore
     var input: (HostRole) -> SecretInput
     var remote: Remote             // how `sync` reaches a Server
-    var stdin: () -> Data          // what `put --stdin` reads
+    var stdin: () -> Data          // what `put --stdin` and `put --field-from-stdin` read
+    var stdinIsTerminal: () -> Bool = { false }   // `--field-from-stdin` refuses a terminal
     var now: () -> Date = Date.init   // the date an adopted Secret's Description records; a miss's push time
     var hostName: () -> String = currentHostName   // how a Server names itself in a miss
     var bark: BarkTransport = NoBarkTransport()    // how a Server's miss reaches the human
@@ -39,6 +40,7 @@ struct Dependencies {
                                             popup: PopupSecretInput(), link: LinkSecretInput.live) },
               remote: SSHRemote(),
               stdin: { FileHandle.standardInput.readDataToEndOfFile() },
+              stdinIsTerminal: { isatty(STDIN_FILENO) != 0 },
               bark: HTTPBarkTransport(),
               pushLedger: FilePushLedger(),
               syncState: FileBackgroundSyncState(),
@@ -145,7 +147,7 @@ func runCommand(_ argv: [String], _ deps: Dependencies) -> CommandResult {
     }
     switch cmd {
     case "put" where rest.contains("--stdin"): return runPutStdin(rest, store, deps.stdin, role)
-    case "put": return changingServerLevel(rest, store, role, deps) { runPut(rest, store, deps.input(role), role) }
+    case "put": return changingServerLevel(rest, store, role, deps) { runPut(rest, store, deps.input(role), role, deps) }
     case "sync": return runSync(rest, store, deps, role)
     case "server": return runServer(rest, store, deps, role)
     case "get" where rest.contains("--unpushed"): return runGetUnpushed(rest, store, role)
@@ -208,6 +210,7 @@ private func usage() -> CommandResult {
                              [--description "<text>"] [--level personal|server]
                              [--set "<NAME>=<value>" …]                  non-secret fields, from the CLI
                              [--fields "<Label>","<Label>" [--show "<Label>",…]]   secret fields: terminal, popup or one-time link
+                             [--field-from-stdin "<Label>"]             one secret field a command pipes in
           upserts the named fields into the secret, keeping the rest; with no
           --set/--fields it stores one bare value — or, on an existing secret given
           --level, changes only its metadata. Whole-replace: rm then put.
@@ -257,7 +260,8 @@ private func usage() -> CommandResult {
 // replace" (that's `rm` then `put`), and it behaves the same for every kind.
 // With neither --set nor --fields it stores one bare value (ADR-0002) — unless the
 // Secret exists and --level is given, which updates only its metadata (ADR-0010).
-private func runPut(_ argv: [String], _ store: SecretStore, _ input: SecretInput, _ role: HostRole) -> CommandResult {
+private func runPut(_ argv: [String], _ store: SecretStore, _ input: SecretInput, _ role: HostRole,
+                    _ deps: Dependencies) -> CommandResult {
     let args = parseArgs(argv)
     guard let service = args.service else { return usage() }
     let account = args.account
@@ -279,15 +283,40 @@ private func runPut(_ argv: [String], _ store: SecretStore, _ input: SecretInput
     // Secret fields: collected in the popup (masked unless --show).
     let fieldLabels = args.flags["fields"].map(splitCSV) ?? []
     let showLabels = Set(args.flags["show"].map(splitCSV) ?? [])
-    let writtenLabels = setPairs.map(\.label) + fieldLabels
+    // One secret field piped in by the command that made it (ADR-0017): no prompt at all.
+    var stdinLabel: String?
+    if let raw = args.flags["field-from-stdin"] {
+        let label = raw.trimmingCharacters(in: .whitespaces)
+        guard !label.isEmpty else { return fail("--field-from-stdin needs the field's label\n", 64) }
+        stdinLabel = label
+    }
+    let writtenLabels = setPairs.map(\.label) + fieldLabels + (stdinLabel.map { [$0] } ?? [])
     let isLabelledWrite = !writtenLabels.isEmpty
 
     var seen = Set<String>()
     for label in writtenLabels where !seen.insert(label).inserted {
-        return fail("field \"\(label)\" given more than once across --set/--fields\n", 64)
+        return fail("field \"\(label)\" given more than once across --set/--fields/--field-from-stdin\n", 64)
     }
     if let unknown = showLabels.first(where: { !fieldLabels.contains($0) }) {
         return fail("--show \"\(unknown)\" is not one of --fields\n", 64)
+    }
+    // Read it now, before any store read or prompt: all of stdin, one trailing newline
+    // stripped, nothing else changed. A terminal or an empty pipe is refused.
+    var stdinValue: String?
+    if let stdinLabel {
+        let humanLine = "a value a human knows goes in with --fields \"\(stdinLabel)\" (terminal or popup)"
+        guard !deps.stdinIsTerminal() else {
+            return fail("--field-from-stdin reads a value a command pipes in, and stdin is a terminal; \(humanLine)\n", 64)
+        }
+        var bytes = deps.stdin()
+        if bytes.last == 0x0A { bytes.removeLast() }          // the one trailing "\n", as bytes
+        guard let value = String(data: bytes, encoding: .utf8) else {
+            return fail("--field-from-stdin: stdin is not UTF-8 text (base64-encode binary data); nothing stored\n", 64)
+        }
+        guard !value.isEmpty else {
+            return fail("--field-from-stdin: stdin is empty; nothing stored. Pipe the value in; \(humanLine)\n", 64)
+        }
+        stdinValue = value
     }
 
     // Collect secret values from whichever input reaches a human, or throw the
@@ -407,6 +436,7 @@ private func runPut(_ argv: [String], _ store: SecretStore, _ input: SecretInput
             }
             for (label, value) in setPairs { upsertField(label, value) }
             for label in fieldLabels { upsertField(label, promptedValues[label] ?? "") }
+            if let stdinLabel, let stdinValue { upsertField(stdinLabel, stdinValue) }
             secret = SecretValue(fields: fields)
         } else {
             // Bare single value (ADR-0002): one masked field with the empty label.

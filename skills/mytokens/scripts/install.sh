@@ -9,7 +9,11 @@
 #
 # `mytokens server add <host>` sends this very script, from inside the app, over
 # ssh to a Server and runs it with MYTOKENS_SELFTEST=0: it sets the Server's
-# role first and runs selftest there itself (ADR-0015).
+# role first and runs selftest there itself (ADR-0015), and with MYTOKENS_AGENT=0:
+# a Server never gets the background sync agent.
+#
+# On a personal Mac it installs (or refreshes) the launchd agent that syncs every
+# server on the server list every 15 minutes (`mytokens server agent`, ADR-0016).
 set -euo pipefail
 
 REPO="${MYTOKENS_REPO:-sunfmin/mytokens}"
@@ -53,6 +57,12 @@ case ":$PATH:" in
   *":$BIN_DIR:"*) ;;
   *) echo "note: add $BIN_DIR to your PATH (e.g. in ~/.zshrc): export PATH=\"$BIN_DIR:\$PATH\"" ;;
 esac
+
+# Background sync: the launchd agent on a personal Mac; `server agent` removes it
+# on a Mac whose role is server. A release older than the agent lacks the command.
+if [[ "${MYTOKENS_AGENT:-1}" != "0" ]]; then
+  "$BIN" server agent || echo "note: background sync agent not set up (run: mytokens server agent)"
+fi
 
 # Prove the entitlement + keychain path actually work on this machine.
 if [[ "${MYTOKENS_SELFTEST:-1}" == "0" ]]; then

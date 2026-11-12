@@ -62,12 +62,16 @@ protocol Remote {
 let remoteExportCommand = #"PATH="$HOME/.local/bin:$PATH" mytokens get --unpushed"#
 let remotePutCommand = #"PATH="$HOME/.local/bin:$PATH" mytokens put --stdin"#
 
-/// Real remote: `ssh -- <host> <command>`, the payload on ssh's stdin.
+/// Real remote: `ssh -- <host> <command>`, the payload on ssh's stdin. Unattended (Background
+/// Sync, ADR-0016), ssh never prompts and gives up on a host it cannot reach in 20 seconds.
 struct SSHRemote: Remote {
+    var unattended = false
+
     func run(host: String, command: String, stdin: Data) throws -> CommandResult {
         let p = Process()
         p.executableURL = URL(fileURLWithPath: "/usr/bin/ssh")
-        p.arguments = ["--", host, command]
+        let options = unattended ? ["-o", "BatchMode=yes", "-o", "ConnectTimeout=20", "-o", "ServerAliveInterval=30"] : []
+        p.arguments = options + ["--", host, command]
         let input = Pipe(), output = Pipe(), errors = Pipe()
         p.standardInput = input
         p.standardOutput = output

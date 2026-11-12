@@ -23,7 +23,9 @@ struct AppRelease {
 
 /// The commands `server add` runs on the Server, besides Sync's.
 let remoteVersionCommand = #"p="$HOME/Applications/MyTokens.app/Contents/Info.plist"; if [ -f "$p" ]; then /usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' "$p"; else echo none; fi"#
-let remoteInstallCommand = #"MYTOKENS_SELFTEST=0 /bin/bash -s"#
+/// The installer runs with `MYTOKENS_AGENT=0`: a Server never gets the Background Sync agent,
+/// and its role is not set yet when it installs (ADR-0016).
+let remoteInstallCommand = #"MYTOKENS_SELFTEST=0 MYTOKENS_AGENT=0 /bin/bash -s"#
 let remoteSetRoleCommand = #"PATH="$HOME/.local/bin:$PATH" mytokens host server"#
 let remoteSelftestCommand = #"PATH="$HOME/.local/bin:$PATH" mytokens selftest"#
 
@@ -44,7 +46,7 @@ private func validHost(_ host: String) -> Bool { !host.isEmpty && !host.hasPrefi
 /// names its step and leaves the host off the list (or as it was, when already on it).
 /// Again on a listed host it does the same steps and changes nothing else: the repair command.
 func serverAdd(_ host: String, store: SecretStore, list: ServerList, via remote: Remote,
-               app: AppRelease, now: Date) -> CommandResult {
+               app: AppRelease, now: Date, state: BackgroundSyncState) -> CommandResult {
     guard validHost(host) else {
         return CommandResult(stdout: "", stderr: "server add needs a host name (got \"\(host)\")\n", exitCode: 64)
     }
@@ -54,59 +56,21 @@ func serverAdd(_ host: String, store: SecretStore, list: ServerList, via remote:
                       stderr: "server add \(host) failed to \(step); it is not added to the server list:\n" + why,
                       exitCode: 1)
     }
-    func run(_ command: String, stdin: Data = Data()) throws -> CommandResult {
-        try remote.run(host: host, command: command, stdin: stdin)
-    }
-    func versionThere() throws -> String? {
-        let r = try run(remoteVersionCommand)
-        guard r.exitCode == 0 else { throw CommandResult(stdout: "", stderr: r.stderr, exitCode: r.exitCode) }
-        let v = r.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
-        return v.isEmpty || v == "none" ? nil : v
-    }
-    func needsInstall(_ there: String?) -> Bool {
-        guard let there else { return true }
-        return app.version.map { isOlder(there, than: $0) } ?? false
-    }
-
-    // 1. Install or upgrade.
+    // 1. Install or upgrade; 2. the role, then selftest.
     do {
-        let before = try versionThere()
-        if needsInstall(before) {
-            guard let script = app.installScript() else {
-                return failed("install MyTokens", "this Mac's MyTokens has no install script to send\n")
-            }
-            let installed = try run(remoteInstallCommand, stdin: script)
-            guard installed.exitCode == 0 else { return failed("install MyTokens", installed.stderr) }
-            let after = try versionThere()
-            guard let after, !needsInstall(after) else {
-                return failed("install MyTokens", "\(host) runs \(after ?? "no MyTokens") after installing, not \(app.version ?? "a release")\n")
-            }
-            lines.append(before.map { "upgraded MyTokens \($0) to \(after)" } ?? "installed MyTokens \(after)")
-        } else {
-            lines.append("MyTokens \(before!) is installed")
-        }
-    } catch let failure as CommandResult {
-        return failed("install MyTokens", failure.stderr)
+        lines.append(try installIfNeeded(on: host, via: remote, app: app).line)
+        lines += try setRoleAndSelftest(on: host, via: remote)
+    } catch let failure as StepFailure {
+        return failed(failure.step, failure.why)
     } catch {
         return failed("install MyTokens", "\(error)\n")
-    }
-
-    // 2. The role, then selftest.
-    do {
-        let role = try run(remoteSetRoleCommand)
-        guard role.exitCode == 0 else { return failed("set the role", role.stderr) }
-        lines.append("role server")
-        let selftest = try run(remoteSelftestCommand)
-        guard selftest.exitCode == 0 else { return failed("pass selftest", selftest.stdout + selftest.stderr) }
-        lines.append("selftest passed")
-    } catch {
-        return failed("set the role", "\(error)\n")
     }
 
     // 3. The first Sync.
     let synced = sync(with: host, store: store, via: remote, now: now)
     lines += synced.stdout.split(separator: "\n").map(String.init)
     guard synced.exitCode == 0 else { return failed("sync", synced.stderr) }
+    state.update(host) { $0.succeeded(at: now) }
 
     // 4. The Server list.
     do {
@@ -125,7 +89,8 @@ func serverAdd(_ host: String, store: SecretStore, list: ServerList, via remote:
 
 /// `server rm <host>`: Sync the host to hold no Secrets at all — adopting what was entered
 /// there first, and stopping on a conflict as Sync does — then forget it.
-func serverRm(_ host: String, store: SecretStore, list: ServerList, via remote: Remote, now: Date) -> CommandResult {
+func serverRm(_ host: String, store: SecretStore, list: ServerList, via remote: Remote, now: Date,
+              state: BackgroundSyncState) -> CommandResult {
     guard validHost(host) else {
         return CommandResult(stdout: "", stderr: "server rm needs a host name (got \"\(host)\")\n", exitCode: 64)
     }
@@ -140,19 +105,63 @@ func serverRm(_ host: String, store: SecretStore, list: ServerList, via remote: 
                                  stderr: emptied.stderr + "\(host) stays on the server list\n", exitCode: 1)
         }
         try list.write(hosts.filter { $0 != host })
+        state.forget(host)
         return CommandResult(stdout: emptied.stdout + "removed \(host) from the server list\n", stderr: "", exitCode: 0)
     } catch {
         return CommandResult(stdout: "", stderr: "\(error)\n", exitCode: 1)
     }
 }
 
-/// `server list`: the hosts on the Server list, one per line. Nothing secret.
-func serverList(_ list: ServerList) -> CommandResult {
+/// `server list`: the hosts on the Server list, one per line, each with what this Mac's
+/// Background Sync last did there: when it last synced, and the failed step, error and fixing
+/// line while it fails (ADR-0016). Nothing secret.
+func serverList(_ list: ServerList, state: BackgroundSyncState) -> CommandResult {
     do {
         let hosts = try list.read()
-        if hosts.isEmpty { return CommandResult(stdout: "", stderr: "no servers on the server list\n", exitCode: 0) }
-        return CommandResult(stdout: hosts.map { $0 + "\n" }.joined(), stderr: "", exitCode: 0)
+        let paused = state.isPaused() ? "background sync is paused on this Mac (mytokens server resume)\n" : ""
+        if hosts.isEmpty { return CommandResult(stdout: "", stderr: "no servers on the server list\n" + paused, exitCode: 0) }
+        let statuses = state.statuses()
+        let rows = hosts.map { host -> String in
+            let status = statuses[host]
+            var row = "\(host)\t\(describeStatus(status))"
+            if let status, status.isFailing, let step = status.failedStep {
+                row += " — fix: " + fixLine(host: host, StepFailure(step: step, why: status.failedError ?? ""))
+            }
+            return row + "\n"
+        }
+        return CommandResult(stdout: rows.joined(), stderr: paused, exitCode: 0)
     } catch {
         return CommandResult(stdout: "", stderr: "\(error)\n", exitCode: 1)
+    }
+}
+
+/// `server pause` / `server resume`: stop and restart this Mac's Background Sync. Kept per
+/// Mac; resuming runs it at once.
+func serverPause(_ paused: Bool, deps: Dependencies) -> CommandResult {
+    do {
+        try deps.syncState.setPaused(paused)
+    } catch {
+        return CommandResult(stdout: "", stderr: "\(error)\n", exitCode: 1)
+    }
+    if paused {
+        return CommandResult(stdout: "background sync paused on this Mac; mytokens server resume restarts it\n", stderr: "", exitCode: 0)
+    }
+    triggerBackgroundSync(deps)
+    return CommandResult(stdout: "background sync resumed on this Mac\n", stderr: "", exitCode: 0)
+}
+
+/// `server agent`: install or refresh this Mac's Background Sync agent (install.sh runs it on
+/// every install and upgrade); on a Server, remove it — a Server never runs one.
+func serverAgent(role: HostRole, deps: Dependencies) -> CommandResult {
+    do {
+        if role == .server {
+            try deps.agent.remove()
+            return CommandResult(stdout: "this Mac is a server: no background sync agent here\n", stderr: "", exitCode: 0)
+        }
+        try deps.agent.install()
+        return CommandResult(stdout: "background sync: every \(LaunchdAgent.interval / 60) minutes and after a server-level change (launchd agent \(LaunchdAgent.label))\n",
+                             stderr: "", exitCode: 0)
+    } catch {
+        return CommandResult(stdout: "", stderr: "background sync agent not loaded: \(error)\n", exitCode: 1)
     }
 }

@@ -310,6 +310,45 @@ discovered from your tailnet. `server rm` first adopts whatever was entered on t
 stops, leaving the host listed, on a conflict, as `sync` does), then removes every secret it
 pushed there. All three commands are refused on a server.
 
+### Background sync
+
+Each of your own Macs keeps every listed server current by itself. `install.sh` sets up a
+launchd agent (`com.sunfmin.mytokens.background-sync`) that runs `mytokens server sync`:
+
+- every **15 minutes**, plus once on waking when the Mac slept through a run;
+- right after `put` or `rm` here changes a `server`-level secret (adds, updates, raises to
+  `server`, lowers to `personal`, removes). The command returns at once and the agent does the
+  syncing.
+
+Each run first upgrades MyTokens on a host where it is missing or older (as `server add`
+does), then syncs it. Hosts are independent: one that is off or failing never stops the others.
+Before the Mac's first unlock after boot a run does nothing and waits. Your two Macs may both
+run at once; the second prints `no changes`.
+
+```sh
+mytokens server list      # each host: when this Mac last synced it, or why it fails and the fix
+```
+
+```
+macstudio-jp	last synced 2026-11-12 10:15
+mini-jp	last synced 2026-11-11 08:00; failed to sync at 2026-11-12 10:15 (failing since 2026-11-11 08:15): sync with mini-jp failed to adopt: — keychain is locked … — fix: log in once at mini-jp after its reboot (at the Mac or over Screen Sharing)
+```
+
+A host failing for 24 hours straight is also pushed through [Bark](https://bark.day.app) once a
+day, when this Mac has a `bark` secret (the same device key or URL a server uses). The push
+names the host, how long, the failed step and the fix. Without one, it shows only in `server list`.
+
+```sh
+mytokens server pause     # stop background sync on this Mac (the other Mac keeps its own)
+mytokens server resume    # start it again, with a run right away
+mytokens server sync      # run it now, by hand
+```
+
+The agent's log, `~/Library/Logs/mytokens/background-sync.log`, holds host names, secret names,
+steps and errors, and never a value. A server never gets the agent: `server add` installs with
+`MYTOKENS_AGENT=0`, and `mytokens host server` removes it. `mytokens server agent` re-creates it
+on your own Mac (ADR-0016).
+
 To set a server up by hand instead, on the server: `bash ~/.claude/skills/mytokens/scripts/install.sh`,
 then `mytokens host server` (this Mac's role; default: personal; `mytokens host` prints it), then
 `mytokens selftest`.

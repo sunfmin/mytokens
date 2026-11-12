@@ -52,9 +52,9 @@ abort 'developer-id-profile: the keychain\'s Developer ID certificate is not on 
 
 profile = api(:get, "/v1/bundleIds/#{bundle_id['id']}/profiles?limit=200")['data']
           .select { |p| p['attributes']['profileType'] == 'MAC_APP_DIRECT' && p['attributes']['profileState'] == 'ACTIVE' }
-          .find { |p| api(:get, "/v1/profiles/#{p['id']}/certificates?limit=200")['data'].any? { |c| c['id'] == cert['id'] } }
+          .map { |p| api(:get, "/v1/profiles/#{p['id']}?include=certificates&limit[certificates]=50")['data'] }
+          .find { |p| (p.dig('relationships', 'certificates', 'data') || []).any? { |c| c['id'] == cert['id'] } }
 if profile
-  profile = api(:get, "/v1/profiles/#{profile['id']}")['data']
   warn "developer-id-profile: using #{profile['attributes']['name']}"
 else
   name = "#{bundle} Developer ID #{cert['attributes']['serialNumber']}"

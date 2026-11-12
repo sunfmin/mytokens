@@ -1,5 +1,7 @@
 # Minting is a runtime pattern over a service-agnostic Helper, not a Helper feature
 
+Status: narrowed by ADR-0014 — a Server pushes its own Misses through Bark.
+
 The Helper stays **service-agnostic**: it only stores and returns Secrets (generic
 `add`/`get`/`list`/`rm` plus optional `--kind`/`--meta`). It contains **no Cloudflare code
 and no network capability**. Minting a Cloudflare Child token is a **pattern Claude performs

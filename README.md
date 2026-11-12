@@ -325,6 +325,27 @@ A second run prints `no changes`. The values travel only in the SSH pipes, betwe
 command line, in the environment, in a file or in what `sync` prints. Both are refused on your
 own Macs. (`push`, the old name, is gone: it prints a hint naming `sync`.)
 
+### When a server lacks a secret
+
+On a server, `get` or `env` for a secret it does not hold still exits non-zero, but says why
+and what to run:
+
+```
+no secret for deploy/default: it is not on this server (my-server).
+A server holds only server-level secrets, synced from your personal Macs.
+On a personal Mac, run:
+  mytokens put deploy --level server
+(an existing secret: only its level changes; a new one: you enter it there),
+and the next sync brings it here — to bring it now, on that Mac: mytokens sync my-server
+```
+
+With a `bark` secret on the server, it also sends that as one [Bark](https://bark.day.app)
+push — at most one per secret per hour, however many jobs ask (the times are kept in
+`~/Library/Application Support/mytokens/miss-pushes.json`). The `bark` secret is your device
+key (`mytokens put bark --level server`, pasting the key), or a whole push URL such as
+`https://api.day.app/<key>` for a self-hosted server. Without it the server only prints. Your
+own Macs print the plain `no secret for …` as before.
+
 The role is one small file, `~/Library/Application Support/mytokens/host-role`. Your own
 Macs never need it: without it a Mac is `personal` and nothing changes.
 

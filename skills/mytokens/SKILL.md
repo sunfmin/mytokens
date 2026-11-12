@@ -66,11 +66,19 @@ mytokens put aws --description "CI deploy: S3 uploads" --fields "Access Key ID",
 
 Where `put` asks: in the terminal when the human runs it in one (hidden input; works over `ssh -t`), else the desktop popup (never on a `server`: nobody watches its screen), else a **one-time tailnet link**. With the link, `put` prints `mytokens: open this link …` and the URL on stderr, then **blocks** until the human submits it (exit 0, `stored …`) or it expires after 10 minutes (non-zero, nothing stored). So run that `put` in the background, read the link from its output as soon as it appears, and hand the link to the human (e.g. a phone push) — the value never passes through you. Only with no terminal, no desktop and no tailnet does `put` store nothing at once and print the exact command — hand that line to the human to run in their own `ssh -t` session.
 
+**On a Server** (`mytokens host` prints `server`), a missing Secret is different: a Server holds
+only the `server`-level Secrets Synced from the human's personal Macs, so do **not** `put` it there
+and never ask for the value in chat. `get`/`env` exit non-zero and print why, with the exact line
+to run on a personal Mac (`mytokens put <service> --level server`, then `mytokens sync <host>`);
+with a `bark` Secret on the Server they also push that to the human's phone (once an hour per
+Secret). Relay that message to the human verbatim, and stop or carry on without the Secret until
+it arrives.
+
 ## Consent contract
 
 - **Reading/using a stored Secret is silent.** The user storing it is standing authorization to use it — don't ask.
 - **Announce, but don't gate, outward-facing writes.** Before minting or revoking a token (a write to the service's account), say what you're about to do (e.g. "minting a 24h DNS-edit Cloudflare child token"), then proceed without waiting for approval.
-- **When a Secret is missing, `put` it** via `mytokens put <service>` (secret fields pop the dialog) rather than aborting the task.
+- **When a Secret is missing, `put` it** via `mytokens put <service>` (secret fields pop the dialog) rather than aborting the task — except on a Server, where you relay the miss message instead (above).
 
 ## Consumption hygiene
 

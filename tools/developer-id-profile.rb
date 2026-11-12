@@ -50,9 +50,9 @@ cert = api(:get, '/v1/certificates?filter[certificateType]=DEVELOPER_ID_APPLICAT
        .find { |c| norm.(c['attributes']['serialNumber']) == serial }
 abort 'developer-id-profile: the keychain\'s Developer ID certificate is not on the team' unless cert
 
-profile = api(:get, "/v1/bundleIds/#{bundle_id['id']}/profiles?limit=200")['data']
-          .select { |p| p['attributes']['profileType'] == 'MAC_APP_DIRECT' && p['attributes']['profileState'] == 'ACTIVE' }
-          .map { |p| api(:get, "/v1/profiles/#{p['id']}?include=certificates&limit[certificates]=50")['data'] }
+profile = api(:get, '/v1/profiles?filter[profileType]=MAC_APP_DIRECT&filter[profileState]=ACTIVE' \
+                   '&include=bundleId,certificates&limit=200&limit[certificates]=50')['data']
+          .select { |p| p.dig('relationships', 'bundleId', 'data', 'id') == bundle_id['id'] }
           .find { |p| (p.dig('relationships', 'certificates', 'data') || []).any? { |c| c['id'] == cert['id'] } }
 if profile
   warn "developer-id-profile: using #{profile['attributes']['name']}"

@@ -88,15 +88,23 @@ verify:
 # profile carrying the Keychain Sharing capability. By hand xcodebuild uses your
 # Xcode-logged-in account; with ASC_KEY_P8_BASE64 set (GitHub Actions, where no
 # account is signed in) it authenticates with the API key instead, its .p8 in a
-# mktemp -d directory removed on exit. With SIGN_KEYCHAIN set (GitHub Actions:
-# the keychain tools/signing-keychain.sh made from the Developer ID .p12), the
-# archive is signed with that keychain's Developer ID Application identity
-# rather than an Apple Development one Xcode would create through the key.
+# mktemp -d directory removed on exit. With SIGN_KEYCHAIN and SIGN_PROFILE set
+# (GitHub Actions: the keychain tools/signing-keychain.sh made from the
+# Developer ID .p12, and the UUID of the Developer ID profile
+# tools/developer-id-profile.rb installed), signing is manual with those: the
+# archive and the export both sign with that identity and profile, and Xcode
+# makes no certificate of its own.
 SIGN_KEYCHAIN ?=
+SIGN_PROFILE ?=
 signed: project
-	@set -e; auth=; set --; \
-	if [ -n "$(SIGN_KEYCHAIN)" ]; then \
-		set -- CODE_SIGN_STYLE=Manual "CODE_SIGN_IDENTITY=Developer ID Application" "OTHER_CODE_SIGN_FLAGS=--keychain $(SIGN_KEYCHAIN)"; \
+	@set -e; auth=; set --; opts=ExportOptions.plist; \
+	if [ -n "$(SIGN_KEYCHAIN)" ] && [ -n "$(SIGN_PROFILE)" ]; then \
+		set -- CODE_SIGN_STYLE=Manual "CODE_SIGN_IDENTITY=Developer ID Application" \
+			PROVISIONING_PROFILE_SPECIFIER=$(SIGN_PROFILE) "OTHER_CODE_SIGN_FLAGS=--keychain $(SIGN_KEYCHAIN)"; \
+		mkdir -p $(DERIVED); opts=$(DERIVED)/ExportOptions-manual.plist; cp ExportOptions.plist $$opts; \
+		plutil -replace signingStyle -string manual $$opts; \
+		plutil -replace signingCertificate -string "Developer ID Application" $$opts; \
+		plutil -replace provisioningProfiles -json '{"com.sunfmin.mytokens":"$(SIGN_PROFILE)"}' $$opts; \
 	fi; \
 	if [ -n "$${ASC_KEY_P8_BASE64:-}" ]; then \
 		key=$$(mktemp -d); trap 'rm -rf "$$key"' EXIT; tools/asc-key.sh "$$key"; \
@@ -106,7 +114,7 @@ signed: project
 		-derivedDataPath $(DERIVED) -archivePath $(ARCHIVE) \
 		-allowProvisioningUpdates $$auth "$$@" archive; \
 	xcodebuild -exportArchive -archivePath $(ARCHIVE) \
-		-exportOptionsPlist ExportOptions.plist -exportPath $(EXPORT) \
+		-exportOptionsPlist $$opts -exportPath $(EXPORT) \
 		-allowProvisioningUpdates $$auth
 
 # Release build: Developer ID-signed, notarized, stapled and verified .app zipped

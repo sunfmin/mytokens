@@ -17,8 +17,8 @@ DIST_ZIP     := $(DERIVED)/$(APP).zip
 # environment when ASC_KEY_P8_BASE64 is set (GitHub Actions, with ASC_KEY_ID and
 # ASC_ISSUER_ID), else from mytokens itself (dogfooding): the Secret
 # $(ASC_SECRET) with fields "Key ID", "Issuer ID", "Key (base64 .p8)". It
-# notarizes; in Actions it also signs (an Admin-role key: Xcode's cloud-managed
-# Developer ID), where by hand signing uses your Xcode-logged-in account.
+# notarizes; in Actions it also lets Xcode fetch the Developer ID profile, where
+# by hand signing uses your Xcode-logged-in account.
 export ASC_SECRET
 ASC_SECRET ?= asc-api-key
 
@@ -66,6 +66,7 @@ test: project
 	tools/xcodegen-need-test.sh
 	tools/asc-key-test.sh
 	tools/release-wait-test.sh
+	tools/signing-keychain-test.sh
 	tools/xctest-run-test.sh
 	xcodebuild -project $(PROJECT) -scheme $(APP) -derivedDataPath $(DERIVED) build-for-testing
 	tools/xctest-run.sh $(TEST_BUNDLE)
@@ -87,16 +88,23 @@ verify:
 # profile carrying the Keychain Sharing capability. By hand xcodebuild uses your
 # Xcode-logged-in account; with ASC_KEY_P8_BASE64 set (GitHub Actions, where no
 # account is signed in) it authenticates with the API key instead, its .p8 in a
-# mktemp -d directory removed on exit.
+# mktemp -d directory removed on exit. With SIGN_KEYCHAIN set (GitHub Actions:
+# the keychain tools/signing-keychain.sh made from the Developer ID .p12), the
+# archive is signed with that keychain's Developer ID Application identity
+# rather than an Apple Development one Xcode would create through the key.
+SIGN_KEYCHAIN ?=
 signed: project
-	@set -e; auth=; \
+	@set -e; auth=; set --; \
+	if [ -n "$(SIGN_KEYCHAIN)" ]; then \
+		set -- "CODE_SIGN_IDENTITY=Developer ID Application" "OTHER_CODE_SIGN_FLAGS=--keychain $(SIGN_KEYCHAIN)"; \
+	fi; \
 	if [ -n "$${ASC_KEY_P8_BASE64:-}" ]; then \
 		key=$$(mktemp -d); trap 'rm -rf "$$key"' EXIT; tools/asc-key.sh "$$key"; \
 		auth="-authenticationKeyPath $$key/AuthKey.p8 -authenticationKeyID $$(cat "$$key/key-id") -authenticationKeyIssuerID $$(cat "$$key/issuer-id")"; \
 	fi; \
 	xcodebuild -project $(PROJECT) -scheme $(APP) -configuration Release \
 		-derivedDataPath $(DERIVED) -archivePath $(ARCHIVE) \
-		-allowProvisioningUpdates $$auth archive; \
+		-allowProvisioningUpdates $$auth "$$@" archive; \
 	xcodebuild -exportArchive -archivePath $(ARCHIVE) \
 		-exportOptionsPlist ExportOptions.plist -exportPath $(EXPORT) \
 		-allowProvisioningUpdates $$auth

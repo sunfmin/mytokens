@@ -95,7 +95,7 @@ protocol SecretStore {
 // Must match the `keychain-access-groups` entitlement (= application-identifier).
 // macOS does NOT isolate data-protection queries by group for non-sandboxed apps,
 // so every query is scoped to this group explicitly to avoid touching other apps' items.
-private let mytokensAccessGroup = "HL27PWAKDF.com.sunfmin.mytokens"
+let mytokensAccessGroup = "HL27PWAKDF.com.sunfmin.mytokens"
 private let mytokensLabelPrefix = "mytokens: "
 
 /// Which keychain a `KeychainSecretStore` acts on — chosen by the Mac's role (ADR-0010).

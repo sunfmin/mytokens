@@ -6,6 +6,8 @@ BIN_DIR      := $(HOME)/.local/bin
 BIN          := $(BIN_DIR)/mytokens
 DERIVED      := build
 PRODUCT      := $(DERIVED)/Build/Products/Release/$(BUNDLE)
+# Built by `make test` (build-for-testing), run by tools/xctest-run.sh.
+TEST_BUNDLE  := $(DERIVED)/Build/Products/Debug/$(APP)Tests.xctest
 TEAM_ID      := HL27PWAKDF
 ARCHIVE      := $(DERIVED)/$(APP).xcarchive
 EXPORT       := $(DERIVED)/export
@@ -60,7 +62,9 @@ build: project
 test: project
 	tools/xcodegen-need-test.sh
 	tools/console-locked-test.sh
-	xcodebuild -project $(PROJECT) -scheme $(APP) -derivedDataPath $(DERIVED) test
+	tools/xctest-run-test.sh
+	xcodebuild -project $(PROJECT) -scheme $(APP) -derivedDataPath $(DERIVED) build-for-testing
+	tools/xctest-run.sh $(TEST_BUNDLE)
 
 install: build
 	rm -rf "$(INSTALL_DIR)/$(BUNDLE)"

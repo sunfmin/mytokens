@@ -90,6 +90,15 @@ Secret reaches a Server other than being entered on it. A Secret's pushed mark s
 got it from a personal Mac.
 _Avoid_: push (the old name of this command), two-way sync (each Secret has one home), deploy, copy.
 
+**Server list**:
+The hosts set up with `mytokens server add <host>`, kept on the personal Macs as one
+synchronizable item in mytokens' access group — so iCloud Keychain sync gives every personal Mac
+the same list. Not a Secret (`list` does not show it) and nothing secret: host names only. Only a
+host named by `server add` is on it; nothing is discovered from the tailnet. `server rm <host>`
+Syncs the host to hold no Secrets, then takes it off. Background Sync keeps every listed Server
+current (ADR-0014).
+_Avoid_: fleet, inventory, known hosts (that is ssh's file).
+
 **Adopt**:
 What Sync does with a Secret entered on a Server: store it on the personal Mac, whole, as a
 `server`-level Secret whose Description notes the Server and date, and mark it pushed on the

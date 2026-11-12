@@ -272,14 +272,47 @@ of the iCloud Keychain (ADR-0013). Once its user has logged in after boot, jobs 
 over SSH, including Tailscale SSH, while the screen is locked. After a reboot, log in once at
 the console or over Screen Sharing before jobs need the secrets.
 
-On the server, once:
+On one of **your own** Macs, once per server:
 
 ```sh
-bash ~/.claude/skills/mytokens/scripts/install.sh   # the same signed app as on your own Macs
-mytokens host server                                # this Mac's role; default: personal
-mytokens host                                       # prints it: server
-mytokens selftest                                   # round-trips through the local store
+mytokens server add my-server      # any host name ssh accepts
 ```
+
+```
+installed MyTokens 0.1.7
+role server
+selftest passed
+added deploy/default
+added my-server to the server list
+```
+
+Over SSH, `server add` does four things, each only once the one before it succeeded:
+
+1. **Installs** MyTokens on the server when it is missing or older than this Mac's — the same
+   signed, notarized release `install.sh` installs. It sends the installer itself, so the
+   server needs nothing first (not even the skill).
+2. Sets the server's **role** to `server` (`mytokens host server` there) and runs
+   **`mytokens selftest`** there.
+3. Runs a first **`sync`** (below).
+4. Puts the host on the **server list**.
+
+A failing step is named, and the host stays off the list. Run `server add` again on a listed
+host to repair it: it upgrades, re-checks and syncs, and changes nothing else.
+
+```sh
+mytokens server list               # the hosts on the list — names only, nothing secret
+mytokens server rm my-server       # sync it to hold no secrets, then take it off the list
+```
+
+The list is one item in your iCloud Keychain, so every one of your Macs sees the same list;
+`mytokens list` does not show it. Only hosts you name with `server add` are on it — nothing is
+discovered from your tailnet. `server rm` first adopts whatever was entered on the server (and
+stops, leaving the host listed, on a conflict, as `sync` does), then removes every secret it
+pushed there. All three commands are refused on a server.
+
+To set a server up by hand instead, on the server: `bash ~/.claude/skills/mytokens/scripts/install.sh`,
+then `mytokens host server` (this Mac's role; default: personal; `mytokens host` prints it), then
+`mytokens selftest`.
 
 From then on `put`, `get`, `env`, `list` and `rm` act on the server's local store:
 

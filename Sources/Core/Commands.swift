@@ -29,6 +29,9 @@ struct Dependencies {
     var pushLedger: PushLedger = MemoryPushLedger()   // at most one miss push per Secret per hour
     var servers: ServerList = KeychainServerList()   // the personal Macs' Server list (ADR-0015)
     var app: () -> AppRelease = { .current }         // what `server add` installs on a Server
+    var syncState: BackgroundSyncState = MemoryBackgroundSyncState()   // this Mac's Background Sync (ADR-0016)
+    var agent: BackgroundAgent = NoBackgroundAgent()  // the launchd agent that runs it
+    var backgroundRemote: Remote? = nil               // how its runs reach a Server; nil: `remote`
     static var live: Dependencies {
         .init(role: FileHostRoleSetting(),
               store: { KeychainSecretStore.opened($0.keychain) },
@@ -37,7 +40,10 @@ struct Dependencies {
               remote: SSHRemote(),
               stdin: { FileHandle.standardInput.readDataToEndOfFile() },
               bark: HTTPBarkTransport(),
-              pushLedger: FilePushLedger())
+              pushLedger: FilePushLedger(),
+              syncState: FileBackgroundSyncState(),
+              agent: LaunchdAgent(),
+              backgroundRemote: SSHRemote(unattended: true))
     }
 }
 
@@ -123,7 +129,7 @@ private func parseArgs(_ argv: [String]) -> ParsedArgs {
 func runCommand(_ argv: [String], _ deps: Dependencies) -> CommandResult {
     guard let cmd = argv.first else { return usage() }
     let rest = Array(argv.dropFirst())
-    if cmd == "host" { return runHost(rest, deps.role) }
+    if cmd == "host" { return runHost(rest, deps) }
     if cmd == "push" {
         return fail("push is now `mytokens sync <host>`: it also adopts the secrets entered on the server\n", 64)
     }
@@ -139,16 +145,33 @@ func runCommand(_ argv: [String], _ deps: Dependencies) -> CommandResult {
     }
     switch cmd {
     case "put" where rest.contains("--stdin"): return runPutStdin(rest, store, deps.stdin, role)
-    case "put": return runPut(rest, store, deps.input(role), role)
-    case "sync": return runSync(rest, store, deps.remote, role, deps.now())
+    case "put": return changingServerLevel(rest, store, role, deps) { runPut(rest, store, deps.input(role), role) }
+    case "sync": return runSync(rest, store, deps, role)
     case "server": return runServer(rest, store, deps, role)
     case "get" where rest.contains("--unpushed"): return runGetUnpushed(rest, store, role)
     case "get": return runGet(rest, store, missing(role, store, deps))
     case "env": return runEnv(rest, store, missing(role, store, deps))
     case "list": return runList(rest, store)
-    case "rm": return runRm(rest, store)
+    case "rm": return changingServerLevel(rest, store, role, deps) { runRm(rest, store) }
     default: return runSelftest(store)
     }
+}
+
+/// Runs a `put` or `rm`; when it succeeded on a personal Mac and the Secret was or now is
+/// `server`-level, starts Background Sync and returns without waiting for it (ADR-0016).
+private func changingServerLevel(_ argv: [String], _ store: SecretStore, _ role: HostRole, _ deps: Dependencies,
+                                 _ command: () -> CommandResult) -> CommandResult {
+    let args = parseArgs(argv)
+    func level() -> Level? {
+        guard let service = args.service else { return nil }
+        return (try? store.list())?.first { $0.service == service && $0.account == args.account }?.level
+    }
+    let before = role == .personal ? level() : nil
+    let result = command()
+    if role == .personal, result.exitCode == 0, before == .server || level() == .server {
+        triggerBackgroundSync(deps)
+    }
+    return result
 }
 
 /// What `get`/`env` answer for a Secret not in the store: on a personal Mac the plain
@@ -161,14 +184,17 @@ private func missing(_ role: HostRole, _ store: SecretStore, _ deps: Dependencie
     }
 }
 
-// `host` prints the Mac's role; `host personal|server` sets it (ADR-0010).
-private func runHost(_ argv: [String], _ setting: HostRoleSetting) -> CommandResult {
+// `host` prints the Mac's role; `host personal|server` sets it (ADR-0010). A Server never
+// runs the Background Sync agent: setting `server` removes it (ADR-0016).
+private func runHost(_ argv: [String], _ deps: Dependencies) -> CommandResult {
+    let setting = deps.role
     let args = parseArgs(argv)
     guard args.positionals.count <= 1, args.flags.isEmpty, args.sets.isEmpty else { return usage() }
     do {
         guard let raw = args.positionals.first else { return ok(try setting.read().rawValue + "\n") }
         guard let role = HostRole(rawValue: raw) else { return fail("host role must be \(HostRole.allowed)\n", 64) }
         try setting.write(role)
+        if role == .server { try? deps.agent.remove() }
         return ok("\(role.rawValue)\n")
     } catch {
         return fail("\(error)\n", 1)
@@ -199,10 +225,20 @@ private func usage() -> CommandResult {
           sets its role to server, runs selftest there, syncs, and adds it to the
           server list every personal Mac shares; again on a listed host it repairs
       mytokens server list
-          prints the hosts on the server list
+          prints the hosts on the server list, each with when this Mac last synced
+          it and, while it fails, the failed step, the error and the line that fixes it
       mytokens server rm <host>
           syncs <host> to hold no secrets (adopting what was entered there first),
           then takes it off the server list
+      mytokens server sync
+          syncs every listed server now, upgrading MyTokens there first when it is
+          missing or older — what this Mac's background agent runs every 15 minutes
+          and right after a server-level secret changes here
+      mytokens server pause | resume
+          stops or restarts background sync on this Mac
+      mytokens server agent
+          installs or refreshes this Mac's background sync agent (install.sh runs it;
+          on a server it removes it)
       mytokens get --unpushed
           (on a server, run by sync) writes the secrets entered on it to stdout
       mytokens put --stdin
@@ -388,14 +424,20 @@ private func runPut(_ argv: [String], _ store: SecretStore, _ input: SecretInput
     }
 }
 
-// `sync <host>` brings a Server and this personal Mac into agreement (ADR-0012).
-private func runSync(_ argv: [String], _ store: SecretStore, _ remote: Remote, _ role: HostRole, _ now: Date) -> CommandResult {
+// `sync <host>` brings a Server and this personal Mac into agreement (ADR-0012). A success
+// on a listed host is its last Sync in `server list` too (ADR-0016).
+private func runSync(_ argv: [String], _ store: SecretStore, _ deps: Dependencies, _ role: HostRole) -> CommandResult {
     let args = parseArgs(argv)
     guard args.positionals.count == 1, args.flags.isEmpty, args.sets.isEmpty, let host = args.service else { return usage() }
     guard role == .personal else {
         return fail("this Mac is a server: sync from a personal Mac, the home of every secret\n", 64)
     }
-    return sync(with: host, store: store, via: remote, now: now)
+    let now = deps.now()
+    let result = sync(with: host, store: store, via: deps.remote, now: now)
+    if result.exitCode == 0, (try? deps.servers.read())?.contains(host) == true {
+        deps.syncState.update(host) { $0.succeeded(at: now) }
+    }
+    return result
 }
 
 // `server add|list|rm` keep the personal Macs' Server list (ADR-0015). Like `sync`, they
@@ -404,13 +446,20 @@ private func runServer(_ argv: [String], _ store: SecretStore, _ deps: Dependenc
     let args = parseArgs(argv)
     guard args.flags.isEmpty, args.sets.isEmpty, let verb = args.positionals.first else { return usage() }
     let hosts = Array(args.positionals.dropFirst())
+    if verb == "agent", hosts.isEmpty { return serverAgent(role: role, deps: deps) }
     guard role == .personal else {
         return fail("this Mac is a server: run server \(verb) on a personal Mac, the home of every secret\n", 64)
     }
     switch (verb, hosts.count) {
-    case ("add", 1): return serverAdd(hosts[0], store: store, list: deps.servers, via: deps.remote, app: deps.app(), now: deps.now())
-    case ("rm", 1): return serverRm(hosts[0], store: store, list: deps.servers, via: deps.remote, now: deps.now())
-    case ("list", 0): return serverList(deps.servers)
+    case ("add", 1):
+        return serverAdd(hosts[0], store: store, list: deps.servers, via: deps.remote, app: deps.app(),
+                         now: deps.now(), state: deps.syncState)
+    case ("rm", 1):
+        return serverRm(hosts[0], store: store, list: deps.servers, via: deps.remote, now: deps.now(), state: deps.syncState)
+    case ("list", 0): return serverList(deps.servers, state: deps.syncState)
+    case ("sync", 0): return runBackgroundSync(store: store, deps: deps)
+    case ("pause", 0): return serverPause(true, deps: deps)
+    case ("resume", 0): return serverPause(false, deps: deps)
     default: return usage()
     }
 }

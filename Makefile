@@ -72,6 +72,7 @@ install: build
 	cp -R "$(PRODUCT)" "$(INSTALL_DIR)/"
 	ln -sf "$(INSTALL_DIR)/$(BUNDLE)/Contents/MacOS/$(APP)" "$(BIN)"
 	@echo "installed: $(BIN) -> $(INSTALL_DIR)/$(BUNDLE)"
+	"$(BIN)" server agent || echo "note: background sync agent not set up (run: mytokens server agent)"
 
 verify:
 	codesign -dv --entitlements - "$(INSTALL_DIR)/$(BUNDLE)" 2>&1 | rg 'Identifier|TeamIdentifier|keychain-access-groups' || true

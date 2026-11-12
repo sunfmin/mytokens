@@ -9,6 +9,7 @@ final class ServerSetupTests: XCTestCase {
     private var server = InMemorySecretStore()
     private var serverRole = InMemoryHostRoleSetting()
     private var list = InMemoryServerList()
+    private var syncState = MemoryBackgroundSyncState()
     private var remote = RecordingRemote()
     private var installedThere: String?          // the Server's MyTokens version; nil: none
     private var releaseInstalls = "0.2.0"         // what the installer puts there
@@ -22,6 +23,7 @@ final class ServerSetupTests: XCTestCase {
         server = InMemorySecretStore()
         serverRole = InMemoryHostRoleSetting()
         list = InMemoryServerList()
+        syncState = MemoryBackgroundSyncState()
         installedThere = nil
         releaseInstalls = "0.2.0"
         installFails = false
@@ -50,7 +52,8 @@ final class ServerSetupTests: XCTestCase {
         runCommand(argv, Dependencies(role: InMemoryHostRoleSetting(role), store: { [laptop] _ in laptop },
                                       input: { _ in CannedSecretInput(values: input) }, remote: remote,
                                       stdin: { Data() }, now: { [today] in today }, servers: list,
-                                      app: { [script] in AppRelease(version: "0.2.0", installScript: { script }) }))
+                                      app: { [script] in AppRelease(version: "0.2.0", installScript: { script }) },
+                                      syncState: syncState))
     }
 
     private func onServer(_ argv: [String], input: [String: String]? = nil, stdin: Data = Data()) -> CommandResult {
@@ -81,7 +84,7 @@ final class ServerSetupTests: XCTestCase {
         XCTAssertEqual(onServer(["get", "deploy"]).stdout, "srv-tok")
         XCTAssertNil(try server.get(service: "bank", account: "default"))
         XCTAssertEqual(list.hosts, ["macstudio-jp"])
-        XCTAssertEqual(onLaptop(["server", "list"]).stdout, "macstudio-jp\n")
+        XCTAssertEqual(onLaptop(["server", "list"]).stdout, "macstudio-jp\tlast synced \(statusTime(today))\n")
     }
 
     func testAddUpgradesAnOlderMyTokensAndLeavesACurrentOneAlone() {
@@ -177,6 +180,7 @@ final class ServerSetupTests: XCTestCase {
         XCTAssertEqual(try laptop.get(service: "hook", account: "default")?.loneValue, "hook-tok")
         XCTAssertEqual(list.hosts, [])
         XCTAssertEqual(onLaptop(["server", "list"]).stderr, "no servers on the server list\n")
+        XCTAssertNil(syncState.hosts["mini"])
     }
 
     func testRmStopsOnAConflictAndKeepsTheHost() {

@@ -22,12 +22,26 @@ newest Release while server add, Background Sync and the Bark miss landed.
   (`workflow_dispatch`), it runs `make dist` and keeps the zip as the run's artifact, without
   publishing.
 - **The App Store Connect API key** is the repo secrets `ASC_KEY_ID`, `ASC_ISSUER_ID`,
-  `ASC_KEY_P8_BASE64` (sunfmin/control#756). It is an Admin-role key: with no Apple account
-  signed into Xcode on a runner, Xcode's cloud-managed Developer ID signing
-  (`-allowProvisioningUpdates`) authenticates with it. `tools/asc-key.sh` is the one reader. It
-  reads the key from those variables when `ASC_KEY_P8_BASE64` is set, and from `mytokens get
-  asc-api-key` otherwise. `make signed` passes the key to `xcodebuild` only when the variables
-  are set. By hand, signing keeps using the Xcode-logged-in account and the key only notarizes.
+  `ASC_KEY_P8_BASE64` (sunfmin/control#756), an Admin-role key. `tools/asc-key.sh` is the one
+  reader. It reads the key from those variables when `ASC_KEY_P8_BASE64` is set, and from
+  `mytokens get asc-api-key` otherwise. `make signed` passes the key to `xcodebuild` only when
+  the variables are set. By hand, signing keeps using the Xcode-logged-in account and the key
+  only notarizes.
+- **The Developer ID identity is a `.p12` in the repo secrets** `DEVELOPER_ID_P12_BASE64` and
+  `DEVELOPER_ID_P12_PASSWORD`: Felix's `Developer ID Application: FENGMIN SUN (HL27PWAKDF)`
+  with its private key. The first try signed through the API key alone, with Xcode's
+  cloud-managed Developer ID. On a runner that fails (`exportArchive Cloud signing permission
+  error`), even with an Admin key. Only the Account Holder, or an Admin given that access, may
+  use cloud-managed Developer ID certificates. Along the way the archive also made an
+  `Apple Development: Created via API` certificate on each run. Now `tools/signing-keychain.sh`
+  imports the `.p12` into a keychain of its own under the runner's temp dir, with a random
+  password, and deletes it in an `if: always()` step. `tools/developer-id-profile.rb` uses the
+  API key to find the active Developer ID (`MAC_APP_DIRECT`) profile holding that certificate,
+  or makes one, which needs the Admin role. It then installs the profile. With
+  `SIGN_KEYCHAIN` and `SIGN_PROFILE` set, `make signed` archives and exports with manual
+  signing, using that identity and profile, so Xcode makes no certificate. When the certificate
+  is renewed (it expires 2027-02-01), its `.p12` replaces the two secrets; the next run makes a
+  profile for the new certificate.
 - **The key stays out of sight.** Only the build step gets the secrets. The `.p8` is written
   mode 600 into a `mktemp -d` directory under that step's `TMPDIR` in the runner's temp dir. It
   is removed when its make recipe exits, and the whole directory is removed again in an
@@ -52,6 +66,6 @@ newest Release while server add, Background Sync and the Bark miss landed.
   on one person's Mac.
 - A failed run fails the cut at `publish`. Re-run the workflow (`gh run rerun <id>`) and go on
   with `afkconvoy cut --from publish`. That watches the run again rather than starting another.
-- The Admin-role key sits in GitHub. Anyone who can change the workflow on a tag or `main`
-  could use it. That is the repo's push access, the same people who can already publish
+- The Admin-role key and the Developer ID identity sit in GitHub. Anyone who can change the
+  workflow on a tag or `main` could use them. That is the repo's push access, the same people who can already publish
   Releases.

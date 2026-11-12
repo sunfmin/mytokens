@@ -3,20 +3,21 @@
 # release path, `make release`. Run by hand (workflow_dispatch) on any ref, it
 # does all but publish and keeps the zip as the run's artifact.
 #
-# The App Store Connect API key (an Admin-role key: Xcode's cloud-managed
-# Developer ID signing needs it) comes from the repo secrets ASC_KEY_ID,
-# ASC_ISSUER_ID and ASC_KEY_P8_BASE64, to the one step that uses it. Its .p8
-# exists only under that step's TMPDIR, in the runner's temp dir, and is
-# removed after it, whatever the outcome. The Developer ID Application identity
-# comes from DEVELOPER_ID_P12_BASE64 and DEVELOPER_ID_P12_PASSWORD, imported by
+# The App Store Connect API key (an Admin-role key: it makes the Developer ID
+# profile when none holds the certificate) comes from the repo secrets
+# ASC_KEY_ID, ASC_ISSUER_ID and ASC_KEY_P8_BASE64, to the two steps that use it.
+# The profile step keeps it in memory. In the build step its .p8 exists only
+# under that step's TMPDIR, in the runner's temp dir, and is removed after it,
+# whatever the outcome. The Developer ID Application identity comes from
+# DEVELOPER_ID_P12_BASE64 and DEVELOPER_ID_P12_PASSWORD, imported by
 # tools/signing-keychain.sh into a keychain of its own under the runner's temp
-# dir, which signs the archive and the export; it is deleted after, whatever the
-# outcome.
+# dir, and is deleted after, whatever the outcome. Cloud-managed Developer ID
+# signing does not work through an API key, so the run signs manually with
+# that identity and profile.
 name: release
 on:
   push:
     tags: ['v*']
-    branches: ['sunfmin/sunfmin-control-757-mytokens-github-actions-builds-signs-not']
   workflow_dispatch:
 permissions:
   contents: write

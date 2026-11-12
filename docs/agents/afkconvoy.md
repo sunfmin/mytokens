@@ -69,8 +69,8 @@ publish: |
   on the tag's commit, and follows it with `gh run watch --exit-status`. A red
   run fails the cut: re-run it (`gh run rerun <id>`), then go on with
   `afkconvoy cut --from publish`. The run is `make release`, the one release
-  path, the same as by hand: Developer ID-signed with the App Store Connect
-  API key in the repo secrets, notarized, stapled, checked by `make
+  path, the same as by hand: Developer ID-signed with the `.p12` identity and
+  the profile the App Store Connect API key gets, both from the repo secrets, notarized, stapled, checked by `make
   release-verify`, and uploaded with `gh release create`. The cut then installs
   with `scripts/install.sh`, so it installs the very notarized zip the Release
   serves, as every other Mac gets it, and proves it downloads and passes

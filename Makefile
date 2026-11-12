@@ -83,12 +83,11 @@ verify:
 	codesign -dv --entitlements - "$(INSTALL_DIR)/$(BUNDLE)" 2>&1 | rg 'Identifier|TeamIdentifier|keychain-access-groups' || true
 
 # The Developer ID-signed .app, not yet notarized: archive, then export it
-# re-signed with "Developer ID Application" (a local identity or Xcode's
-# cloud-managed one), with -allowProvisioningUpdates fetching a Developer ID
-# profile carrying the Keychain Sharing capability. By hand xcodebuild uses your
-# Xcode-logged-in account; with ASC_KEY_P8_BASE64 set (GitHub Actions, where no
-# account is signed in) it authenticates with the API key instead, its .p8 in a
-# mktemp -d directory removed on exit. With SIGN_KEYCHAIN and SIGN_PROFILE set
+# re-signed with "Developer ID Application", with -allowProvisioningUpdates
+# fetching a Developer ID profile carrying the Keychain Sharing capability. By
+# hand xcodebuild uses your Xcode-logged-in account; with ASC_KEY_P8_BASE64 set
+# (GitHub Actions, where no account is signed in) it authenticates with the API
+# key instead, its .p8 in a mktemp -d directory removed on exit. With SIGN_KEYCHAIN and SIGN_PROFILE set
 # (GitHub Actions: the keychain tools/signing-keychain.sh made from the
 # Developer ID .p12, and the UUID of the Developer ID profile
 # tools/developer-id-profile.rb installed), signing is manual with those: the

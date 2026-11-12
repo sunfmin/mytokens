@@ -469,10 +469,17 @@ pushes the tag, waits for the run, and installs the Release on its host. See the
 workflow builds, signs, notarizes and verifies without publishing, and keeps the zip as the
 run's artifact.
 
-The workflow signs and notarizes with an App Store Connect API key in the repo secrets
-`ASC_KEY_ID`, `ASC_ISSUER_ID` and `ASC_KEY_P8_BASE64`. It must be an **Admin**-role key,
-because with no Apple account in Xcode on a runner, cloud-managed Developer ID signing
-authenticates with it. Its `.p8` exists only in the runner's temp dir for the build step.
+The workflow signs with the **Developer ID Application** certificate and its private key, a
+`.p12` in the repo secrets `DEVELOPER_ID_P12_BASE64` and `DEVELOPER_ID_P12_PASSWORD`.
+`tools/signing-keychain.sh` imports it into a keychain of its own in the runner's temp dir,
+deleted after the run. Xcode's cloud-managed Developer ID signing does not work through an API
+key, so the runner needs the identity itself. An App Store Connect API key in the repo secrets
+`ASC_KEY_ID`, `ASC_ISSUER_ID` and `ASC_KEY_P8_BASE64` notarizes and gets the Developer ID
+provisioning profile (`tools/developer-id-profile.rb`): the active one holding that certificate,
+or a new one when none does. Making a profile needs an **Admin**-role key. With these the run
+signs manually, so Xcode makes no certificates of its own. The `.p8` exists only in the
+runner's temp dir for the build step. When the certificate is renewed, export the new one with
+its key as a `.p12` and replace both `DEVELOPER_ID_P12_*` secrets.
 
 By hand it is the same path. Signing uses your Xcode-logged-in account. Notarization creds
 live in **mytokens itself** (dogfooding): a secret named `asc-api-key` with fields **Key

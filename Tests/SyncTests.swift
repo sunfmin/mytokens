@@ -132,6 +132,114 @@ final class SyncTests: XCTestCase {
         _ = onServer(["put", "hook", "--set", "A=1"])
         XCTAssertEqual(onServer(["put", "hook", "--set", "A=2"]).exitCode, 0)
         XCTAssertEqual(onServer(["get", "hook", "--field", "A"]).stdout, "2")
+        // A lone value too: the level a Server forces is no `--level` metadata-only change.
+        _ = onServer(["put", "bare"], input: ["": "1"])
+        XCTAssertEqual(onServer(["put", "bare"], input: ["": "2"]).exitCode, 0)
+        XCTAssertEqual(onServer(["get", "bare"]).stdout, "2")
+    }
+
+    // sunfmin/control#890 (ADR-0018): a Secret entered on the Server and adopted has the Server
+    // as its origin. The Server may replace it in place, and the next sync carries the new
+    // value to the personal Mac; a Secret entered on the personal Mac is still refused there.
+    func testAServerReplacesInPlaceASecretItEnteredAndTheNextSyncUpdatesTheAdoptedCopy() {
+        _ = onLaptop(["put", "guild", "--kind", "profile", "--level", "server", "--set", "MIRROR=1"])
+        XCTAssertEqual(onServer(["put", "guild-hub", "--kind", "profile", "--description", "Hub tokens",
+                                 "--set", "FORGEJO_TOKEN=t1"]).exitCode, 0)
+        XCTAssertEqual(sync().stdout, "adopted guild-hub/default\nadded guild/default\n")
+
+        let rotated = onServer(["put", "guild-hub", "--set", "FORGEJO_TOKEN=t2"])
+        XCTAssertEqual(rotated.exitCode, 0, rotated.stderr)
+        XCTAssertEqual(onServer(["get", "guild-hub", "--field", "FORGEJO_TOKEN"]).stdout, "t2")
+
+        let r = sync()
+        XCTAssertEqual(r.exitCode, 0, r.stderr)
+        XCTAssertEqual(r.stdout, "adopted guild-hub/default\n")
+        XCTAssertEqual(onLaptop(["get", "guild-hub", "--field", "FORGEJO_TOKEN"]).stdout, "t2")
+        XCTAssertEqual(onServer(["get", "guild-hub", "--field", "FORGEJO_TOKEN"]).stdout, "t2")
+        let mine = try! laptop.list().first { $0.service == "guild-hub" }!
+        XCTAssertEqual(mine.description, "Hub tokens (\(note))")    // one note, not two
+        XCTAssertEqual(mine.marks, SyncMarks(origin: "macs-Mac-Mini"))
+        XCTAssertEqual(try! server.list().first { $0.service == "guild-hub" }!.marks, SyncMarks(pushed: true, adopted: true))
+        XCTAssertEqual(sync().stdout, "no changes\n")
+
+        // Again: every rotation lands in the one Secret.
+        XCTAssertEqual(onServer(["put", "guild-hub", "--set", "FORGEJO_TOKEN=t3"]).exitCode, 0)
+        XCTAssertEqual(sync().stdout, "adopted guild-hub/default\n")
+        XCTAssertEqual(onLaptop(["get", "guild-hub", "--field", "FORGEJO_TOKEN"]).stdout, "t3")
+
+        // A Secret entered on the personal Mac stays read-only on the Server.
+        let refused = onServer(["put", "guild", "--set", "MIRROR=2"])
+        XCTAssertEqual(refused.exitCode, 64)
+        XCTAssertEqual(refused.stderr, pushedSecretRefusal(service: "guild", account: "default"))
+        XCTAssertEqual(onServer(["get", "guild", "--field", "MIRROR"]).stdout, "1")
+        XCTAssertEqual(sync().stdout, "no changes\n")
+    }
+
+    // A change on the personal Mac still reaches the Server, and leaves no mark that would
+    // turn the Server's next change into a conflict.
+    func testAChangeOnThePersonalMacToAnAdoptedSecretReachesTheServer() {
+        _ = onServer(["put", "hub", "--set", "T=1"])
+        _ = sync()
+        _ = onLaptop(["put", "hub", "--set", "T=2"])
+        XCTAssertEqual(sync().stdout, "updated hub/default\n")
+        XCTAssertEqual(onServer(["get", "hub", "--field", "T"]).stdout, "2")
+        XCTAssertFalse(try! laptop.list().first { $0.service == "hub" }!.changed)
+
+        XCTAssertEqual(onServer(["put", "hub", "--set", "T=3"]).exitCode, 0)
+        XCTAssertEqual(sync().stdout, "adopted hub/default\n")
+        XCTAssertEqual(onLaptop(["get", "hub", "--field", "T"]).stdout, "3")
+    }
+
+    // Both sides changed it since the last sync: both keep their values, and sync says so
+    // every time until a human picks one by removing the other.
+    func testAnAdoptedSecretChangedOnBothSidesIsAConflictThatKeepsBothValues() {
+        _ = onServer(["put", "hub", "--set", "T=1"])
+        _ = sync()
+        _ = onServer(["put", "hub", "--set", "T=server"])
+        _ = onLaptop(["put", "hub", "--set", "T=laptop"])
+
+        for _ in 0..<2 {
+            let r = sync()
+            XCTAssertEqual(r.exitCode, 1)
+            XCTAssertEqual(r.stdout, "conflict hub/default: changed on macs-Mac-Mini and on this Mac since the last sync; neither changed\n")
+            XCTAssertEqual(onLaptop(["get", "hub", "--field", "T"]).stdout, "laptop")
+            XCTAssertEqual(onServer(["get", "hub", "--field", "T"]).stdout, "server")
+        }
+
+        // Removing this Mac's copy takes the Server's.
+        _ = onLaptop(["rm", "hub"])
+        XCTAssertEqual(sync().stdout, "adopted hub/default\n")
+        XCTAssertEqual(onLaptop(["get", "hub", "--field", "T"]).stdout, "server")
+        XCTAssertEqual(sync().stdout, "no changes\n")
+    }
+
+    // Moved to `personal` here while the Server changed it: a conflict, and the Server keeps
+    // its change instead of losing it to the removal.
+    func testAServerChangeIsNotRemovedWhenThePersonalMacNoLongerSendsIt() {
+        _ = onServer(["put", "hub", "--set", "T=1"])
+        _ = sync()
+        _ = onServer(["put", "hub", "--set", "T=2"])
+        _ = onLaptop(["put", "hub", "--level", "personal"])
+        let r = sync()
+        XCTAssertEqual(r.exitCode, 1)
+        XCTAssertTrue(r.stdout.contains("conflict hub/default"), r.stdout)
+        XCTAssertEqual(onServer(["get", "hub", "--field", "T"]).stdout, "2")
+        XCTAssertEqual(onLaptop(["get", "hub", "--field", "T"]).stdout, "1")
+    }
+
+    // A Secret adopted before origins were marked is known by its adoption note: the next
+    // sync marks it adopted on the Server, saying nothing, and the Server may then change it.
+    func testASecretAdoptedBeforeTheMarksIsFoundByItsNote() {
+        try! laptop.upsert(service: "hub", account: "default", secret: SecretValue(single: "1"), kind: "static",
+                           meta: nil, description: note, level: .server, pushed: false)
+        try! server.upsert(service: "hub", account: "default", secret: SecretValue(single: "1"), kind: "static",
+                           meta: nil, description: note, level: .server, pushed: true)
+        XCTAssertEqual(onServer(["put", "hub"], input: ["": "2"]).exitCode, 64)
+        XCTAssertEqual(sync().stdout, "no changes\n")
+        XCTAssertEqual(onServer(["put", "hub"], input: ["": "2"]).exitCode, 0)
+        XCTAssertEqual(onServer(["get", "hub"]).stdout, "2")
+        XCTAssertEqual(sync().stdout, "adopted hub/default\n")
+        XCTAssertEqual(onLaptop(["get", "hub"]).stdout, "2")
     }
 
     func testValuesTravelOnlyInThePipe() {
@@ -160,7 +268,7 @@ final class SyncTests: XCTestCase {
                                         input: { _ in CannedSecretInput(value: nil) }, remote: remote, stdin: { payload }))
         XCTAssertEqual(r.exitCode, 64)
         XCTAssertTrue(r.stderr.contains("personal Mac"))
-        XCTAssertFalse(laptop.items.values.contains { $0.pushed })
+        XCTAssertFalse(laptop.items.values.contains { $0.marks.pushed })
     }
 
     func testSyncIsRefusedOnAServer() {
@@ -300,13 +408,13 @@ final class SyncTests: XCTestCase {
         XCTAssertEqual(cut.exitCode, 1)
         XCTAssertEqual(cut.stdout, "adopted local/default\n")
         XCTAssertTrue(cut.stderr.contains("connection reset"))
-        XCTAssertFalse(server.items.values.contains { $0.pushed })
+        XCTAssertFalse(server.items.values.contains { $0.marks.pushed })
 
         remote.respond = real
         let r = sync()
         XCTAssertEqual(r.exitCode, 0, r.stdout)
         XCTAssertEqual(r.stdout, "adopted local/default\n")
-        XCTAssertTrue(server.items.values.allSatisfy { $0.pushed })
+        XCTAssertTrue(server.items.values.allSatisfy { $0.marks.pushed })
         XCTAssertEqual(sync().stdout, "no changes\n")
     }
 
@@ -337,14 +445,14 @@ final class SyncTests: XCTestCase {
         let bad = #"{"secrets":[],"adopt":["x/default"]}"#
         _ = onServer(["put", "x"], input: ["": "v"])
         XCTAssertEqual(onServer(["put", "--stdin"], stdin: Data(bad.utf8)).exitCode, 1)
-        XCTAssertFalse(server.items.values.contains { $0.pushed })
+        XCTAssertFalse(server.items.values.contains { $0.marks.pushed })
     }
 
     /// Every item of a store, byte for byte as far as a test can see: name, values, metadata.
     private func snapshot(_ store: InMemorySecretStore) -> [String] {
         try! store.list().map { r in
             let v = try! store.get(service: r.service, account: r.account)!.fields.map { "\($0.label)=\($0.value)" }
-            return "\(r.service)/\(r.account) \(v) \(r.kind) \(r.meta ?? "-") \(r.description ?? "-") \(r.level) \(r.pushed)"
+            return "\(r.service)/\(r.account) \(v) \(r.kind) \(r.meta ?? "-") \(r.description ?? "-") \(r.level) \(r.marks)"
         }.sorted()
     }
 }

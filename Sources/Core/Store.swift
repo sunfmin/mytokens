@@ -11,6 +11,26 @@ struct SecretRecord {
     var description: String?  // agent-authored purpose note (ADR-0006), or nil
     var level: Level          // how far the Secret may travel (ADR-0010)
     var pushed: Bool          // a Server's copy written or adopted by `sync`, which may also remove it (ADR-0012)
+    var adopted = false       // a Server's: entered here, then adopted by a personal Mac — so it may change here (ADR-0018)
+    var origin: String? = nil // a personal Mac's: the Server it was adopted from (ADR-0018)
+    var changed = false       // changed at its origin or here since the last sync with that Server (ADR-0018)
+
+    /// What `sync` has marked on it, as `upsert` takes it back.
+    var marks: SyncMarks { SyncMarks(pushed: pushed, adopted: adopted, origin: origin, changed: changed) }
+}
+
+/// What `sync` records on a stored Secret (ADR-0012, ADR-0018), apart from its values:
+/// - `pushed` (a Server's): a personal Mac's copy, which the next sync may update or remove.
+/// - `adopted` (a Server's, with `pushed`): entered here and adopted by a personal Mac. The
+///   Server is its origin, so it may still change it in place.
+/// - `origin` (a personal Mac's): the Server an adopted Secret was entered on.
+/// - `changed`: changed since the last sync between the personal Mac and that Server — on
+///   the Server, by its own `put`; on a personal Mac, by `put` into a Secret with an origin.
+struct SyncMarks: Equatable {
+    var pushed = false
+    var adopted = false
+    var origin: String? = nil
+    var changed = false
 }
 
 /// How far a Secret may travel (ADR-0010). `personal` stays in the iCloud Keychain on
@@ -86,10 +106,18 @@ enum StoreError: Error, CustomStringConvertible {
 /// this seam as structured `SecretValue` Fields — the single-vs-JSON on-disk
 /// encoding (ADR-0005) lives inside the implementation, not in the caller.
 protocol SecretStore {
-    func upsert(service: String, account: String, secret: SecretValue, kind: String, meta: Any?, description: String?, level: Level, pushed: Bool) throws
+    func upsert(service: String, account: String, secret: SecretValue, kind: String, meta: Any?, description: String?, level: Level, marks: SyncMarks) throws
     func get(service: String, account: String) throws -> SecretValue?   // nil if absent
     func list() throws -> [SecretRecord]
     func delete(service: String, account: String) throws -> Bool   // false if absent
+}
+
+extension SecretStore {
+    /// `upsert` with only the pushed mark set (or none).
+    func upsert(service: String, account: String, secret: SecretValue, kind: String, meta: Any?, description: String?, level: Level, pushed: Bool) throws {
+        try upsert(service: service, account: account, secret: secret, kind: kind, meta: meta,
+                   description: description, level: level, marks: SyncMarks(pushed: pushed))
+    }
 }
 
 // Must match the `keychain-access-groups` entitlement (= application-identifier).
@@ -188,11 +216,11 @@ struct KeychainSecretStore: SecretStore {
         s == errSecInteractionNotAllowed ? .locked : .keychain(s)
     }
 
-    func upsert(service: String, account: String, secret: SecretValue, kind: String, meta: Any?, description: String?, level: Level, pushed: Bool) throws {
+    func upsert(service: String, account: String, secret: SecretValue, kind: String, meta: Any?, description: String?, level: Level, marks: SyncMarks) throws {
         // The label schema is recorded for a labelled Secret only; the value's
         // encoding follows from it — raw bytes for the lone unlabelled value, a
         // {label: value} JSON object for labelled Fields (ADR-0005).
-        let comment = try CommentCodec.encode(kind: kind, meta: meta, fields: secret.schema, description: description, level: level, pushed: pushed)
+        let comment = try CommentCodec.encode(kind: kind, meta: meta, fields: secret.schema, description: description, level: level, marks: marks)
         let storedValue: String
         if secret.isLabelled {
             guard let json = secret.compactJSON() else { throw StoreError.encoding }
@@ -260,7 +288,8 @@ struct KeychainSecretStore: SecretStore {
             guard label?.hasPrefix(mytokensLabelPrefix) == true else { return nil }
             let c = CommentCodec.decode(attrs[kSecAttrComment as String] as? String)
             return SecretRecord(service: service, account: account, kind: c.kind, meta: c.meta,
-                                fields: c.fields, description: c.description, level: c.level, pushed: c.pushed)
+                                fields: c.fields, description: c.description, level: c.level, pushed: c.marks.pushed,
+                                adopted: c.marks.adopted, origin: c.marks.origin, changed: c.marks.changed)
         }
     }
 
@@ -275,34 +304,39 @@ struct KeychainSecretStore: SecretStore {
 // kind + arbitrary user meta + (for a multi-field Secret) the ordered field-label
 // schema + an optional agent-authored description + the level are packed into the
 // keychain comment attribute as one JSON object:
-// {"kind": "...", "level": "...", "meta": <json|null>, "fields": [<label>, …]?, "description": "…"?, "pushed": true?}.
-// "fields"/"description"/"pushed" are omitted when absent; an item stored before levels has no
+// {"kind": "...", "level": "...", "meta": <json|null>, "fields": [<label>, …]?, "description": "…"?, "pushed": true?,
+//  "adopted": true?, "origin": "<host>"?, "changed": true?}.
+// "fields"/"description" and the sync marks are omitted when absent; an item stored before levels has no
 // "level" and decodes as `personal` (ADR-0010), so older items decode unchanged.
 enum CommentCodec {
-    static func encode(kind: String, meta: Any?, fields: [String]?, description: String?, level: Level, pushed: Bool) throws -> String {
+    static func encode(kind: String, meta: Any?, fields: [String]?, description: String?, level: Level, marks: SyncMarks) throws -> String {
         var obj: [String: Any] = ["kind": kind, "level": level.rawValue]
         obj["meta"] = (meta == nil || meta is NSNull) ? NSNull() : meta!
         if let fields, !fields.isEmpty { obj["fields"] = fields }
         if let description, !description.isEmpty { obj["description"] = description }
-        if pushed { obj["pushed"] = true }
+        if marks.pushed { obj["pushed"] = true }
+        if marks.adopted { obj["adopted"] = true }
+        if let origin = marks.origin { obj["origin"] = origin }
+        if marks.changed { obj["changed"] = true }
         guard let data = try? JSONSerialization.data(withJSONObject: obj, options: [.sortedKeys]),
               let s = String(data: data, encoding: .utf8)
         else { throw StoreError.encoding }
         return s
     }
 
-    static func decode(_ comment: String?) -> (kind: String, meta: String?, fields: [String]?, description: String?, level: Level, pushed: Bool) {
+    static func decode(_ comment: String?) -> (kind: String, meta: String?, fields: [String]?, description: String?, level: Level, marks: SyncMarks) {
         guard let comment, let data = comment.data(using: .utf8),
               let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
-        else { return ("static", nil, nil, nil, .default, false) }
+        else { return ("static", nil, nil, nil, .default, SyncMarks()) }
         let kind = (obj["kind"] as? String) ?? "static"
         let fields = obj["fields"] as? [String]
         let description = obj["description"] as? String
         let meta = (obj["meta"].map { $0 is NSNull ? nil : JSONUtil.compact($0) }) ?? nil
         // No level, or one this build doesn't know, travels nowhere: personal.
         let level = (obj["level"] as? String).flatMap(Level.init(rawValue:)) ?? .default
-        let pushed = (obj["pushed"] as? Bool) ?? false
-        return (kind, meta, fields, description, level, pushed)
+        let marks = SyncMarks(pushed: (obj["pushed"] as? Bool) ?? false, adopted: (obj["adopted"] as? Bool) ?? false,
+                              origin: obj["origin"] as? String, changed: (obj["changed"] as? Bool) ?? false)
+        return (kind, meta, fields, description, level, marks)
     }
 }
 

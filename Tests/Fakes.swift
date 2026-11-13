@@ -2,15 +2,15 @@ import Foundation
 
 // In-memory SecretStore for tests — never touches the real keychain.
 final class InMemorySecretStore: SecretStore {
-    struct Entry { var secret: SecretValue; var kind: String; var meta: Any?; var description: String?; var level: Level; var pushed: Bool }
+    struct Entry { var secret: SecretValue; var kind: String; var meta: Any?; var description: String?; var level: Level; var marks: SyncMarks }
     private(set) var items: [String: Entry] = [:]
     var locked = false
 
     private func key(_ s: String, _ a: String) -> String { "\(s)\u{1}\(a)" }
 
-    func upsert(service: String, account: String, secret: SecretValue, kind: String, meta: Any?, description: String?, level: Level, pushed: Bool) throws {
+    func upsert(service: String, account: String, secret: SecretValue, kind: String, meta: Any?, description: String?, level: Level, marks: SyncMarks) throws {
         if locked { throw StoreError.locked }
-        items[key(service, account)] = Entry(secret: secret, kind: kind, meta: meta, description: description, level: level, pushed: pushed)
+        items[key(service, account)] = Entry(secret: secret, kind: kind, meta: meta, description: description, level: level, marks: marks)
     }
 
     func get(service: String, account: String) throws -> SecretValue? {
@@ -30,7 +30,10 @@ final class InMemorySecretStore: SecretStore {
                 fields: e.secret.schema,
                 description: e.description,
                 level: e.level,
-                pushed: e.pushed
+                pushed: e.marks.pushed,
+                adopted: e.marks.adopted,
+                origin: e.marks.origin,
+                changed: e.marks.changed
             )
         }
     }
@@ -41,7 +44,7 @@ final class InMemorySecretStore: SecretStore {
         let legacyComment = #"{"kind":"\#(kind)","meta":null}"#
         let decoded = CommentCodec.decode(legacyComment)
         items[key(service, account)] = Entry(secret: secret, kind: kind, meta: nil, description: nil,
-                                             level: decoded.level, pushed: decoded.pushed)
+                                             level: decoded.level, marks: decoded.marks)
     }
 
     func delete(service: String, account: String) throws -> Bool {

@@ -1,0 +1,528 @@
+"/Users/felix/homebrew/bin/mise" exec xcodegen@2.46.0 -- xcodegen generate
+⚙️  Generating plists...
+⚙️  Generating project...
+⚙️  Writing project...
+Created project at /Users/felix/orca/workspaces/mytokens/sunfmin-control-890-a-server-may-replace-in-place-a-secret-i/MyTokens.xcodeproj
+tools/xcodegen-need-test.sh
+xcodegen-need-test: ok
+tools/asc-key-test.sh
+asc-key-test: ok
+tools/release-wait-test.sh
+release-wait-test: ok
+tools/signing-keychain-test.sh
+signing-keychain-test: ok
+tools/xctest-run-test.sh
+xctest-run-test: ok
+xcodebuild -project MyTokens.xcodeproj -scheme MyTokens -derivedDataPath build build-for-testing
+Command line invocation:
+    /Applications/Xcode.app/Contents/Developer/usr/bin/xcodebuild -project MyTokens.xcodeproj -scheme MyTokens -derivedDataPath build build-for-testing
+
+--- xcodebuild: WARNING: Using the first of multiple matching destinations:
+{ platform:macOS, arch:arm64, id:00006041-001449992281401C, name:My Mac }
+{ platform:macOS, arch:x86_64, id:00006041-001449992281401C, name:My Mac }
+{ platform:macOS, name:Any Mac }
+ComputePackagePrebuildTargetDependencyGraph
+
+Prepare packages
+
+CreateBuildRequest
+
+SendProjectDescription
+
+CreateBuildOperation
+
+ComputeTargetDependencyGraph
+note: Building targets in dependency order
+note: Target dependency graph (1 target)
+    Target 'MyTokensTests' in project 'MyTokens' (no dependencies)
+
+GatherProvisioningInputs
+
+CreateBuildDescription
+
+ClangStatCache /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang-stat-cache /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX27.0.sdk /Users/felix/orca/workspaces/mytokens/sunfmin-control-890-a-server-may-replace-in-place-a-secret-i/build/SDKStatCaches.noindex/macosx27.0-26A425-7231f6df4def33e022ae2eb8f782df1a.sdkstatcache
+    cd /Users/felix/orca/workspaces/mytokens/sunfmin-control-890-a-server-may-replace-in-place-a-secret-i/MyTokens.xcodeproj
+    /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang-stat-cache /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX27.0.sdk -o /Users/felix/orca/workspaces/mytokens/sunfmin-control-890-a-server-may-replace-in-place-a-secret-i/build/SDKStatCaches.noindex/macosx27.0-26A425-7231f6df4def33e022ae2eb8f782df1a.sdkstatcache
+
+SwiftDriver MyTokensTests normal arm64 com.apple.xcode.tools.swift.compiler (in target 'MyTokensTests' from project 'MyTokens')
+    cd /Users/felix/orca/workspaces/mytokens/sunfmin-control-890-a-server-may-replace-in-place-a-secret-i
+    builtin-SwiftDriver -- /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc -module-name MyTokensTests -Onone @/Users/felix/orca/workspaces/mytokens/sunfmin-control-890-a-server-may-replace-in-place-a-secret-i/build/Build/Intermediates.noindex/MyTokens.build/Debug/MyTokensTests.build/Objects-normal/arm64/MyTokensTests.SwiftFileList -DDEBUG -plugin-path /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/host/plugins/testing -enable-bare-slash-regex -enable-experimental-feature DebugDescriptionMacro -sdk /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX27.0.sdk -target arm64-apple-macos14.0 -g -module-cache-path /Users/felix/orca/workspaces/mytokens/sunfmin-control-890-a-server-may-replace-in-place-a-secret-i/build/ModuleCache.noindex -Xfrontend -serialize-debugging-options -enable-testing -index-store-path /Users/felix/orca/workspaces/mytokens/sunfmin-control-890-a-server-may-replace-in-place-a-secret-i/build/Index.noindex/DataStore -Xcc -D_LIBCPP_HARDENING_MODE\=_LIBCPP_HARDENING_MODE_DEBUG -swift-version 5 -I /Users/felix/orca/workspaces/mytokens/sunfmin-control-890-a-server-may-replace-in-place-a-secret-i/build/Build/Products/Debug -Isystem /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib -F /Users/felix/orca/workspaces/mytokens/sunfmin-control-890-a-server-may-replace-in-place-a-secret-i/build/Build/Products/Debug -F /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks -c -j16 -enable-batch-mode -incremental -Xcc -ivfsstatcache -Xcc /Users/felix/orca/workspaces/mytokens/sunfmin-control-890-a-server-may-replace-in-place-a-secret-i/build/SDKStatCaches.noindex/macosx27.0-26A425-7231f6df4def33e022ae2eb8f782df1a.sdkstatcache -output-file-map /Users/felix/orca/workspaces/mytokens/sunfmin-control-890-a-server-may-replace-in-place-a-secret-i/build/Build/Intermediates.noindex/MyTokens.build/Debug/MyTokensTests.build/Objects-normal/arm64/MyTokensTests-OutputFileMap.json -save-temps -no-color-diagnostics -explicit-module-build -module-cache-path /Users/felix/orca/workspaces/mytokens/sunfmin-control-890-a-server-may-replace-in-place-a-secret-i/build/Build/Intermediates.noindex/SwiftExplicitPrecompiledModules -clang-scanner-module-cache-path /Users/felix/orca/workspaces/mytokens/sunfmin-control-890-a-server-may-replace-in-place-a-secret-i/build/ModuleCache.noindex -sdk-module-cache-path /Users/felix/orca/workspaces/mytokens/sunfmin-control-890-a-server-may-replace-in-place-a-secret-i/build/SDKExplicitPrecompiledModules -emit-dependencies -emit-module -emit-module-path /Users/felix/orca/workspaces/mytokens/sunfmin-control-890-a-server-may-replace-in-place-a-secret-i/build/Build/Intermediates.noindex/MyTokens.build/Debug/MyTokensTests.build/Objects-normal/arm64/MyTokensTests.swiftmodule -serialize-diagnostics -dependency-scan-serialize-diagnostics-path /Users/felix/orca/workspaces/mytokens/sunfmin-control-890-a-server-may-replace-in-place-a-secret-i/build/Build/Intermediates.noindex/MyTokens.build/Debug/MyTokensTests.build/Objects-normal/arm64/MyTokensTests-dependency-scan.dia -validate-clang-modules-once -clang-build-session-file /Users/felix/orca/workspaces/mytokens/sunfmin-control-890-a-server-may-replace-in-place-a-secret-i/build/ModuleCache.noindex/Session.modulevalidation -Xcc -fmodules-prune-interval\=86400 -Xcc -fmodules-prune-after\=345600 -emit-const-values -const-gather-protocols-list /Users/felix/orca/workspaces/mytokens/sunfmin-control-890-a-server-may-replace-in-place-a-secret-i/build/Build/Intermediates.noindex/MyTokens.build/Debug/MyTokensTests.build/Objects-normal/arm64/MyTokensTests_const_extract_protocols.json -Xcc -iquote -Xcc /Users/felix/orca/workspaces/mytokens/sunfmin-control-890-a-server-may-replace-in-place-a-secret-i/build/Build/Intermediates.noindex/MyTokens.build/Debug/MyTokensTests.build/MyTokensTests-generated-files.hmap -Xcc -I/Users/felix/orca/workspaces/mytokens/sunfmin-control-890-a-server-may-replace-in-place-a-secret-i/build/Build/Intermediates.noindex/MyTokens.build/Debug/MyTokensTests.build/MyTokensTests-own-target-headers.hmap -Xcc -I/Users/felix/orca/workspaces/mytokens/sunfmin-control-890-a-server-may-replace-in-place-a-secret-i/build/Build/Intermediates.noindex/MyTokens.build/Debug/MyTokensTests.build/MyTokensTests-all-target-headers.hmap -Xcc -iquote -Xcc /Users/felix/orca/workspaces/mytokens/sunfmin-control-890-a-server-may-replace-in-place-a-secret-i/build/Build/Intermediates.noindex/MyTokens.build/Debug/MyTokensTests.build/MyTokensTests-project-headers.hmap -Xcc -I/Users/felix/orca/workspaces/mytokens/sunfmin-control-890-a-server-may-replace-in-place-a-secret-i/build/Build/Products/Debug/include -Xcc -I/Users/felix/orca/workspaces/mytokens/sunfmin-control-890-a-server-may-replace-in-place-a-secret-i/build/Build/Intermediates.noindex/MyTokens.build/Debug/MyTokensTests.build/DerivedSources-normal/arm64 -Xcc -I/Users/felix/orca/workspaces/mytokens/sunfmin-control-890-a-server-may-replace-in-place-a-secret-i/build/Build/Intermediates.noindex/MyTokens.build/Debug/MyTokensTests.build/DerivedSources/arm64 -Xcc -I/Users/felix/orca/workspaces/mytokens/sunfmin-control-890-a-server-may-replace-in-place-a-secret-i/build/Build/Intermediates.noindex/MyTokens.build/Debug/MyTokensTests.build/DerivedSources -Xcc -DDEBUG\=1 -emit-objc-header -emit-objc-header-path /Users/felix/orca/workspaces/mytokens/sunfmin-control-890-a-server-may-replace-in-place-a-secret-i/build/Build/Intermediates.noindex/MyTokens.build/Debug/MyTokensTests.build/Objects-normal/arm64/MyTokensTests-Swift.h -working-directory /Users/felix/orca/workspaces/mytokens/sunfmin-control-890-a-server-may-replace-in-place-a-secret-i -experimental-emit-module-separately -disable-cmo
+
+SwiftCompile normal arm64 Compiling\ Commands.swift /Users/felix/orca/workspaces/mytokens/sunfmin-control-890-a-server-may-replace-in-place-a-secret-i/Sources/Core/Commands.swift (in target 'MyTokensTests' from project 'MyTokens')
+
+SwiftCompile normal arm64 /Users/felix/orca/workspaces/mytokens/sunfmin-control-890-a-server-may-replace-in-place-a-secret-i/Sources/Core/Commands.swift (in target 'MyTokensTests' from project 'MyTokens')
+    cd /Users/felix/orca/workspaces/mytokens/sunfmin-control-890-a-server-may-replace-in-place-a-secret-i
+    builtin-SwiftPerFileCompile Commands.swift
+
+SwiftEmitModule normal arm64 Emitting\ module\ for\ MyTokensTests (in target 'MyTokensTests' from project 'MyTokens')
+
+SwiftCompile normal arm64 (in target 'MyTokensTests' from project 'MyTokens')
+    cd /Users/felix/orca/workspaces/mytokens/sunfmin-control-890-a-server-may-replace-in-place-a-secret-i
+    
+
+SwiftCompile normal arm64 Compiling\ SyncTests.swift /Users/felix/orca/workspaces/mytokens/sunfmin-control-890-a-server-may-replace-in-place-a-secret-i/Tests/SyncTests.swift (in target 'MyTokensTests' from project 'MyTokens')
+
+SwiftCompile normal arm64 /Users/felix/orca/workspaces/mytokens/sunfmin-control-890-a-server-may-replace-in-place-a-secret-i/Tests/SyncTests.swift (in target 'MyTokensTests' from project 'MyTokens')
+    cd /Users/felix/orca/workspaces/mytokens/sunfmin-control-890-a-server-may-replace-in-place-a-secret-i
+    builtin-SwiftPerFileCompile SyncTests.swift
+
+SwiftDriverJobDiscovery normal arm64 Compiling SyncTests.swift (in target 'MyTokensTests' from project 'MyTokens')
+
+SwiftDriverJobDiscovery normal arm64 Compiling Commands.swift (in target 'MyTokensTests' from project 'MyTokens')
+
+SwiftDriver\ Compilation MyTokensTests normal arm64 com.apple.xcode.tools.swift.compiler (in target 'MyTokensTests' from project 'MyTokens')
+    cd /Users/felix/orca/workspaces/mytokens/sunfmin-control-890-a-server-may-replace-in-place-a-secret-i
+    builtin-Swift-Compilation -- /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc -module-name MyTokensTests -Onone @/Users/felix/orca/workspaces/mytokens/sunfmin-control-890-a-server-may-replace-in-place-a-secret-i/build/Build/Intermediates.noindex/MyTokens.build/Debug/MyTokensTests.build/Objects-normal/arm64/MyTokensTests.SwiftFileList -DDEBUG -plugin-path /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/host/plugins/testing -enable-bare-slash-regex -enable-experimental-feature DebugDescriptionMacro -sdk /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX27.0.sdk -target arm64-apple-macos14.0 -g -module-cache-path /Users/felix/orca/workspaces/mytokens/sunfmin-control-890-a-server-may-replace-in-place-a-secret-i/build/ModuleCache.noindex -Xfrontend -serialize-debugging-options -enable-testing -index-store-path /Users/felix/orca/workspaces/mytokens/sunfmin-control-890-a-server-may-replace-in-place-a-secret-i/build/Index.noindex/DataStore -Xcc -D_LIBCPP_HARDENING_MODE\=_LIBCPP_HARDENING_MODE_DEBUG -swift-version 5 -I /Users/felix/orca/workspaces/mytokens/sunfmin-control-890-a-server-may-replace-in-place-a-secret-i/build/Build/Products/Debug -Isystem /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib -F /Users/felix/orca/workspaces/mytokens/sunfmin-control-890-a-server-may-replace-in-place-a-secret-i/build/Build/Products/Debug -F /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks -c -j16 -enable-batch-mode -incremental -Xcc -ivfsstatcache -Xcc /Users/felix/orca/workspaces/mytokens/sunfmin-control-890-a-server-may-replace-in-place-a-secret-i/build/SDKStatCaches.noindex/macosx27.0-26A425-7231f6df4def33e022ae2eb8f782df1a.sdkstatcache -output-file-map /Users/felix/orca/workspaces/mytokens/sunfmin-control-890-a-server-may-replace-in-place-a-secret-i/build/Build/Intermediates.noindex/MyTokens.build/Debug/MyTokensTests.build/Objects-normal/arm64/MyTokensTests-OutputFileMap.json -save-temps -no-color-diagnostics -explicit-module-build -module-cache-path /Users/felix/orca/workspaces/mytokens/sunfmin-control-890-a-server-may-replace-in-place-a-secret-i/build/Build/Intermediates.noindex/SwiftExplicitPrecompiledModules -clang-scanner-module-cache-path /Users/felix/orca/workspaces/mytokens/sunfmin-control-890-a-server-may-replace-in-place-a-secret-i/build/ModuleCache.noindex -sdk-module-cache-path /Users/felix/orca/workspaces/mytokens/sunfmin-control-890-a-server-may-replace-in-place-a-secret-i/build/SDKExplicitPrecompiledModules -emit-dependencies -emit-module -emit-module-path /Users/felix/orca/workspaces/mytokens/sunfmin-control-890-a-server-may-replace-in-place-a-secret-i/build/Build/Intermediates.noindex/MyTokens.build/Debug/MyTokensTests.build/Objects-normal/arm64/MyTokensTests.swiftmodule -serialize-diagnostics -dependency-scan-serialize-diagnostics-path /Users/felix/orca/workspaces/mytokens/sunfmin-control-890-a-server-may-replace-in-place-a-secret-i/build/Build/Intermediates.noindex/MyTokens.build/Debug/MyTokensTests.build/Objects-normal/arm64/MyTokensTests-dependency-scan.dia -validate-clang-modules-once -clang-build-session-file /Users/felix/orca/workspaces/mytokens/sunfmin-control-890-a-server-may-replace-in-place-a-secret-i/build/ModuleCache.noindex/Session.modulevalidation -Xcc -fmodules-prune-interval\=86400 -Xcc -fmodules-prune-after\=345600 -emit-const-values -const-gather-protocols-list /Users/felix/orca/workspaces/mytokens/sunfmin-control-890-a-server-may-replace-in-place-a-secret-i/build/Build/Intermediates.noindex/MyTokens.build/Debug/MyTokensTests.build/Objects-normal/arm64/MyTokensTests_const_extract_protocols.json -Xcc -iquote -Xcc /Users/felix/orca/workspaces/mytokens/sunfmin-control-890-a-server-may-replace-in-place-a-secret-i/build/Build/Intermediates.noindex/MyTokens.build/Debug/MyTokensTests.build/MyTokensTests-generated-files.hmap -Xcc -I/Users/felix/orca/workspaces/mytokens/sunfmin-control-890-a-server-may-replace-in-place-a-secret-i/build/Build/Intermediates.noindex/MyTokens.build/Debug/MyTokensTests.build/MyTokensTests-own-target-headers.hmap -Xcc -I/Users/felix/orca/workspaces/mytokens/sunfmin-control-890-a-server-may-replace-in-place-a-secret-i/build/Build/Intermediates.noindex/MyTokens.build/Debug/MyTokensTests.build/MyTokensTests-all-target-headers.hmap -Xcc -iquote -Xcc /Users/felix/orca/workspaces/mytokens/sunfmin-control-890-a-server-may-replace-in-place-a-secret-i/build/Build/Intermediates.noindex/MyTokens.build/Debug/MyTokensTests.build/MyTokensTests-project-headers.hmap -Xcc -I/Users/felix/orca/workspaces/mytokens/sunfmin-control-890-a-server-may-replace-in-place-a-secret-i/build/Build/Products/Debug/include -Xcc -I/Users/felix/orca/workspaces/mytokens/sunfmin-control-890-a-server-may-replace-in-place-a-secret-i/build/Build/Intermediates.noindex/MyTokens.build/Debug/MyTokensTests.build/DerivedSources-normal/arm64 -Xcc -I/Users/felix/orca/workspaces/mytokens/sunfmin-control-890-a-server-may-replace-in-place-a-secret-i/build/Build/Intermediates.noindex/MyTokens.build/Debug/MyTokensTests.build/DerivedSources/arm64 -Xcc -I/Users/felix/orca/workspaces/mytokens/sunfmin-control-890-a-server-may-replace-in-place-a-secret-i/build/Build/Intermediates.noindex/MyTokens.build/Debug/MyTokensTests.build/DerivedSources -Xcc -DDEBUG\=1 -emit-objc-header -emit-objc-header-path /Users/felix/orca/workspaces/mytokens/sunfmin-control-890-a-server-may-replace-in-place-a-secret-i/build/Build/Intermediates.noindex/MyTokens.build/Debug/MyTokensTests.build/Objects-normal/arm64/MyTokensTests-Swift.h -working-directory /Users/felix/orca/workspaces/mytokens/sunfmin-control-890-a-server-may-replace-in-place-a-secret-i -experimental-emit-module-separately -disable-cmo
+
+SwiftDriverJobDiscovery normal arm64 Emitting module for MyTokensTests (in target 'MyTokensTests' from project 'MyTokens')
+
+SwiftDriver\ Compilation\ Requirements MyTokensTests normal arm64 com.apple.xcode.tools.swift.compiler (in target 'MyTokensTests' from project 'MyTokens')
+    cd /Users/felix/orca/workspaces/mytokens/sunfmin-control-890-a-server-may-replace-in-place-a-secret-i
+    builtin-Swift-Compilation-Requirements -- /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc -module-name MyTokensTests -Onone @/Users/felix/orca/workspaces/mytokens/sunfmin-control-890-a-server-may-replace-in-place-a-secret-i/build/Build/Intermediates.noindex/MyTokens.build/Debug/MyTokensTests.build/Objects-normal/arm64/MyTokensTests.SwiftFileList -DDEBUG -plugin-path /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/host/plugins/testing -enable-bare-slash-regex -enable-experimental-feature DebugDescriptionMacro -sdk /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX27.0.sdk -target arm64-apple-macos14.0 -g -module-cache-path /Users/felix/orca/workspaces/mytokens/sunfmin-control-890-a-server-may-replace-in-place-a-secret-i/build/ModuleCache.noindex -Xfrontend -serialize-debugging-options -enable-testing -index-store-path /Users/felix/orca/workspaces/mytokens/sunfmin-control-890-a-server-may-replace-in-place-a-secret-i/build/Index.noindex/DataStore -Xcc -D_LIBCPP_HARDENING_MODE\=_LIBCPP_HARDENING_MODE_DEBUG -swift-version 5 -I /Users/felix/orca/workspaces/mytokens/sunfmin-control-890-a-server-may-replace-in-place-a-secret-i/build/Build/Products/Debug -Isystem /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib -F /Users/felix/orca/workspaces/mytokens/sunfmin-control-890-a-server-may-replace-in-place-a-secret-i/build/Build/Products/Debug -F /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks -c -j16 -enable-batch-mode -incremental -Xcc -ivfsstatcache -Xcc /Users/felix/orca/workspaces/mytokens/sunfmin-control-890-a-server-may-replace-in-place-a-secret-i/build/SDKStatCaches.noindex/macosx27.0-26A425-7231f6df4def33e022ae2eb8f782df1a.sdkstatcache -output-file-map /Users/felix/orca/workspaces/mytokens/sunfmin-control-890-a-server-may-replace-in-place-a-secret-i/build/Build/Intermediates.noindex/MyTokens.build/Debug/MyTokensTests.build/Objects-normal/arm64/MyTokensTests-OutputFileMap.json -save-temps -no-color-diagnostics -explicit-module-build -module-cache-path /Users/felix/orca/workspaces/mytokens/sunfmin-control-890-a-server-may-replace-in-place-a-secret-i/build/Build/Intermediates.noindex/SwiftExplicitPrecompiledModules -clang-scanner-module-cache-path /Users/felix/orca/workspaces/mytokens/sunfmin-control-890-a-server-may-replace-in-place-a-secret-i/build/ModuleCache.noindex -sdk-module-cache-path /Users/felix/orca/workspaces/mytokens/sunfmin-control-890-a-server-may-replace-in-place-a-secret-i/build/SDKExplicitPrecompiledModules -emit-dependencies -emit-module -emit-module-path /Users/felix/orca/workspaces/mytokens/sunfmin-control-890-a-server-may-replace-in-place-a-secret-i/build/Build/Intermediates.noindex/MyTokens.build/Debug/MyTokensTests.build/Objects-normal/arm64/MyTokensTests.swiftmodule -serialize-diagnostics -dependency-scan-serialize-diagnostics-path /Users/felix/orca/workspaces/mytokens/sunfmin-control-890-a-server-may-replace-in-place-a-secret-i/build/Build/Intermediates.noindex/MyTokens.build/Debug/MyTokensTests.build/Objects-normal/arm64/MyTokensTests-dependency-scan.dia -validate-clang-modules-once -clang-build-session-file /Users/felix/orca/workspaces/mytokens/sunfmin-control-890-a-server-may-replace-in-place-a-secret-i/build/ModuleCache.noindex/Session.modulevalidation -Xcc -fmodules-prune-interval\=86400 -Xcc -fmodules-prune-after\=345600 -emit-const-values -const-gather-protocols-list /Users/felix/orca/workspaces/mytokens/sunfmin-control-890-a-server-may-replace-in-place-a-secret-i/build/Build/Intermediates.noindex/MyTokens.build/Debug/MyTokensTests.build/Objects-normal/arm64/MyTokensTests_const_extract_protocols.json -Xcc -iquote -Xcc /Users/felix/orca/workspaces/mytokens/sunfmin-control-890-a-server-may-replace-in-place-a-secret-i/build/Build/Intermediates.noindex/MyTokens.build/Debug/MyTokensTests.build/MyTokensTests-generated-files.hmap -Xcc -I/Users/felix/orca/workspaces/mytokens/sunfmin-control-890-a-server-may-replace-in-place-a-secret-i/build/Build/Intermediates.noindex/MyTokens.build/Debug/MyTokensTests.build/MyTokensTests-own-target-headers.hmap -Xcc -I/Users/felix/orca/workspaces/mytokens/sunfmin-control-890-a-server-may-replace-in-place-a-secret-i/build/Build/Intermediates.noindex/MyTokens.build/Debug/MyTokensTests.build/MyTokensTests-all-target-headers.hmap -Xcc -iquote -Xcc /Users/felix/orca/workspaces/mytokens/sunfmin-control-890-a-server-may-replace-in-place-a-secret-i/build/Build/Intermediates.noindex/MyTokens.build/Debug/MyTokensTests.build/MyTokensTests-project-headers.hmap -Xcc -I/Users/felix/orca/workspaces/mytokens/sunfmin-control-890-a-server-may-replace-in-place-a-secret-i/build/Build/Products/Debug/include -Xcc -I/Users/felix/orca/workspaces/mytokens/sunfmin-control-890-a-server-may-replace-in-place-a-secret-i/build/Build/Intermediates.noindex/MyTokens.build/Debug/MyTokensTests.build/DerivedSources-normal/arm64 -Xcc -I/Users/felix/orca/workspaces/mytokens/sunfmin-control-890-a-server-may-replace-in-place-a-secret-i/build/Build/Intermediates.noindex/MyTokens.build/Debug/MyTokensTests.build/DerivedSources/arm64 -Xcc -I/Users/felix/orca/workspaces/mytokens/sunfmin-control-890-a-server-may-replace-in-place-a-secret-i/build/Build/Intermediates.noindex/MyTokens.build/Debug/MyTokensTests.build/DerivedSources -Xcc -DDEBUG\=1 -emit-objc-header -emit-objc-header-path /Users/felix/orca/workspaces/mytokens/sunfmin-control-890-a-server-may-replace-in-place-a-secret-i/build/Build/Intermediates.noindex/MyTokens.build/Debug/MyTokensTests.build/Objects-normal/arm64/MyTokensTests-Swift.h -working-directory /Users/felix/orca/workspaces/mytokens/sunfmin-control-890-a-server-may-replace-in-place-a-secret-i -experimental-emit-module-separately -disable-cmo
+
+Copy /Users/felix/orca/workspaces/mytokens/sunfmin-control-890-a-server-may-replace-in-place-a-secret-i/build/Build/Products/Debug/MyTokensTests.swiftmodule/Project/arm64-apple-macos.swiftsourceinfo /Users/felix/orca/workspaces/mytokens/sunfmin-control-890-a-server-may-replace-in-place-a-secret-i/build/Build/Intermediates.noindex/MyTokens.build/Debug/MyTokensTests.build/Objects-normal/arm64/MyTokensTests.swiftsourceinfo (in target 'MyTokensTests' from project 'MyTokens')
+    cd /Users/felix/orca/workspaces/mytokens/sunfmin-control-890-a-server-may-replace-in-place-a-secret-i
+    builtin-copy -exclude .DS_Store -exclude CVS -exclude .svn -exclude .git -exclude .hg -resolve-src-symlinks -rename /Users/felix/orca/workspaces/mytokens/sunfmin-control-890-a-server-may-replace-in-place-a-secret-i/build/Build/Intermediates.noindex/MyTokens.build/Debug/MyTokensTests.build/Objects-normal/arm64/MyTokensTests.swiftsourceinfo /Users/felix/orca/workspaces/mytokens/sunfmin-control-890-a-server-may-replace-in-place-a-secret-i/build/Build/Products/Debug/MyTokensTests.swiftmodule/Project/arm64-apple-macos.swiftsourceinfo
+
+Copy /Users/felix/orca/workspaces/mytokens/sunfmin-control-890-a-server-may-replace-in-place-a-secret-i/build/Build/Products/Debug/MyTokensTests.swiftmodule/arm64-apple-macos.abi.json /Users/felix/orca/workspaces/mytokens/sunfmin-control-890-a-server-may-replace-in-place-a-secret-i/build/Build/Intermediates.noindex/MyTokens.build/Debug/MyTokensTests.build/Objects-normal/arm64/MyTokensTests.abi.json (in target 'MyTokensTests' from project 'MyTokens')
+    cd /Users/felix/orca/workspaces/mytokens/sunfmin-control-890-a-server-may-replace-in-place-a-secret-i
+    builtin-copy -exclude .DS_Store -exclude CVS -exclude .svn -exclude .git -exclude .hg -resolve-src-symlinks -rename /Users/felix/orca/workspaces/mytokens/sunfmin-control-890-a-server-may-replace-in-place-a-secret-i/build/Build/Intermediates.noindex/MyTokens.build/Debug/MyTokensTests.build/Objects-normal/arm64/MyTokensTests.abi.json /Users/felix/orca/workspaces/mytokens/sunfmin-control-890-a-server-may-replace-in-place-a-secret-i/build/Build/Products/Debug/MyTokensTests.swiftmodule/arm64-apple-macos.abi.json
+
+Ld /Users/felix/orca/workspaces/mytokens/sunfmin-control-890-a-server-may-replace-in-place-a-secret-i/build/Build/Products/Debug/MyTokensTests.xctest/Contents/MacOS/MyTokensTests normal (in target 'MyTokensTests' from project 'MyTokens')
+    cd /Users/felix/orca/workspaces/mytokens/sunfmin-control-890-a-server-may-replace-in-place-a-secret-i
+    /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang -Xlinker -reproducible -target arm64-apple-macos14.0 -bundle -isysroot /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX27.0.sdk -O0 -Xlinker -no_warn_duplicate_libraries -L/Users/felix/orca/workspaces/mytokens/sunfmin-control-890-a-server-may-replace-in-place-a-secret-i/build/Build/Intermediates.noindex/EagerLinkingTBDs/Debug -L/Users/felix/orca/workspaces/mytokens/sunfmin-control-890-a-server-may-replace-in-place-a-secret-i/build/Build/Products/Debug -L/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib -F/Users/felix/orca/workspaces/mytokens/sunfmin-control-890-a-server-may-replace-in-place-a-secret-i/build/Build/Intermediates.noindex/EagerLinkingTBDs/Debug -F/Users/felix/orca/workspaces/mytokens/sunfmin-control-890-a-server-may-replace-in-place-a-secret-i/build/Build/Products/Debug -iframework /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks -filelist /Users/felix/orca/workspaces/mytokens/sunfmin-control-890-a-server-may-replace-in-place-a-secret-i/build/Build/Intermediates.noindex/MyTokens.build/Debug/MyTokensTests.build/Objects-normal/arm64/MyTokensTests.LinkFileList -Xlinker -rpath -Xlinker /usr/lib/swift -Xlinker -rpath -Xlinker @loader_path/../Frameworks -Xlinker -rpath -Xlinker @executable_path/../Frameworks -Xlinker -object_path_lto -Xlinker /Users/felix/orca/workspaces/mytokens/sunfmin-control-890-a-server-may-replace-in-place-a-secret-i/build/Build/Intermediates.noindex/MyTokens.build/Debug/MyTokensTests.build/Objects-normal/arm64/MyTokensTests_lto.o -rdynamic -Xlinker -no_deduplicate -Xlinker -dependency_info -Xlinker /Users/felix/orca/workspaces/mytokens/sunfmin-control-890-a-server-may-replace-in-place-a-secret-i/build/Build/Intermediates.noindex/MyTokens.build/Debug/MyTokensTests.build/Objects-normal/arm64/MyTokensTests_dependency_info.dat -fobjc-link-runtime -L/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/macosx -L/usr/lib/swift -Xlinker -add_ast_path -Xlinker /Users/felix/orca/workspaces/mytokens/sunfmin-control-890-a-server-may-replace-in-place-a-secret-i/build/Build/Intermediates.noindex/MyTokens.build/Debug/MyTokensTests.build/Objects-normal/arm64/MyTokensTests.swiftmodule -Xlinker -needed_framework -Xlinker XCTest -framework XCTest -Xlinker -needed-lXCTestSwiftSupport -lXCTestSwiftSupport -o /Users/felix/orca/workspaces/mytokens/sunfmin-control-890-a-server-may-replace-in-place-a-secret-i/build/Build/Products/Debug/MyTokensTests.xctest/Contents/MacOS/MyTokensTests
+
+ExtractAppIntentsMetadata (in target 'MyTokensTests' from project 'MyTokens')
+    cd /Users/felix/orca/workspaces/mytokens/sunfmin-control-890-a-server-may-replace-in-place-a-secret-i
+    /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/appintentsmetadataprocessor --toolchain-dir /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain --module-name MyTokensTests --sdk-root /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX27.0.sdk --xcode-version 27A266a --platform-family macOS --deployment-target 14.0 --bundle-identifier com.sunfmin.mytokens.tests --output /Users/felix/orca/workspaces/mytokens/sunfmin-control-890-a-server-may-replace-in-place-a-secret-i/build/Build/Products/Debug/MyTokensTests.xctest/Contents/Resources --target-triple arm64-apple-macos14.0 --binary-file /Users/felix/orca/workspaces/mytokens/sunfmin-control-890-a-server-may-replace-in-place-a-secret-i/build/Build/Products/Debug/MyTokensTests.xctest/Contents/MacOS/MyTokensTests --dependency-file /Users/felix/orca/workspaces/mytokens/sunfmin-control-890-a-server-may-replace-in-place-a-secret-i/build/Build/Intermediates.noindex/MyTokens.build/Debug/MyTokensTests.build/Objects-normal/arm64/MyTokensTests_dependency_info.dat --stringsdata-file /Users/felix/orca/workspaces/mytokens/sunfmin-control-890-a-server-may-replace-in-place-a-secret-i/build/Build/Intermediates.noindex/MyTokens.build/Debug/MyTokensTests.build/Objects-normal/arm64/ExtractedAppShortcutsMetadata.stringsdata --source-file-list /Users/felix/orca/workspaces/mytokens/sunfmin-control-890-a-server-may-replace-in-place-a-secret-i/build/Build/Intermediates.noindex/MyTokens.build/Debug/MyTokensTests.build/Objects-normal/arm64/MyTokensTests.SwiftFileList --metadata-file-list /Users/felix/orca/workspaces/mytokens/sunfmin-control-890-a-server-may-replace-in-place-a-secret-i/build/Build/Intermediates.noindex/MyTokens.build/Debug/MyTokensTests.build/MyTokensTests.DependencyMetadataFileList --static-metadata-file-list /Users/felix/orca/workspaces/mytokens/sunfmin-control-890-a-server-may-replace-in-place-a-secret-i/build/Build/Intermediates.noindex/MyTokens.build/Debug/MyTokensTests.build/MyTokensTests.DependencyStaticMetadataFileList --swift-const-vals-list /Users/felix/orca/workspaces/mytokens/sunfmin-control-890-a-server-may-replace-in-place-a-secret-i/build/Build/Intermediates.noindex/MyTokens.build/Debug/MyTokensTests.build/Objects-normal/arm64/MyTokensTests.SwiftConstValuesFileList --compile-time-extraction --deployment-aware-processing --no-app-shortcuts-localization
+2026-11-14 08:22:06.097 appintentsmetadataprocessor[70510:139576578] Starting appintentsmetadataprocessor export
+2026-11-14 08:22:06.098 appintentsmetadataprocessor[70510:139576578] warning: Metadata extraction skipped, no AppIntents.framework dependency found
+
+CopySwiftLibs /Users/felix/orca/workspaces/mytokens/sunfmin-control-890-a-server-may-replace-in-place-a-secret-i/build/Build/Products/Debug/MyTokensTests.xctest (in target 'MyTokensTests' from project 'MyTokens')
+    cd /Users/felix/orca/workspaces/mytokens/sunfmin-control-890-a-server-may-replace-in-place-a-secret-i
+    builtin-swiftStdLibTool --copy --verbose --scan-executable /Users/felix/orca/workspaces/mytokens/sunfmin-control-890-a-server-may-replace-in-place-a-secret-i/build/Build/Products/Debug/MyTokensTests.xctest/Contents/MacOS/MyTokensTests --scan-folder /Users/felix/orca/workspaces/mytokens/sunfmin-control-890-a-server-may-replace-in-place-a-secret-i/build/Build/Products/Debug/MyTokensTests.xctest/Contents/Frameworks --scan-folder /Users/felix/orca/workspaces/mytokens/sunfmin-control-890-a-server-may-replace-in-place-a-secret-i/build/Build/Products/Debug/MyTokensTests.xctest/Contents/PlugIns --scan-folder /Users/felix/orca/workspaces/mytokens/sunfmin-control-890-a-server-may-replace-in-place-a-secret-i/build/Build/Products/Debug/MyTokensTests.xctest/Contents/Library/SystemExtensions --scan-folder /Users/felix/orca/workspaces/mytokens/sunfmin-control-890-a-server-may-replace-in-place-a-secret-i/build/Build/Products/Debug/MyTokensTests.xctest/Contents/Extensions --platform macosx --toolchain /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain --destination /Users/felix/orca/workspaces/mytokens/sunfmin-control-890-a-server-may-replace-in-place-a-secret-i/build/Build/Products/Debug/MyTokensTests.xctest/Contents/Frameworks --strip-bitcode --scan-executable /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib/libXCTestSwiftSupport.dylib --strip-bitcode-tool /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/bitcode_strip --emit-dependency-info /Users/felix/orca/workspaces/mytokens/sunfmin-control-890-a-server-may-replace-in-place-a-secret-i/build/Build/Intermediates.noindex/MyTokens.build/Debug/MyTokensTests.build/SwiftStdLibToolInputDependencies.dep --filter-for-swift-os --back-deploy-swift-span
+Ignoring --strip-bitcode because --sign was not passed
+
+PruneExplicitPrecompiledModules /Users/felix/orca/workspaces/mytokens/sunfmin-control-890-a-server-may-replace-in-place-a-secret-i/build/Build/Intermediates.noindex/ExplicitPrecompiledModules
+
+PruneExplicitPrecompiledModules /Users/felix/orca/workspaces/mytokens/sunfmin-control-890-a-server-may-replace-in-place-a-secret-i/build/Build/Intermediates.noindex/SwiftExplicitPrecompiledModules
+
+PruneExplicitPrecompiledModules /Users/felix/orca/workspaces/mytokens/sunfmin-control-890-a-server-may-replace-in-place-a-secret-i/build/SDKExplicitPrecompiledModules
+
+** TEST BUILD SUCCEEDED **
+
+tools/xctest-run.sh build/Build/Products/Debug/MyTokensTests.xctest
+Test Suite 'All tests' started at 2026-11-14 08:22:06.261.
+Test Suite 'MyTokensTests.xctest' started at 2026-11-14 08:22:06.262.
+Test Suite 'BackgroundSyncTests' started at 2026-11-14 08:22:06.262.
+Test Case '-[MyTokensTests.BackgroundSyncTests testAChangeOnAServerKicksNothing]' started.
+Test Case '-[MyTokensTests.BackgroundSyncTests testAChangeOnAServerKicksNothing]' passed (0.001 seconds).
+Test Case '-[MyTokensTests.BackgroundSyncTests testAFailureAfterASuccessKeepsTheLastSuccessAndASuccessClearsIt]' started.
+Test Case '-[MyTokensTests.BackgroundSyncTests testAFailureAfterASuccessKeepsTheLastSuccessAndASuccessClearsIt]' passed (0.001 seconds).
+Test Case '-[MyTokensTests.BackgroundSyncTests testAHostTakenOffTheListIsForgotten]' started.
+Test Case '-[MyTokensTests.BackgroundSyncTests testAHostTakenOffTheListIsForgotten]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.BackgroundSyncTests testAManualSyncOfAListedHostIsItsLastSync]' started.
+Test Case '-[MyTokensTests.BackgroundSyncTests testAManualSyncOfAListedHostIsItsLastSync]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.BackgroundSyncTests testAMissingOrOlderMyTokensIsUpgradedBeforeItsSync]' started.
+Test Case '-[MyTokensTests.BackgroundSyncTests testAMissingOrOlderMyTokensIsUpgradedBeforeItsSync]' passed (0.001 seconds).
+Test Case '-[MyTokensTests.BackgroundSyncTests testAnUndeliveredPushIsTriedAgain]' started.
+Test Case '-[MyTokensTests.BackgroundSyncTests testAnUndeliveredPushIsTriedAgain]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.BackgroundSyncTests testASecondRunChangesNothing]' started.
+Test Case '-[MyTokensTests.BackgroundSyncTests testASecondRunChangesNothing]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.BackgroundSyncTests testAServerLevelChangeKicksTheAgentAndReturnsAtOnce]' started.
+Test Case '-[MyTokensTests.BackgroundSyncTests testAServerLevelChangeKicksTheAgentAndReturnsAtOnce]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.BackgroundSyncTests testATriggerDuringARunRunsItAgain]' started.
+Test Case '-[MyTokensTests.BackgroundSyncTests testATriggerDuringARunRunsItAgain]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.BackgroundSyncTests testBeforeTheFirstUnlockARunWaits]' started.
+Test Case '-[MyTokensTests.BackgroundSyncTests testBeforeTheFirstUnlockARunWaits]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.BackgroundSyncTests testNoSecretValueReachesTheOutputTheStatusOrAPush]' started.
+Test Case '-[MyTokensTests.BackgroundSyncTests testNoSecretValueReachesTheOutputTheStatusOrAPush]' passed (0.001 seconds).
+Test Case '-[MyTokensTests.BackgroundSyncTests testOnAServerTheAgentIsRemovedAndBackgroundSyncRefused]' started.
+Test Case '-[MyTokensTests.BackgroundSyncTests testOnAServerTheAgentIsRemovedAndBackgroundSyncRefused]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.BackgroundSyncTests testOneFailingHostDoesNotStopTheOthers]' started.
+Test Case '-[MyTokensTests.BackgroundSyncTests testOneFailingHostDoesNotStopTheOthers]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.BackgroundSyncTests testPauseAndResumeArePerMac]' started.
+Test Case '-[MyTokensTests.BackgroundSyncTests testPauseAndResumeArePerMac]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.BackgroundSyncTests testSyncsEveryListedServerAndRecordsWhen]' started.
+Test Case '-[MyTokensTests.BackgroundSyncTests testSyncsEveryListedServerAndRecordsWhen]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.BackgroundSyncTests testTheFileStateKeepsStatusPauseAndPendingPerMac]' started.
+Test Case '-[MyTokensTests.BackgroundSyncTests testTheFileStateKeepsStatusPauseAndPendingPerMac]' passed (0.002 seconds).
+Test Case '-[MyTokensTests.BackgroundSyncTests testTheInstallerNeverSetsUpTheAgentOnAServer]' started.
+Test Case '-[MyTokensTests.BackgroundSyncTests testTheInstallerNeverSetsUpTheAgentOnAServer]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.BackgroundSyncTests testTheLaunchdAgentRunsServerSyncEveryFifteenMinutes]' started.
+Test Case '-[MyTokensTests.BackgroundSyncTests testTheLaunchdAgentRunsServerSyncEveryFifteenMinutes]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.BackgroundSyncTests testTwentyFourHoursOfFailurePushesOncePerDayThroughBark]' started.
+Test Case '-[MyTokensTests.BackgroundSyncTests testTwentyFourHoursOfFailurePushesOncePerDayThroughBark]' passed (0.013 seconds).
+Test Case '-[MyTokensTests.BackgroundSyncTests testWithoutABarkSecretAFailureShowsOnlyInServerList]' started.
+Test Case '-[MyTokensTests.BackgroundSyncTests testWithoutABarkSecretAFailureShowsOnlyInServerList]' passed (0.000 seconds).
+Test Suite 'BackgroundSyncTests' passed at 2026-11-14 08:22:06.286.
+	 Executed 20 tests, with 0 failures (0 unexpected) in 0.023 (0.024) seconds
+Test Suite 'CommandsTests' started at 2026-11-14 08:22:06.286.
+Test Case '-[MyTokensTests.CommandsTests testAddThenGetRoundtrip]' started.
+Test Case '-[MyTokensTests.CommandsTests testAddThenGetRoundtrip]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.CommandsTests testAnyEmptyFieldStoresNothing]' started.
+Test Case '-[MyTokensTests.CommandsTests testAnyEmptyFieldStoresNothing]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.CommandsTests testCancelledPopupStoresNothing]' started.
+Test Case '-[MyTokensTests.CommandsTests testCancelledPopupStoresNothing]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.CommandsTests testCommentCodecRoundTripsLevelAndDefaultsOld]' started.
+Test Case '-[MyTokensTests.CommandsTests testCommentCodecRoundTripsLevelAndDefaultsOld]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.CommandsTests testDescriptionAlongsideFields]' started.
+Test Case '-[MyTokensTests.CommandsTests testDescriptionAlongsideFields]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.CommandsTests testDescriptionShownInListButNotInGet]' started.
+Test Case '-[MyTokensTests.CommandsTests testDescriptionShownInListButNotInGet]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.CommandsTests testEnvOnAbsentServiceErrors]' started.
+Test Case '-[MyTokensTests.CommandsTests testEnvOnAbsentServiceErrors]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.CommandsTests testEnvOnMultiFieldNonProfileErrors]' started.
+Test Case '-[MyTokensTests.CommandsTests testEnvOnMultiFieldNonProfileErrors]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.CommandsTests testEnvOnParentSecretErrors]' started.
+Test Case '-[MyTokensTests.CommandsTests testEnvOnParentSecretErrors]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.CommandsTests testEnvOnSingleValueSecretErrors]' started.
+Test Case '-[MyTokensTests.CommandsTests testEnvOnSingleValueSecretErrors]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.CommandsTests testEnvSelectsAccount]' started.
+Test Case '-[MyTokensTests.CommandsTests testEnvSelectsAccount]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.CommandsTests testEnvSingleQuotesValuesSafely]' started.
+Test Case '-[MyTokensTests.CommandsTests testEnvSingleQuotesValuesSafely]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.CommandsTests testGetAbsentIsNonZeroAndPrintsNothing]' started.
+Test Case '-[MyTokensTests.CommandsTests testGetAbsentIsNonZeroAndPrintsNothing]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.CommandsTests testGetFieldOnSingleSecretErrors]' started.
+Test Case '-[MyTokensTests.CommandsTests testGetFieldOnSingleSecretErrors]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.CommandsTests testGetJSONIncludesLevel]' started.
+Test Case '-[MyTokensTests.CommandsTests testGetJSONIncludesLevel]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.CommandsTests testGetUnknownFieldErrors]' started.
+Test Case '-[MyTokensTests.CommandsTests testGetUnknownFieldErrors]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.CommandsTests testInvalidMetaRejectedWithoutPrompting]' started.
+Test Case '-[MyTokensTests.CommandsTests testInvalidMetaRejectedWithoutPrompting]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.CommandsTests testListHidesValues]' started.
+Test Case '-[MyTokensTests.CommandsTests testListHidesValues]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.CommandsTests testListShowsFieldLabelsNotValues]' started.
+Test Case '-[MyTokensTests.CommandsTests testListShowsFieldLabelsNotValues]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.CommandsTests testListShowsLevel]' started.
+Test Case '-[MyTokensTests.CommandsTests testListShowsLevel]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.CommandsTests testListShowsProfileKindAndLabelsNotValues]' started.
+Test Case '-[MyTokensTests.CommandsTests testListShowsProfileKindAndLabelsNotValues]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.CommandsTests testLockedKeychainSurfacesDistinctError]' started.
+Test Case '-[MyTokensTests.CommandsTests testLockedKeychainSurfacesDistinctError]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.CommandsTests testMultiFieldAddGetByFieldAndJSON]' started.
+Test Case '-[MyTokensTests.CommandsTests testMultiFieldAddGetByFieldAndJSON]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.CommandsTests testMultiFieldBareGetErrorsAndListsFields]' started.
+Test Case '-[MyTokensTests.CommandsTests testMultiFieldBareGetErrorsAndListsFields]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.CommandsTests testMultipleAccountsPerService]' started.
+Test Case '-[MyTokensTests.CommandsTests testMultipleAccountsPerService]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.CommandsTests testNewSecretWithoutLevelIsPersonal]' started.
+Test Case '-[MyTokensTests.CommandsTests testNewSecretWithoutLevelIsPersonal]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.CommandsTests testOldSecretWithoutLevelReadsAsPersonal]' started.
+Test Case '-[MyTokensTests.CommandsTests testOldSecretWithoutLevelReadsAsPersonal]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.CommandsTests testParentCannotCombineWithFields]' started.
+Test Case '-[MyTokensTests.CommandsTests testParentCannotCombineWithFields]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.CommandsTests testProfileAddThenEnvEmitsExportLinesInOrder]' started.
+Test Case '-[MyTokensTests.CommandsTests testProfileAddThenEnvEmitsExportLinesInOrder]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.CommandsTests testProfileInvalidEnvNameRejectedBeforePrompting]' started.
+Test Case '-[MyTokensTests.CommandsTests testProfileInvalidEnvNameRejectedBeforePrompting]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.CommandsTests testProfileWithoutFieldsErrors]' started.
+Test Case '-[MyTokensTests.CommandsTests testProfileWithoutFieldsErrors]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.CommandsTests testPutBareOnLabelledSecretErrors]' started.
+Test Case '-[MyTokensTests.CommandsTests testPutBareOnLabelledSecretErrors]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.CommandsTests testPutCannotChangeKindOnMerge]' started.
+Test Case '-[MyTokensTests.CommandsTests testPutCannotChangeKindOnMerge]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.CommandsTests testPutFieldsRotatesSecretKeepingConfig]' started.
+Test Case '-[MyTokensTests.CommandsTests testPutFieldsRotatesSecretKeepingConfig]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.CommandsTests testPutLevelAloneOnExistingSecretChangesOnlyLevelWithoutPopup]' started.
+Test Case '-[MyTokensTests.CommandsTests testPutLevelAloneOnExistingSecretChangesOnlyLevelWithoutPopup]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.CommandsTests testPutLevelSetsServer]' started.
+Test Case '-[MyTokensTests.CommandsTests testPutLevelSetsServer]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.CommandsTests testPutMergePreservesKindAndDescription]' started.
+Test Case '-[MyTokensTests.CommandsTests testPutMergePreservesKindAndDescription]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.CommandsTests testPutSetCreatesFromCLIWithNoPopup]' started.
+Test Case '-[MyTokensTests.CommandsTests testPutSetCreatesFromCLIWithNoPopup]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.CommandsTests testPutSetOnSingleValueSecretErrors]' started.
+Test Case '-[MyTokensTests.CommandsTests testPutSetOnSingleValueSecretErrors]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.CommandsTests testPutSetRejectsEmptyValue]' started.
+Test Case '-[MyTokensTests.CommandsTests testPutSetRejectsEmptyValue]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.CommandsTests testPutSetSplitsOnFirstEquals]' started.
+Test Case '-[MyTokensTests.CommandsTests testPutSetSplitsOnFirstEquals]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.CommandsTests testPutSetUpdatesOneFieldKeepingOthers]' started.
+Test Case '-[MyTokensTests.CommandsTests testPutSetUpdatesOneFieldKeepingOthers]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.CommandsTests testPutUpdatesOneCredentialFieldKeepingOther]' started.
+Test Case '-[MyTokensTests.CommandsTests testPutUpdatesOneCredentialFieldKeepingOther]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.CommandsTests testPutWithoutLevelKeepsStoredLevel]' started.
+Test Case '-[MyTokensTests.CommandsTests testPutWithoutLevelKeepsStoredLevel]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.CommandsTests testReaddOverwrites]' started.
+Test Case '-[MyTokensTests.CommandsTests testReaddOverwrites]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.CommandsTests testRmThenGet]' started.
+Test Case '-[MyTokensTests.CommandsTests testRmThenGet]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.CommandsTests testRmThenPutReplacesWhole]' started.
+Test Case '-[MyTokensTests.CommandsTests testRmThenPutReplacesWhole]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.CommandsTests testShowMustReferenceAField]' started.
+Test Case '-[MyTokensTests.CommandsTests testShowMustReferenceAField]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.CommandsTests testUnknownLevelRefusedWithAllowedValuesBeforePrompting]' started.
+Test Case '-[MyTokensTests.CommandsTests testUnknownLevelRefusedWithAllowedValuesBeforePrompting]' passed (0.000 seconds).
+Test Suite 'CommandsTests' passed at 2026-11-14 08:22:06.295.
+	 Executed 49 tests, with 0 failures (0 unexpected) in 0.007 (0.010) seconds
+Test Suite 'FieldFromStdinTests' started at 2026-11-14 08:22:06.296.
+Test Case '-[MyTokensTests.FieldFromStdinTests testAProfileTakesItLikeFields]' started.
+Test Case '-[MyTokensTests.FieldFromStdinTests testAProfileTakesItLikeFields]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.FieldFromStdinTests testAValueLongerThanATerminalLineIsStoredWhole]' started.
+Test Case '-[MyTokensTests.FieldFromStdinTests testAValueLongerThanATerminalLineIsStoredWhole]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.FieldFromStdinTests testCombinesWithFieldsInOnePut]' started.
+Test Case '-[MyTokensTests.FieldFromStdinTests testCombinesWithFieldsInOnePut]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.FieldFromStdinTests testKeepsTheOtherFieldsAndCombinesWithSetDescriptionAndLevel]' started.
+Test Case '-[MyTokensTests.FieldFromStdinTests testKeepsTheOtherFieldsAndCombinesWithSetDescriptionAndLevel]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.FieldFromStdinTests testRefusedOnASingleValueSecret]' started.
+Test Case '-[MyTokensTests.FieldFromStdinTests testRefusedOnASingleValueSecret]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.FieldFromStdinTests testRefusedWhenStdinIsATerminal]' started.
+Test Case '-[MyTokensTests.FieldFromStdinTests testRefusedWhenStdinIsATerminal]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.FieldFromStdinTests testRefusedWhenStdinIsEmpty]' started.
+Test Case '-[MyTokensTests.FieldFromStdinTests testRefusedWhenStdinIsEmpty]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.FieldFromStdinTests testRefusedWithoutALabelOrWithALabelNamedTwice]' started.
+Test Case '-[MyTokensTests.FieldFromStdinTests testRefusedWithoutALabelOrWithALabelNamedTwice]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.FieldFromStdinTests testStoresThePipedFieldWithNoPromptAndGetReturnsItExactly]' started.
+Test Case '-[MyTokensTests.FieldFromStdinTests testStoresThePipedFieldWithNoPromptAndGetReturnsItExactly]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.FieldFromStdinTests testStripsExactlyOneTrailingNewline]' started.
+Test Case '-[MyTokensTests.FieldFromStdinTests testStripsExactlyOneTrailingNewline]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.FieldFromStdinTests testTheValueNeverAppearsInOutput]' started.
+Test Case '-[MyTokensTests.FieldFromStdinTests testTheValueNeverAppearsInOutput]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.FieldFromStdinTests testWorksOnAServerAsServerLevel]' started.
+Test Case '-[MyTokensTests.FieldFromStdinTests testWorksOnAServerAsServerLevel]' passed (0.000 seconds).
+Test Suite 'FieldFromStdinTests' passed at 2026-11-14 08:22:06.298.
+	 Executed 12 tests, with 0 failures (0 unexpected) in 0.002 (0.002) seconds
+Test Suite 'HostRoleTests' started at 2026-11-14 08:22:06.298.
+Test Case '-[MyTokensTests.HostRoleTests testEverySecretStoredOnAServerIsServerLevel]' started.
+Test Case '-[MyTokensTests.HostRoleTests testEverySecretStoredOnAServerIsServerLevel]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.HostRoleTests testFileHostRoleSetting]' started.
+Test Case '-[MyTokensTests.HostRoleTests testFileHostRoleSetting]' passed (0.001 seconds).
+Test Case '-[MyTokensTests.HostRoleTests testHostDefaultsToPersonal]' started.
+Test Case '-[MyTokensTests.HostRoleTests testHostDefaultsToPersonal]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.HostRoleTests testHostRefusesAnUnknownRole]' started.
+Test Case '-[MyTokensTests.HostRoleTests testHostRefusesAnUnknownRole]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.HostRoleTests testHostSetsAndPrintsTheRole]' started.
+Test Case '-[MyTokensTests.HostRoleTests testHostSetsAndPrintsTheRole]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.HostRoleTests testPersonalMacActsOnTheICloudStore]' started.
+Test Case '-[MyTokensTests.HostRoleTests testPersonalMacActsOnTheICloudStore]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.HostRoleTests testRoleSelectsTheKeychainLocation]' started.
+Test Case '-[MyTokensTests.HostRoleTests testRoleSelectsTheKeychainLocation]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.HostRoleTests testServerActsOnTheLoginStoreForEveryCommand]' started.
+Test Case '-[MyTokensTests.HostRoleTests testServerActsOnTheLoginStoreForEveryCommand]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.HostRoleTests testUnreadableRoleFailsInsteadOfDefaulting]' started.
+Test Case '-[MyTokensTests.HostRoleTests testUnreadableRoleFailsInsteadOfDefaulting]' passed (0.000 seconds).
+Test Suite 'HostRoleTests' passed at 2026-11-14 08:22:06.301.
+	 Executed 9 tests, with 0 failures (0 unexpected) in 0.002 (0.003) seconds
+Test Suite 'InputSelectionTests' started at 2026-11-14 08:22:06.301.
+Test Case '-[MyTokensTests.InputSelectionTests testAnExpiredLinkStoresNothingAndFails]' started.
+Test Case '-[MyTokensTests.InputSelectionTests testAnExpiredLinkStoresNothingAndFails]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.InputSelectionTests testNeitherFailsStoresNothingAndPrintsTheCommand]' started.
+Test Case '-[MyTokensTests.InputSelectionTests testNeitherFailsStoresNothingAndPrintsTheCommand]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.InputSelectionTests testNoTerminalNoDesktopUsesTheLink]' started.
+Test Case '-[MyTokensTests.InputSelectionTests testNoTerminalNoDesktopUsesTheLink]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.InputSelectionTests testNoTerminalWithDesktopUsesThePopup]' started.
+Test Case '-[MyTokensTests.InputSelectionTests testNoTerminalWithDesktopUsesThePopup]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.InputSelectionTests testOnAServerALoggedInDesktopIsSkippedForTheLink]' started.
+Test Case '-[MyTokensTests.InputSelectionTests testOnAServerALoggedInDesktopIsSkippedForTheLink]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.InputSelectionTests testOnAServerTheTerminalStillWins]' started.
+Test Case '-[MyTokensTests.InputSelectionTests testOnAServerTheTerminalStillWins]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.InputSelectionTests testOverSSHWithoutDesktopTheTerminalReadsIt]' started.
+Test Case '-[MyTokensTests.InputSelectionTests testOverSSHWithoutDesktopTheTerminalReadsIt]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.InputSelectionTests testShowFieldsAreUnmaskedAndTheRestMasked]' started.
+Test Case '-[MyTokensTests.InputSelectionTests testShowFieldsAreUnmaskedAndTheRestMasked]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.InputSelectionTests testTerminalAndPopupBothWinOverTheLink]' started.
+Test Case '-[MyTokensTests.InputSelectionTests testTerminalAndPopupBothWinOverTheLink]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.InputSelectionTests testTerminalWinsWhenPresentEvenWithADesktop]' started.
+Test Case '-[MyTokensTests.InputSelectionTests testTerminalWinsWhenPresentEvenWithADesktop]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.InputSelectionTests testUnavailableFromTheChosenInputAlsoFails]' started.
+Test Case '-[MyTokensTests.InputSelectionTests testUnavailableFromTheChosenInputAlsoFails]' passed (0.000 seconds).
+Test Suite 'InputSelectionTests' passed at 2026-11-14 08:22:06.302.
+	 Executed 11 tests, with 0 failures (0 unexpected) in 0.001 (0.002) seconds
+Test Suite 'KeychainAccessibilityTests' started at 2026-11-14 08:22:06.302.
+Test Case '-[MyTokensTests.KeychainAccessibilityTests testAnOldDefaultItemIsMigratedWhenTheStoreOpensUnlocked]' started.
+Test Case '-[MyTokensTests.KeychainAccessibilityTests testAnOldDefaultItemIsMigratedWhenTheStoreOpensUnlocked]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.KeychainAccessibilityTests testAStoredSecretIsWrittenReadableAfterFirstUnlockAndSynchronizable]' started.
+Test Case '-[MyTokensTests.KeychainAccessibilityTests testAStoredSecretIsWrittenReadableAfterFirstUnlockAndSynchronizable]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.KeychainAccessibilityTests testRewritingAnOldItemMovesItToo]' started.
+Test Case '-[MyTokensTests.KeychainAccessibilityTests testRewritingAnOldItemMovesItToo]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.KeychainAccessibilityTests testTheServerStoreIsLocalAndReadableAfterFirstUnlock]' started.
+Test Case '-[MyTokensTests.KeychainAccessibilityTests testTheServerStoreIsLocalAndReadableAfterFirstUnlock]' passed (0.000 seconds).
+Test Suite 'KeychainAccessibilityTests' passed at 2026-11-14 08:22:06.303.
+	 Executed 4 tests, with 0 failures (0 unexpected) in 0.001 (0.001) seconds
+Test Suite 'LinkServerTests' started at 2026-11-14 08:22:06.303.
+Test Case '-[MyTokensTests.LinkServerTests testAnUnusedLinkExpiresAndCloses]' started.
+Test Case '-[MyTokensTests.LinkServerTests testAnUnusedLinkExpiresAndCloses]' passed (1.120 seconds).
+Test Case '-[MyTokensTests.LinkServerTests testNoTailnetIsUnavailable]' started.
+Test Case '-[MyTokensTests.LinkServerTests testNoTailnetIsUnavailable]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.LinkServerTests testTheLinkIsServedUsedOnceAndClosed]' started.
+Test Case '-[MyTokensTests.LinkServerTests testTheLinkIsServedUsedOnceAndClosed]' passed (0.005 seconds).
+Test Suite 'LinkServerTests' passed at 2026-11-14 08:22:07.428.
+	 Executed 3 tests, with 0 failures (0 unexpected) in 1.125 (1.125) seconds
+Test Suite 'LinkTLSTests' started at 2026-11-14 08:22:07.428.
+Test Case '-[MyTokensTests.LinkTLSTests testAPEMCertificateServesTheLinkOverHTTPS]' started.
+Test Case '-[MyTokensTests.LinkTLSTests testAPEMCertificateServesTheLinkOverHTTPS]' passed (0.225 seconds).
+Test Suite 'LinkTLSTests' passed at 2026-11-14 08:22:07.653.
+	 Executed 1 test, with 0 failures (0 unexpected) in 0.225 (0.225) seconds
+Test Suite 'MissTests' started at 2026-11-14 08:22:07.653.
+Test Case '-[MyTokensTests.MissTests testAFailedPushStillPrintsTheMessage]' started.
+Test Case '-[MyTokensTests.MissTests testAFailedPushStillPrintsTheMessage]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.MissTests testAHeldSecretIsUntouched]' started.
+Test Case '-[MyTokensTests.MissTests testAHeldSecretIsUntouched]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.MissTests testAMissingFieldIsNotAMiss]' started.
+Test Case '-[MyTokensTests.MissTests testAMissingFieldIsNotAMiss]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.MissTests testAnUnreadableBarkSecretPushesNothingAndSaysSo]' started.
+Test Case '-[MyTokensTests.MissTests testAnUnreadableBarkSecretPushesNothingAndSaysSo]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.MissTests testBarkTargetForms]' started.
+Test Case '-[MyTokensTests.MissTests testBarkTargetForms]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.MissTests testEnvMissOnAServerSaysTheSame]' started.
+Test Case '-[MyTokensTests.MissTests testEnvMissOnAServerSaysTheSame]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.MissTests testFileLedgerClaimsOncePerInterval]' started.
+Test Case '-[MyTokensTests.MissTests testFileLedgerClaimsOncePerInterval]' passed (0.002 seconds).
+Test Case '-[MyTokensTests.MissTests testMissNamesANonDefaultAccount]' started.
+Test Case '-[MyTokensTests.MissTests testMissNamesANonDefaultAccount]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.MissTests testMissOnAPersonalMacIsUnchanged]' started.
+Test Case '-[MyTokensTests.MissTests testMissOnAPersonalMacIsUnchanged]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.MissTests testMissOnAServerSaysWhyAndNamesTheLineToRun]' started.
+Test Case '-[MyTokensTests.MissTests testMissOnAServerSaysWhyAndNamesTheLineToRun]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.MissTests testMissPushesAtMostOncePerSecretPerHour]' started.
+Test Case '-[MyTokensTests.MissTests testMissPushesAtMostOncePerSecretPerHour]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.MissTests testMissWithABarkSecretPushesOnce]' started.
+Test Case '-[MyTokensTests.MissTests testMissWithABarkSecretPushesOnce]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.MissTests testMissWithoutABarkSecretOnlyPrints]' started.
+Test Case '-[MyTokensTests.MissTests testMissWithoutABarkSecretOnlyPrints]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.MissTests testTheBarkSecretMissingIsNotPushedWithItself]' started.
+Test Case '-[MyTokensTests.MissTests testTheBarkSecretMissingIsNotPushedWithItself]' passed (0.000 seconds).
+Test Suite 'MissTests' passed at 2026-11-14 08:22:07.658.
+	 Executed 14 tests, with 0 failures (0 unexpected) in 0.004 (0.004) seconds
+Test Suite 'OneTimeLinkTests' started at 2026-11-14 08:22:07.658.
+Test Case '-[MyTokensTests.OneTimeLinkTests testAfterTenMinutesItIsRefused]' started.
+Test Case '-[MyTokensTests.OneTimeLinkTests testAfterTenMinutesItIsRefused]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.OneTimeLinkTests testAnEmptyFieldIsAskedAgainWithoutUsingTheLink]' started.
+Test Case '-[MyTokensTests.OneTimeLinkTests testAnEmptyFieldIsAskedAgainWithoutUsingTheLink]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.OneTimeLinkTests testAWrongTokenIsRefusedAndConsumesNothing]' started.
+Test Case '-[MyTokensTests.OneTimeLinkTests testAWrongTokenIsRefusedAndConsumesNothing]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.OneTimeLinkTests testOtherMethodsAreRefused]' started.
+Test Case '-[MyTokensTests.OneTimeLinkTests testOtherMethodsAreRefused]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.OneTimeLinkTests testRequestParsing]' started.
+Test Case '-[MyTokensTests.OneTimeLinkTests testRequestParsing]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.OneTimeLinkTests testTheBareSecretIsLabelledSecretOnThePage]' started.
+Test Case '-[MyTokensTests.OneTimeLinkTests testTheBareSecretIsLabelledSecretOnThePage]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.OneTimeLinkTests testThePageShowsServiceDescriptionAndFields]' started.
+Test Case '-[MyTokensTests.OneTimeLinkTests testThePageShowsServiceDescriptionAndFields]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.OneTimeLinkTests testTheRightTokenSubmitsOnce]' started.
+Test Case '-[MyTokensTests.OneTimeLinkTests testTheRightTokenSubmitsOnce]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.OneTimeLinkTests testTokenIsFresh128BitHex]' started.
+Test Case '-[MyTokensTests.OneTimeLinkTests testTokenIsFresh128BitHex]' passed (0.000 seconds).
+Test Suite 'OneTimeLinkTests' passed at 2026-11-14 08:22:07.660.
+	 Executed 9 tests, with 0 failures (0 unexpected) in 0.002 (0.002) seconds
+Test Suite 'SecretPromptRenderTests' started at 2026-11-14 08:22:07.660.
+Test Case '-[MyTokensTests.SecretPromptRenderTests testRendersMultiFieldPrompt]' started.
+Test Case '-[MyTokensTests.SecretPromptRenderTests testRendersMultiFieldPrompt]' passed (0.145 seconds).
+Test Case '-[MyTokensTests.SecretPromptRenderTests testRendersPromptWithDescription]' started.
+Test Case '-[MyTokensTests.SecretPromptRenderTests testRendersPromptWithDescription]' passed (0.010 seconds).
+Test Case '-[MyTokensTests.SecretPromptRenderTests testRendersSecretPrompt]' started.
+Test Case '-[MyTokensTests.SecretPromptRenderTests testRendersSecretPrompt]' passed (0.008 seconds).
+Test Case '-[MyTokensTests.SecretPromptRenderTests testStoreDisabledUntilAllFieldsFilled]' started.
+Test Case '-[MyTokensTests.SecretPromptRenderTests testStoreDisabledUntilAllFieldsFilled]' passed (0.001 seconds).
+Test Suite 'SecretPromptRenderTests' passed at 2026-11-14 08:22:07.825.
+	 Executed 4 tests, with 0 failures (0 unexpected) in 0.165 (0.165) seconds
+Test Suite 'ServerSetupTests' started at 2026-11-14 08:22:07.825.
+Test Case '-[MyTokensTests.ServerSetupTests testAddInstallsSetsTheRoleSelftestsSyncsAndListsTheHost]' started.
+Test Case '-[MyTokensTests.ServerSetupTests testAddInstallsSetsTheRoleSelftestsSyncsAndListsTheHost]' passed (0.001 seconds).
+Test Case '-[MyTokensTests.ServerSetupTests testAddOnAListedHostRepairsAndChangesNothingElse]' started.
+Test Case '-[MyTokensTests.ServerSetupTests testAddOnAListedHostRepairsAndChangesNothingElse]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.ServerSetupTests testAddUpgradesAnOlderMyTokensAndLeavesACurrentOneAlone]' started.
+Test Case '-[MyTokensTests.ServerSetupTests testAddUpgradesAnOlderMyTokensAndLeavesACurrentOneAlone]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.ServerSetupTests testAFailingInstallLeavesTheHostOffTheListAndNamesTheStep]' started.
+Test Case '-[MyTokensTests.ServerSetupTests testAFailingInstallLeavesTheHostOffTheListAndNamesTheStep]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.ServerSetupTests testAFailingSelftestLeavesTheHostOffTheListAndSyncsNothing]' started.
+Test Case '-[MyTokensTests.ServerSetupTests testAFailingSelftestLeavesTheHostOffTheListAndSyncsNothing]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.ServerSetupTests testAFailingSyncLeavesTheHostOffTheListAndNoValueIsPrinted]' started.
+Test Case '-[MyTokensTests.ServerSetupTests testAFailingSyncLeavesTheHostOffTheListAndNoValueIsPrinted]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.ServerSetupTests testAnInstallThatStaysOlderFails]' started.
+Test Case '-[MyTokensTests.ServerSetupTests testAnInstallThatStaysOlderFails]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.ServerSetupTests testNoSecretMayTakeTheServerListsService]' started.
+Test Case '-[MyTokensTests.ServerSetupTests testNoSecretMayTakeTheServerListsService]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.ServerSetupTests testRmEmptiesTheServerAdoptingFirstThenForgetsIt]' started.
+Test Case '-[MyTokensTests.ServerSetupTests testRmEmptiesTheServerAdoptingFirstThenForgetsIt]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.ServerSetupTests testRmOfAnUnlistedHostChangesNothing]' started.
+Test Case '-[MyTokensTests.ServerSetupTests testRmOfAnUnlistedHostChangesNothing]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.ServerSetupTests testRmStopsOnAConflictAndKeepsTheHost]' started.
+Test Case '-[MyTokensTests.ServerSetupTests testRmStopsOnAConflictAndKeepsTheHost]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.ServerSetupTests testServerCommandsAreRefusedOnAServer]' started.
+Test Case '-[MyTokensTests.ServerSetupTests testServerCommandsAreRefusedOnAServer]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.ServerSetupTests testServerNeedsAVerbAndOneHost]' started.
+Test Case '-[MyTokensTests.ServerSetupTests testServerNeedsAVerbAndOneHost]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.ServerSetupTests testTheKeychainServerListIsOneSynchronizableItemListDoesNotShow]' started.
+Test Case '-[MyTokensTests.ServerSetupTests testTheKeychainServerListIsOneSynchronizableItemListDoesNotShow]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.ServerSetupTests testValuesTravelOnlyInThePushPipe]' started.
+Test Case '-[MyTokensTests.ServerSetupTests testValuesTravelOnlyInThePushPipe]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.ServerSetupTests testVersionsCompareByNumber]' started.
+Test Case '-[MyTokensTests.ServerSetupTests testVersionsCompareByNumber]' passed (0.000 seconds).
+Test Suite 'ServerSetupTests' passed at 2026-11-14 08:22:07.829.
+	 Executed 16 tests, with 0 failures (0 unexpected) in 0.003 (0.004) seconds
+Test Suite 'SyncTests' started at 2026-11-14 08:22:07.829.
+Test Case '-[MyTokensTests.SyncTests testAChangeOnThePersonalMacToAnAdoptedSecretReachesTheServer]' started.
+Test Case '-[MyTokensTests.SyncTests testAChangeOnThePersonalMacToAnAdoptedSecretReachesTheServer]' passed (0.001 seconds).
+Test Case '-[MyTokensTests.SyncTests testAdoptedValuesTravelOnlyInThePipe]' started.
+Test Case '-[MyTokensTests.SyncTests testAdoptedValuesTravelOnlyInThePipe]' passed (0.001 seconds).
+Test Case '-[MyTokensTests.SyncTests testAnAdoptedSecretChangedOnBothSidesIsAConflictThatKeepsBothValues]' started.
+Test Case '-[MyTokensTests.SyncTests testAnAdoptedSecretChangedOnBothSidesIsAConflictThatKeepsBothValues]' passed (0.001 seconds).
+Test Case '-[MyTokensTests.SyncTests testAnAdoptionCutShortIsFinishedByTheNextSync]' started.
+Test Case '-[MyTokensTests.SyncTests testAnAdoptionCutShortIsFinishedByTheNextSync]' passed (0.001 seconds).
+Test Case '-[MyTokensTests.SyncTests testAPushedSecretIsNeverAdopted]' started.
+Test Case '-[MyTokensTests.SyncTests testAPushedSecretIsNeverAdopted]' passed (0.001 seconds).
+Test Case '-[MyTokensTests.SyncTests testASameNameSecretHereIsAConflictAndNeitherSideChanges]' started.
+Test Case '-[MyTokensTests.SyncTests testASameNameSecretHereIsAConflictAndNeitherSideChanges]' passed (0.001 seconds).
+Test Case '-[MyTokensTests.SyncTests testASecondSyncAfterAdoptionChangesNothing]' started.
+Test Case '-[MyTokensTests.SyncTests testASecondSyncAfterAdoptionChangesNothing]' passed (0.001 seconds).
+Test Case '-[MyTokensTests.SyncTests testASecretAdoptedBeforeTheMarksIsFoundByItsNote]' started.
+Test Case '-[MyTokensTests.SyncTests testASecretAdoptedBeforeTheMarksIsFoundByItsNote]' passed (0.001 seconds).
+Test Case '-[MyTokensTests.SyncTests testASecretEnteredOnTheServerIsAdoptedWhole]' started.
+Test Case '-[MyTokensTests.SyncTests testASecretEnteredOnTheServerIsAdoptedWhole]' passed (0.001 seconds).
+Test Case '-[MyTokensTests.SyncTests testASecretRemovedHereAfterAdoptionIsRemovedFromTheServer]' started.
+Test Case '-[MyTokensTests.SyncTests testASecretRemovedHereAfterAdoptionIsRemovedFromTheServer]' passed (0.001 seconds).
+Test Case '-[MyTokensTests.SyncTests testAServerChangeIsNotRemovedWhenThePersonalMacNoLongerSendsIt]' started.
+Test Case '-[MyTokensTests.SyncTests testAServerChangeIsNotRemovedWhenThePersonalMacNoLongerSendsIt]' passed (0.001 seconds).
+Test Case '-[MyTokensTests.SyncTests testAServerMayStillChangeASecretEnteredThere]' started.
+Test Case '-[MyTokensTests.SyncTests testAServerMayStillChangeASecretEnteredThere]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.SyncTests testAServerPutIntoAPushedSecretIsRefusedAndTheNextSyncChangesNothing]' started.
+Test Case '-[MyTokensTests.SyncTests testAServerPutIntoAPushedSecretIsRefusedAndTheNextSyncChangesNothing]' passed (0.001 seconds).
+Test Case '-[MyTokensTests.SyncTests testAServerReplacesInPlaceASecretItEnteredAndTheNextSyncUpdatesTheAdoptedCopy]' started.
+Test Case '-[MyTokensTests.SyncTests testAServerReplacesInPlaceASecretItEnteredAndTheNextSyncUpdatesTheAdoptedCopy]' passed (0.002 seconds).
+Test Case '-[MyTokensTests.SyncTests testFailedGetUnpushedNamesAdoptAndReportsTheServerError]' started.
+Test Case '-[MyTokensTests.SyncTests testFailedGetUnpushedNamesAdoptAndReportsTheServerError]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.SyncTests testFailedPutStdinNamesPushAndReportsTheServerErrorWithoutValues]' started.
+Test Case '-[MyTokensTests.SyncTests testFailedPutStdinNamesPushAndReportsTheServerErrorWithoutValues]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.SyncTests testFailedSSHIsReportedAndNonZero]' started.
+Test Case '-[MyTokensTests.SyncTests testFailedSSHIsReportedAndNonZero]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.SyncTests testGetUnpushedIsRefusedOnAPersonalMac]' started.
+Test Case '-[MyTokensTests.SyncTests testGetUnpushedIsRefusedOnAPersonalMac]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.SyncTests testPushIsGoneAndNamesSync]' started.
+Test Case '-[MyTokensTests.SyncTests testPushIsGoneAndNamesSync]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.SyncTests testPutStdinIsRefusedOnAPersonalMac]' started.
+Test Case '-[MyTokensTests.SyncTests testPutStdinIsRefusedOnAPersonalMac]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.SyncTests testPutStdinRefusesAnAdoptionNotSent]' started.
+Test Case '-[MyTokensTests.SyncTests testPutStdinRefusesAnAdoptionNotSent]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.SyncTests testPutStdinRejectsAPersonalLevelSecretAndStoresNothing]' started.
+Test Case '-[MyTokensTests.SyncTests testPutStdinRejectsAPersonalLevelSecretAndStoresNothing]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.SyncTests testSecondSyncReportsNoChanges]' started.
+Test Case '-[MyTokensTests.SyncTests testSecondSyncReportsNoChanges]' passed (0.001 seconds).
+Test Case '-[MyTokensTests.SyncTests testSyncAddsServerLevelSecretsOnly]' started.
+Test Case '-[MyTokensTests.SyncTests testSyncAddsServerLevelSecretsOnly]' passed (0.001 seconds).
+Test Case '-[MyTokensTests.SyncTests testSyncIsRefusedOnAServer]' started.
+Test Case '-[MyTokensTests.SyncTests testSyncIsRefusedOnAServer]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.SyncTests testSyncPrunesSecretsNoLongerServerLevelOrGone]' started.
+Test Case '-[MyTokensTests.SyncTests testSyncPrunesSecretsNoLongerServerLevelOrGone]' passed (0.001 seconds).
+Test Case '-[MyTokensTests.SyncTests testSyncRefusesAHostThatLooksLikeAnOption]' started.
+Test Case '-[MyTokensTests.SyncTests testSyncRefusesAHostThatLooksLikeAnOption]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.SyncTests testSyncUpdatesAChangedSecret]' started.
+Test Case '-[MyTokensTests.SyncTests testSyncUpdatesAChangedSecret]' passed (0.001 seconds).
+Test Case '-[MyTokensTests.SyncTests testTheRefusalNamesANonDefaultAccount]' started.
+Test Case '-[MyTokensTests.SyncTests testTheRefusalNamesANonDefaultAccount]' passed (0.000 seconds).
+Test Case '-[MyTokensTests.SyncTests testValuesMadeOnTheServerInASecretOfTheirOwnAreAdopted]' started.
+Test Case '-[MyTokensTests.SyncTests testValuesMadeOnTheServerInASecretOfTheirOwnAreAdopted]' passed (0.001 seconds).
+Test Case '-[MyTokensTests.SyncTests testValuesTravelOnlyInThePipe]' started.
+Test Case '-[MyTokensTests.SyncTests testValuesTravelOnlyInThePipe]' passed (0.001 seconds).
+Test Suite 'SyncTests' passed at 2026-11-14 08:22:07.850.
+	 Executed 31 tests, with 0 failures (0 unexpected) in 0.019 (0.021) seconds
+Test Suite 'MyTokensTests.xctest' passed at 2026-11-14 08:22:07.850.
+	 Executed 183 tests, with 0 failures (0 unexpected) in 1.577 (1.588) seconds
+Test Suite 'All tests' passed at 2026-11-14 08:22:07.850.
+	 Executed 183 tests, with 0 failures (0 unexpected) in 1.577 (1.589) seconds
+rendered → /Users/felix/orca/workspaces/mytokens/sunfmin-control-890-a-server-may-replace-in-place-a-secret-i/out/secret-prompt-multi.png
+rendered → /Users/felix/orca/workspaces/mytokens/sunfmin-control-890-a-server-may-replace-in-place-a-secret-i/out/secret-prompt-description.png
+rendered → /Users/felix/orca/workspaces/mytokens/sunfmin-control-890-a-server-may-replace-in-place-a-secret-i/out/secret-prompt.png

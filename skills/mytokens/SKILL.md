@@ -102,7 +102,7 @@ The value is plaintext once `get` returns it (acceptable on this trusted machine
 | `mytokens list` | Stored services/accounts/kind/level/description/fields/meta; never values. |
 | `mytokens rm <service> [--account L]` | Delete the whole Secret. Whole-replace = `rm` then `put`. |
 | `mytokens selftest` | Real-keychain round-trip sanity check. |
-| `mytokens sync <host>` | On a personal Mac, over SSH (values only in the pipes): first **adopt** each Secret entered on the Server `<host>` — store it here, whole, `server`-level, Description noting the Server and date — then make the Server hold exactly the `server`-level Secrets. Prints `adopted`/`added`/`updated`/`removed`/`conflict` names, or `no changes`. A same-name Secret here is a `conflict`: neither side changes, exit non-zero — leave it for the human. `push` is gone. |
+| `mytokens sync <host>` | On a personal Mac, over SSH (values only in the pipes): first **adopt** each Secret entered on the Server `<host>` — store it here, whole, `server`-level, Description noting the Server and date — then make the Server hold exactly the `server`-level Secrets. Prints `adopted`/`added`/`updated`/`removed`/`conflict` names, or `no changes`. A Secret the Server entered and later changed in place is `adopted` again: the copy here follows it. A same-name Secret here not adopted from that Server, or one changed on both sides since the last `sync`, is a `conflict`: neither side changes, exit non-zero — leave it for the human. `push` is gone. |
 | `mytokens server add <host>` | On a personal Mac, over SSH: install or upgrade MyTokens on `<host>` (nothing needed there first), set it `server`, run `selftest` there, `sync`, and add it to the **Server list** every personal Mac shares. A failure names its step and leaves the host off the list. On a listed host it repairs (same steps, nothing else changes). |
 | `mytokens server list` / `mytokens server rm <host>` | Print the Server list (host names only). `rm` syncs `<host>` to hold no Secrets — adopting what was entered there first, stopping on a conflict — then takes it off the list. All three are refused on a Server. |
 | `mytokens server sync` / `server pause` / `server resume` | **Background Sync** (personal Mac only): its launchd agent runs `server sync` every 15 minutes and right after a `put`/`rm` changes a `server`-level Secret here. For each listed host, it upgrades MyTokens there when it is missing or older, then Syncs. Hosts are independent. `server list` shows each host's last Sync, or its failed step, error and fix. A host failing 24 h is pushed through Bark once a day (needs a `bark` Secret here). `pause`/`resume` apply to this Mac only. After a `put --level server`, you need not run `sync` yourself; run `mytokens server sync` only when it must happen now. |
@@ -113,8 +113,9 @@ The value is plaintext once `get` returns it (acceptable on this trusted machine
 `--level` says how far a Secret may travel (ADR-0010): `personal` (default — only the user's own
 Macs) or `server` (also held by the user's Servers, via `sync`). A Secret entered on a Server becomes
 a `server`-level Secret here at the next `sync`. On a Server, `put` into a Secret `sync` brought
-there is refused (exit 64, nothing stored): change it on a personal Mac, or put the Server's own
-values in a Secret of their own there, which the next `sync` adopts. A `put` without `--level` keeps the stored
+there from a personal Mac is refused (exit 64, nothing stored): change it on a personal Mac, or put the Server's own
+values in a Secret of their own there, which the next `sync` adopts. A Secret entered on the Server stays changeable
+there after adoption — rotate it in place; never start a `name-2`. A `put` without `--level` keeps the stored
 level. Mark a Secret `server` only when a job on a Server needs it.
 
 `--account` lets one Service hold several Secrets (`cloudflare/personal` vs `cloudflare/work`).

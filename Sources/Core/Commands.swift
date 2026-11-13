@@ -376,8 +376,9 @@ private func runPut(_ argv: [String], _ store: SecretStore, _ input: SecretInput
 
         // A pushed Secret's home is a personal Mac: the next sync would put its copy back over
         // any change made here, so a Server refuses the change before asking for a value
-        // (sunfmin/control#800, ADR-0012).
-        if role == .server, let record, record.pushed {
+        // (sunfmin/control#800, ADR-0012) — unless it was entered here and adopted: its
+        // origin is this Server, and the next sync carries the change back (ADR-0018).
+        if role == .server, let record, record.pushed, !record.adopted {
             return fail(pushedSecretRefusal(service: service, account: account), 64)
         }
 
@@ -389,7 +390,8 @@ private func runPut(_ argv: [String], _ store: SecretStore, _ input: SecretInput
 
         // On an existing Secret, --level with no field to write changes only the
         // metadata: the values are kept and no popup appears (ADR-0010).
-        let isMetadataOnly = existing != nil && !isLabelledWrite && explicitLevel != nil
+        // Only a --level given here counts: a Server's forced `server` level is no such request.
+        let isMetadataOnly = existing != nil && !isLabelledWrite && args.flags["level"] != nil
 
         // A Secret is either a lone bare value or a set of labelled fields; put can't
         // switch a secret between those shapes (rm first).
@@ -452,12 +454,27 @@ private func runPut(_ argv: [String], _ store: SecretStore, _ input: SecretInput
 
         try store.upsert(service: service, account: account, secret: secret,
                               kind: kind, meta: meta, description: description, level: level,
-                              pushed: false)
+                              marks: marksAfterPut(record, role))
         return ok("stored \(service)/\(account)\n")
     } catch let failure as CommandResult {
         return failure                       // a prompt that stored nothing
     } catch {
         return fail("\(error)\n", 1)
+    }
+}
+
+/// The sync marks a `put` leaves (ADR-0018). On a Server, a change to a Secret entered here and
+/// adopted stays pushed and adopted, now `changed`: the next sync carries it to the personal
+/// Mac. On a personal Mac, a change to a Secret with an origin Server is `changed` too, so a
+/// sync that finds it changed on the Server as well reports a conflict. Anything else: no marks.
+private func marksAfterPut(_ record: SecretRecord?, _ role: HostRole) -> SyncMarks {
+    guard let record else { return SyncMarks() }
+    switch role {
+    case .server:
+        return record.pushed && record.adopted ? SyncMarks(pushed: true, adopted: true, changed: true) : SyncMarks()
+    case .personal:
+        guard let origin = originHost(of: record) else { return SyncMarks() }
+        return SyncMarks(origin: origin, changed: true)
     }
 }
 
@@ -470,7 +487,8 @@ func pushedSecretRefusal(service: String, account: String) -> String {
     Change it on a personal Mac, its home:
       mytokens put \(name) --level server ...
     and the next sync brings it here. To keep values made on this server, put them in a \
-    secret of their own here instead: the next sync adopts it.
+    secret of their own here instead: the next sync adopts it, and this server may still \
+    change it in place.
 
     """
 }

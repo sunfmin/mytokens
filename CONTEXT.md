@@ -80,7 +80,8 @@ A Mac of the user's that runs unattended (reached over SSH / the tailnet) and do
 sign into iCloud. It holds only `server`-level Secrets, in local, non-synchronizable keychain
 items, received by **Sync** or entered on it directly — and a Secret entered on it is **Adopted**
 by the next Sync (ADR-0010, ADR-0012, ADR-0013). A Server refuses to `put` into a Secret Sync
-brought there: its home is a personal Mac. The other Macs are **personal Macs**.
+brought there from a personal Mac, but may change in place one it entered itself and that was
+Adopted: it is that Secret's **origin** (ADR-0018). The other Macs are **personal Macs**.
 _Avoid_: host (the generic machine word; `sync <host>` names one), remote.
 
 **Sync**:
@@ -113,9 +114,17 @@ _Avoid_: auto-push, cron, daemon (say which).
 **Adopt**:
 What Sync does with a Secret entered on a Server: store it on the personal Mac, whole, as a
 `server`-level Secret whose Description notes the Server and date, and mark it pushed on the
-Server — so from then on the personal Mac is its home. A Secret of the same name already on the
-personal Mac, at any level, is a **conflict**: neither side changes, and the human decides.
+Server — so from then on the personal Mac holds it too. The Server stays its **origin**: it may
+change it in place, and the next Sync Adopts the change into the personal Mac's copy (ADR-0018).
+A Secret of the same name already on the personal Mac and not Adopted from that Server, at any
+level, is a **conflict**: neither side changes, and the human decides — as is one changed on both
+sides since the last Sync.
 _Avoid_: import, pull, merge.
+
+**Origin**:
+The Server an Adopted Secret was entered on, and the only Server that may change it in place.
+A Secret entered on a personal Mac has none: a personal Mac is its home (ADR-0018).
+_Avoid_: source, owner.
 
 **Miss**:
 A job on a Server asking (`get`, `env`) for a Secret the Server does not hold. Instead of only

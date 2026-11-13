@@ -9,6 +9,9 @@ import Foundation
 //      of the same name for, `server`-level, its Description noting where it came from. A
 //      same-name Secret here is a conflict: neither side changes, since a Server must never
 //      overwrite a Secret on the user's own Macs (the iCloud Keychain would carry it to all).
+//      A Secret entered on the Server and adopted keeps the Server as its origin (ADR-0018):
+//      the Server may change it in place, `get --unpushed` writes it again once changed, and
+//      the personal Mac's copy follows — unless this Mac changed its copy too: a conflict.
 //   2. Push. `ssh <host> mytokens put --stdin` reads the whole desired set — every
 //      `server`-level Secret here, the adopted ones named — and the Server converges to it.
 //
@@ -25,6 +28,10 @@ private struct WireSecret: Codable, Equatable {
     var meta: String?          // compact, key-sorted JSON, as `SecretRecord.meta` holds it
     var description: String?
     var fields: [Field]        // a lone unlabelled value is one Field with the empty label
+    /// Adopt direction: an adopted Secret the Server changed since the last sync (ADR-0018).
+    var changed: Bool? = nil
+    /// Push direction: this Secret was entered on the receiving Server, its origin (ADR-0018).
+    var enteredThere: Bool? = nil
 
     init(_ record: SecretRecord, _ secret: SecretValue) {
         service = record.service
@@ -42,6 +49,8 @@ private struct WireSecret: Codable, Equatable {
     func sameContent(_ other: WireSecret) -> Bool {
         fields == other.fields && kind == other.kind && meta == other.meta
     }
+    /// Same content and the same Description.
+    func sameRecord(_ other: WireSecret) -> Bool { sameContent(other) && description == other.description }
 }
 
 /// What both pipes carry. `adopt` (push direction only) names the Secrets the Server
@@ -100,6 +109,17 @@ func adoptionNote(host: String, on date: Date) -> String {
     return "adopted from \(host) on \(f.string(from: date))"
 }
 
+/// The Server a personal Mac's Secret was adopted from: its origin mark, or for one adopted
+/// before the mark existed, the host its Description's adoption note names (ADR-0018).
+func originHost(of record: SecretRecord) -> String? {
+    if let origin = record.origin { return origin }
+    guard let description = record.description,
+          let match = description.range(of: #"adopted from (\S+) on \d{4}-\d{2}-\d{2}"#, options: .regularExpression)
+    else { return nil }
+    let words = description[match].split(separator: " ")
+    return String(words[2])
+}
+
 private func byName(_ a: SecretRecord, _ b: SecretRecord) -> Bool { (a.service, a.account) < (b.service, b.account) }
 
 /// What a Sync leaves the Server holding: every `server`-level Secret here (`sync`, `server
@@ -135,9 +155,29 @@ func sync(with host: String, store: SecretStore, via remote: Remote, now: Date,
             return failed("\(bad.name) on \(host) has an empty value; nothing adopted\n")
         }
         let here = try store.list()
-        var adopt: [String] = [], conflicts: [String] = []
+        var adopt: [String] = [], conflicts: [String] = [], conflicted: Set<String> = []
         for s in entered.secrets.sorted(by: { ($0.service, $0.account) < ($1.service, $1.account) }) {
-            if let mine = here.first(where: { $0.service == s.service && $0.account == s.account }) {
+            let mine = here.first(where: { $0.service == s.service && $0.account == s.account })
+            if s.changed == true, let mine, mine.level == .server, originHost(of: mine) == host,
+               let value = try store.get(service: s.service, account: s.account) {
+                // Changed on the Server, its origin (ADR-0018). This Mac's copy follows, unless
+                // it was changed here too since the last sync: then both keep their values.
+                let ours = WireSecret(mine, value)
+                if mine.changed && !ours.sameRecord(s) {
+                    conflicted.insert(s.name)
+                    conflicts.append("conflict \(s.name): changed on \(host) and on this Mac since the last sync; neither changed")
+                    continue
+                }
+                if !ours.sameRecord(s) || mine.changed || mine.origin == nil {
+                    try store.upsert(service: s.service, account: s.account, secret: s.secret, kind: s.kind,
+                                     meta: s.meta.flatMap(JSONUtil.parse), description: s.description,
+                                     level: .server, marks: SyncMarks(origin: host))
+                }
+                adopt.append(s.name)
+                lines.append("adopted \(s.name)")
+                continue
+            }
+            if let mine {
                 // An adoption cut short (stored here, the push never reached the Server) left
                 // this Mac's copy server-level with the same content: finish it. Anything
                 // else is a conflict, and neither side changes.
@@ -146,15 +186,17 @@ func sync(with host: String, store: SecretStore, via remote: Remote, now: Date,
                     adopt.append(s.name)
                     lines.append("adopted \(s.name)")
                 } else {
+                    conflicted.insert(s.name)
                     conflicts.append("conflict \(s.name): entered on \(host) and also on this Mac; neither changed")
                 }
                 continue
             }
+            // A changed Secret this Mac no longer holds was adopted once: its note is there already.
             let note = adoptionNote(host: host, on: now)
-            let description = s.description.map { "\($0) (\(note))" } ?? note
+            let description = s.changed == true ? s.description : s.description.map { "\($0) (\(note))" } ?? note
             try store.upsert(service: s.service, account: s.account, secret: s.secret, kind: s.kind,
                              meta: s.meta.flatMap(JSONUtil.parse), description: description,
-                             level: .server, pushed: false)
+                             level: .server, marks: SyncMarks(origin: host))
             adopt.append(s.name)
             lines.append("adopted \(s.name)")
         }
@@ -163,7 +205,11 @@ func sync(with host: String, store: SecretStore, via remote: Remote, now: Date,
         step = "push"
         func push(_ records: [SecretRecord], adopt: [String]) throws -> CommandResult? {
             let secrets = try records.sorted(by: byName).compactMap { r in
-                try store.get(service: r.service, account: r.account).map { WireSecret(r, $0) }
+                try store.get(service: r.service, account: r.account).map { value -> WireSecret in
+                    var w = WireSecret(r, value)
+                    if originHost(of: r) == host { w.enteredThere = true }
+                    return w
+                }
             }
             let payload = try JSONEncoder().encode(WirePayload(secrets: secrets, adopt: adopt))
             let pushed = try remote.run(host: host, command: remotePutCommand, stdin: payload)
@@ -187,6 +233,14 @@ func sync(with host: String, store: SecretStore, via remote: Remote, now: Date,
             }
             if let failure = try push([], adopt: []) { return failure }
         }
+        // The Server, the origin of these, now holds this Mac's copies or none: they are no
+        // longer changed since the last sync with it (ADR-0018). A conflict stays changed.
+        for r in try store.list() where r.changed && originHost(of: r) == host && !conflicted.contains("\(r.service)/\(r.account)") {
+            guard let value = try store.get(service: r.service, account: r.account) else { continue }
+            try store.upsert(service: r.service, account: r.account, secret: value, kind: r.kind,
+                             meta: r.meta.flatMap(JSONUtil.parse), description: r.description,
+                             level: r.level, marks: SyncMarks(origin: host))
+        }
         lines += conflicts
         if lines.isEmpty { lines.append("no changes") }
         return CommandResult(stdout: lines.map { $0 + "\n" }.joined(), stderr: "",
@@ -196,13 +250,18 @@ func sync(with host: String, store: SecretStore, via remote: Remote, now: Date,
     }
 }
 
-/// `get --unpushed`, on a Server: write every Secret entered here (no pushed mark), values
-/// included, for `sync` to adopt. Its stdout is the SSH pipe back to the personal Mac.
+/// `get --unpushed`, on a Server: write every Secret entered here (no pushed mark), and every
+/// adopted one changed here since (ADR-0018), values included, for `sync` to adopt. Its
+/// stdout is the SSH pipe back to the personal Mac.
 func exportUnpushed(from store: SecretStore) -> CommandResult {
     do {
-        let records = try store.list().filter { !$0.pushed }.sorted(by: byName)
+        let records = try store.list().filter { !$0.pushed || $0.changed }.sorted(by: byName)
         let secrets = try records.compactMap { r in
-            try store.get(service: r.service, account: r.account).map { WireSecret(r, $0) }
+            try store.get(service: r.service, account: r.account).map { value -> WireSecret in
+                var w = WireSecret(r, value)
+                if r.pushed && r.changed { w.changed = true }
+                return w
+            }
         }
         let data = try JSONEncoder().encode(WirePayload(secrets: secrets, adopt: nil))
         return CommandResult(stdout: String(decoding: data, as: UTF8.self), stderr: "", exitCode: 0)
@@ -214,7 +273,8 @@ func exportUnpushed(from store: SecretStore) -> CommandResult {
 /// `put --stdin`, on a Server: converge the store to the pushed set. Adds and updates each
 /// pushed Secret (marking it pushed), marks the adopted ones pushed, removes every
 /// earlier-pushed Secret the set no longer holds, and leaves any other Secret entered here
-/// alone (an unadopted conflict). Prints what it added, updated or removed by name, or
+/// alone (an unadopted conflict) — as it leaves one changed here that the personal Mac did
+/// not take (ADR-0018). A Secret sent as entered here is marked adopted: it may change here. Prints what it added, updated or removed by name, or
 /// `no changes`. Validates the whole set before writing anything.
 func receivePush(_ input: Data, into store: SecretStore) -> CommandResult {
     func fail(_ s: String) -> CommandResult { CommandResult(stdout: "", stderr: s, exitCode: 1) }
@@ -241,18 +301,24 @@ func receivePush(_ input: Data, into store: SecretStore) -> CommandResult {
         var lines: [String] = []
         for s in incoming {
             let existing = here.first { $0.service == s.service && $0.account == s.account }
-            let adopting = existing.map { !$0.pushed && adopt.contains(s.name) } ?? false
-            if let existing, !existing.pushed, !adopting { continue }   // entered here, not adopted
-            if let existing, existing.pushed, let value = try store.get(service: s.service, account: s.account),
-               WireSecret(existing, value) == s {
+            let ownChange = existing.map { !$0.pushed || $0.changed } ?? false
+            let adopting = ownChange && adopt.contains(s.name)
+            if ownChange, !adopting { continue }   // entered or changed here, not taken: a conflict
+            let adopted = s.enteredThere ?? (adopting || existing?.adopted == true)
+            let same = try existing.flatMap { e in
+                try store.get(service: s.service, account: s.account).map { WireSecret(e, $0).sameRecord(s) }
+            } ?? false
+            if let existing, existing.pushed, !existing.changed, existing.adopted == adopted, same {
                 continue   // already exactly this
             }
             try store.upsert(service: s.service, account: s.account, secret: s.secret, kind: s.kind,
                              meta: s.meta.flatMap(JSONUtil.parse), description: s.description,
-                             level: .server, pushed: true)
-            if !adopting { lines.append("\(existing == nil ? "added" : "updated") \(s.name)") }
+                             level: .server, marks: SyncMarks(pushed: true, adopted: adopted))
+            if !adopting && !same {   // a mark alone changing is no news
+                lines.append("\(existing == nil ? "added" : "updated") \(s.name)")
+            }
         }
-        let gone = here.filter { $0.pushed && !wanted.contains("\($0.service)/\($0.account)") }
+        let gone = here.filter { $0.pushed && !$0.changed && !wanted.contains("\($0.service)/\($0.account)") }
         for r in gone.sorted(by: byName) {
             _ = try store.delete(service: r.service, account: r.account)
             lines.append("removed \(r.service)/\(r.account)")

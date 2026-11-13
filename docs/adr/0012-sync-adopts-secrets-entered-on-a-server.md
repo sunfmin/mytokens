@@ -64,6 +64,13 @@ Server and not yet adopted carries no pushed mark, so the Server may still chang
 - **Adopt the Server's Fields one by one into the personal Mac's Secret.** Rejected by the
   rule above: a Server must never write over a Secret on the user's own Macs.
 
+## Amended by ADR-0018
+
+A Secret entered on a Server and adopted keeps that Server as its origin: the Server may change
+it in place, and the next `sync` carries the change to the personal Mac's copy; a change on
+both sides is a conflict. Below, "a Server must never overwrite a Secret on the user's own
+Macs" holds for every Secret whose origin is a personal Mac.
+
 ## Narrows ADR-0010
 
 ADR-0010's "a Secret entered on the Server itself is never touched" now holds only for a

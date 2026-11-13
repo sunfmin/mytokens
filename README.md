@@ -401,17 +401,23 @@ added deploy/default
 
 1. **Adopt.** Each secret entered on the server itself (`put` over SSH, or through a one-time
    link) comes back to this Mac as a `server`-level secret, whole, its description noting
-   `adopted from my-server on <date>`. From then on this Mac is its home: change, lower or
-   remove it here, and the next `sync` carries that to the server. If this Mac already has a
-   secret of the same name, at any level, `sync` changes **neither** side, prints
-   `conflict <name>: …` and exits non-zero once the rest is done — a server can never
-   overwrite a secret on your own Macs. Settle it by hand (e.g. `rm` one of them).
+   `adopted from my-server on <date>`. You can change, lower or remove it here, and the next
+   `sync` carries that to the server. The server stays its origin and may replace it in place
+   too (e.g. rotate a token): the next `sync` prints `adopted <name>` again and this Mac's copy
+   follows the server's. If both changed it since the last `sync`, `sync` changes **neither**
+   side, prints `conflict <name>: changed on my-server and on this Mac …` and exits non-zero;
+   `rm` it here to take the server's, or on the server to keep yours (ADR-0018).
+   If this Mac already has a secret of the same name that was not adopted from that server, at
+   any level, `sync` changes **neither** side, prints `conflict <name>: …` and exits non-zero
+   once the rest is done — a server can never overwrite a secret that came from your own Macs.
+   Settle it by hand (e.g. `rm` one of them).
 2. **Push.** The server then holds exactly your `server`-level secrets: `sync` adds and
    updates them, and removes ones it sent earlier that are now `personal` or gone.
 
-On the server, `put` into a secret that `sync` sent there is refused, and stores nothing: the
-next `sync` would put this Mac's copy back over the change. Change it here instead, or have the
-server put its own values in a secret of their own, which the next `sync` adopts.
+On the server, `put` into a secret that `sync` sent there from this Mac is refused, and stores
+nothing: the next `sync` would put this Mac's copy back over the change. Change it here
+instead, or have the server put its own values in a secret of their own, which the next `sync`
+adopts — and which the server may then keep changing in place.
 
 A second run prints `no changes`. The values travel only in the SSH pipes, between
 `mytokens get --unpushed` / `mytokens put --stdin` on the server and this Mac — never on a
@@ -534,7 +540,7 @@ each version needs a new tag. Screenshots are regenerated with `make screenshots
 - Decisions: [`docs/adr/`](./docs/adr/) — iCloud Keychain via a signed helper (0001), `get`
   returns the raw value (0002), a `.app` bundle (0003), minting (0004), multi-field
   Secrets (0005), per-Secret description (0006),
-  readable after first unlock (0011), releases built in GitHub Actions (0017)
+  readable after first unlock (0011), releases built in GitHub Actions (0017), a server changing a secret it entered (0018)
 - Skill behavior for Claude: [`skills/mytokens/SKILL.md`](./skills/mytokens/SKILL.md)
 
 ## License

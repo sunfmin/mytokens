@@ -33,6 +33,8 @@ struct Dependencies {
     var syncState: BackgroundSyncState = MemoryBackgroundSyncState()   // this Mac's Background Sync (ADR-0016)
     var agent: BackgroundAgent = NoBackgroundAgent()  // the launchd agent that runs it
     var backgroundRemote: Remote? = nil               // how its runs reach a Server; nil: `remote`
+    var vaults: ServerList = MemoryNameList()            // the 1Password vault list (ADR-0019)
+    var onepassword: OnePasswordCLI = OPCommand()        // how a vault is written
     static var live: Dependencies {
         .init(role: FileHostRoleSetting(),
               store: { KeychainSecretStore.opened($0.keychain) },
@@ -45,7 +47,8 @@ struct Dependencies {
               pushLedger: FilePushLedger(),
               syncState: FileBackgroundSyncState(),
               agent: LaunchdAgent(),
-              backgroundRemote: SSHRemote(unattended: true))
+              backgroundRemote: SSHRemote(unattended: true),
+              vaults: KeychainServerList.vaults)
     }
 }
 
@@ -135,21 +138,22 @@ func runCommand(_ argv: [String], _ deps: Dependencies) -> CommandResult {
     if cmd == "push" {
         return fail("push is now `mytokens sync <host>`: it also adopts the secrets entered on the server\n", 64)
     }
-    guard ["put", "get", "env", "list", "rm", "sync", "server", "selftest"].contains(cmd) else { return usage() }
+    guard ["put", "get", "env", "list", "rm", "sync", "server", "onepassword", "selftest"].contains(cmd) else { return usage() }
 
     // Every Secret command acts on the store the Mac's role picks (ADR-0010).
     let role: HostRole
     do { role = try deps.role.read() } catch { return fail("\(error)\n", 1) }
     let store = deps.store(role)
     // The Server list's item is not a Secret: no Secret may take its service (ADR-0015).
-    if ["put", "rm"].contains(cmd), rest.first == serverListService {
-        return fail("\(serverListService) is reserved for the server list\n", 64)
+    if ["put", "rm"].contains(cmd), rest.first == serverListService || rest.first == vaultListService {
+        return fail("\(rest.first!) is reserved for the server list and the 1Password vault list\n", 64)
     }
     switch cmd {
     case "put" where rest.contains("--stdin"): return runPutStdin(rest, store, deps.stdin, role)
     case "put": return changingServerLevel(rest, store, role, deps) { runPut(rest, store, deps.input(role), role, deps) }
     case "sync": return runSync(rest, store, deps, role)
     case "server": return runServer(rest, store, deps, role)
+    case "onepassword": return runOnePasswordCommand(rest, store, deps, role)
     case "get" where rest.contains("--unpushed"): return runGetUnpushed(rest, store, role)
     case "get": return runGet(rest, store, missing(role, store, deps))
     case "env": return runEnv(rest, store, missing(role, store, deps))
@@ -223,6 +227,11 @@ private func usage() -> CommandResult {
           each secret entered on the server as a server-level secret here (a
           same-name secret here is a conflict: neither side changes), then makes
           the server hold exactly this Mac's server-level secrets
+      mytokens onepassword add <vault> | rm <vault> | list
+          makes the 1Password vault hold exactly this Mac's server-level secrets
+          (one item each, written with the service account token stored as the
+          secret 1password-service-account), and keeps the vault list; rm empties
+          the vault of what mytokens made, then takes it off the list
       mytokens server add <host>
           sets up the server <host> over ssh: installs or upgrades MyTokens there,
           sets its role to server, runs selftest there, syncs, and adds it to the
@@ -531,6 +540,17 @@ private func runServer(_ argv: [String], _ store: SecretStore, _ deps: Dependenc
     case ("resume", 0): return serverPause(false, deps: deps)
     default: return usage()
     }
+}
+
+// `onepassword add|rm|list` keep the vault list and what the vaults hold (ADR-0019); like
+// `sync`, only on a personal Mac.
+private func runOnePasswordCommand(_ argv: [String], _ store: SecretStore, _ deps: Dependencies, _ role: HostRole) -> CommandResult {
+    let args = parseArgs(argv)
+    guard args.flags.isEmpty, args.sets.isEmpty, let verb = args.positionals.first else { return usage() }
+    guard role == .personal else {
+        return fail("this Mac is a server: run onepassword \(verb) on a personal Mac, the home of every secret\n", 64)
+    }
+    return runOnePassword(verb, Array(args.positionals.dropFirst()), store: store, deps: deps)
 }
 
 // `get --unpushed` is the Server's end of `sync`'s adoption: it takes nothing else, and is

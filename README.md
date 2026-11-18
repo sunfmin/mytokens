@@ -327,6 +327,30 @@ discovered from your tailnet. `server rm` first adopts whatever was entered on t
 stops, leaving the host listed, on a conflict, as `sync` does), then removes every secret it
 pushed there. All three commands are refused on a server.
 
+### A 1Password vault for machines without mytokens
+
+Linux boxes and CI don't run mytokens, but they can run `op`. Your own Mac can keep a 1Password
+vault holding exactly your `server`-level secrets, through a 1Password **service account**:
+
+```sh
+mytokens put 1password-service-account --description "1Password service account that writes the mytokens vault"
+mytokens onepassword add <vault>        # first sync, then listed; background sync keeps it current
+mytokens onepassword list               # each vault's last sync, or why it fails and the fix
+mytokens onepassword rm <vault>         # archives what mytokens made there, then unlists it
+```
+
+The service account token (`personal` level, never synced anywhere) needs write access to the
+vault; it reaches `op` only in the child's environment. Each secret becomes one item titled
+`<service>/<account>` (Description as notes, every field concealed, tag `mytokens`). Items you made
+yourself are never touched, nothing is adopted from the vault, and a vault failing for 24 hours is
+pushed through Bark like a server. A machine reads it with its own read-only service account:
+
+```sh
+op read "op://<vault>/<service>/<account>/<Label>"
+```
+
+(a lone value's label is `value`). See ADR-0019.
+
 ### Background sync
 
 Each of your own Macs keeps every listed server current by itself. `install.sh` sets up a

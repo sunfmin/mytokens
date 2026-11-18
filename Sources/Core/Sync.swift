@@ -77,27 +77,8 @@ struct SSHRemote: Remote {
     var unattended = false
 
     func run(host: String, command: String, stdin: Data) throws -> CommandResult {
-        let p = Process()
-        p.executableURL = URL(fileURLWithPath: "/usr/bin/ssh")
         let options = unattended ? ["-o", "BatchMode=yes", "-o", "ConnectTimeout=20", "-o", "ServerAliveInterval=30"] : []
-        p.arguments = options + ["--", host, command]
-        let input = Pipe(), output = Pipe(), errors = Pipe()
-        p.standardInput = input
-        p.standardOutput = output
-        p.standardError = errors
-        try p.run()
-        // Drain both outputs while writing, so a chatty remote can't deadlock the pipe.
-        var out = Data(), err = Data()
-        let group = DispatchGroup()
-        group.enter(); DispatchQueue.global().async { out = output.fileHandleForReading.readDataToEndOfFile(); group.leave() }
-        group.enter(); DispatchQueue.global().async { err = errors.fileHandleForReading.readDataToEndOfFile(); group.leave() }
-        try? input.fileHandleForWriting.write(contentsOf: stdin)
-        try? input.fileHandleForWriting.close()
-        p.waitUntilExit()
-        group.wait()
-        return CommandResult(stdout: String(decoding: out, as: UTF8.self),
-                             stderr: String(decoding: err, as: UTF8.self),
-                             exitCode: p.terminationStatus)
+        return try runProcess("/usr/bin/ssh", options + ["--", host, command], stdin: stdin)
     }
 }
 

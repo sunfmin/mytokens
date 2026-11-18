@@ -372,7 +372,14 @@ op read "op://<vault>/<title>/<Label>"
 op read "op://<vault>/<title>/<Label> [<i>]/<key>"   # a list field
 ```
 
-(a lone value's label is `value`). See ADR-0022.
+(a lone value's label is `value`). What each item is for (its Description, as the start of the notes):
+
+```sh
+op item list --vault <v> --format json | jq -r '.[] | "\(.title)\t\(.additional_information)"'
+op item get <title> --vault <v> --fields notesPlain     # the whole Description
+```
+
+See ADR-0022.
 
 ### Background sync
 

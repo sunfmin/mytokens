@@ -15,14 +15,6 @@ let vaultListService = "mytokens.onepassword-vaults"
 /// never exported anywhere, whatever level it is given.
 let onePasswordTokenService = "1password-service-account"
 
-/// What a vault item made by mytokens carries: this tag, and a digest tag of what it holds, so
-/// one `op item list` shows whether an item is current without reading any value.
-let vaultItemTag = "mytokens"
-private let vaultDigestPrefix = "mytokens-digest-"
-
-/// The label of the Field a bare (unlabelled) Secret's value goes in.
-let vaultBareFieldLabel = "value"
-
 /// A vault list that lives in memory only: `Dependencies`' default, as for the other state;
 /// `.live` uses the keychain's.
 final class MemoryNameList: ServerList {
@@ -78,61 +70,6 @@ func runProcess(_ executable: String, _ arguments: [String], environment: [Strin
 /// The key a vault's status is kept under in Background Sync's state, apart from the hosts'.
 func vaultStatusKey(_ vault: String) -> String { "1password:\(vault)" }
 
-/// The title of a Secret's vault item: `<service>`, or `<service>.<account>` for a non-default
-/// account. No `/`, so `op://<vault>/<title>/<Label>` resolves (a `/` in a title does not).
-func vaultItemTitle(service: String, account: String) -> String {
-    account == "default" ? service : "\(service).\(account)"
-}
-
-/// One vault item as mytokens wants it.
-private struct VaultItem {
-    var title: String
-    var notes: String?
-    var fields: [(label: String, value: String, isList: Bool)]
-
-    /// What the item holds, hashed: equal digests, equal items. Not a way to read a value back
-    /// (the vault holds the values anyway).
-    var digest: String {
-        let canonical: [Any] = [title, notes ?? "", fields.map { $0.isList ? [$0.label, $0.value, "list"] : [$0.label, $0.value] }]
-        let data = (try? JSONSerialization.data(withJSONObject: canonical, options: [.sortedKeys])) ?? Data()
-        return SHA256.hash(data: data).prefix(16).map { String(format: "%02x", $0) }.joined()
-    }
-
-    /// The `op item` template, on stdin: every Field concealed (the store does not record which
-    /// Fields came from `--set`), the Description as the notes.
-    /// Category Secure Note: `op item list --format json` shows the start of its notes as
-    /// `additional_information` (an API Credential shows null), so the Description shows in a list.
-    /// `forEdit`: no category, so an item taken over keeps the one it has.
-    func template(forEdit: Bool = false) -> Data {
-        var fields: [[String: Any]] = []
-        var sections: [[String: Any]] = []
-        for f in self.fields {
-            let label = f.label.isEmpty ? vaultBareFieldLabel : f.label
-            if f.isList, let records = ListValue.records(f.value) {
-                // 1Password has no list type: one section per record, `<Label> [<i>]` (1-based),
-                // one concealed field per key, in key order (ADR-0020).
-                for (i, record) in records.enumerated() {
-                    let section: [String: Any] = ["id": "section\(sections.count)", "label": "\(label) [\(i + 1)]"]
-                    sections.append(section)
-                    for key in record.keys.sorted() {
-                        fields.append(["id": "field\(fields.count)", "label": key, "type": "CONCEALED",
-                                       "value": record[key]!, "section": section])
-                    }
-                }
-            } else {
-                fields.append(["id": "field\(fields.count)", "label": label, "type": "CONCEALED", "value": f.value])
-            }
-        }
-        if let notes, !notes.isEmpty {
-            fields.append(["id": "notesPlain", "label": "notesPlain", "type": "STRING", "purpose": "NOTES", "value": notes])
-        }
-        var item: [String: Any] = ["title": title, "tags": [vaultItemTag, vaultDigestPrefix + digest], "fields": fields]
-        if !forEdit { item["category"] = "SECURE_NOTE" }
-        if !sections.isEmpty { item["sections"] = sections }
-        return (try? JSONSerialization.data(withJSONObject: item, options: [.sortedKeys])) ?? Data()
-    }
-}
-
 /// An item already in the vault, from `op item list`.
 private struct ListedItem: Decodable {
     var id: String
@@ -164,7 +101,8 @@ private func wantedVaultItems(_ store: SecretStore, _ target: SyncTarget) -> Res
                         why: "\(other) and \(name) would both be the vault item \"\(title)\"; rename one (nothing was written)\n"))
                 }
                 owners[title] = name
-                wanted[title] = VaultItem(title: title, notes: r.description, fields: s.fields.map { ($0.label, $0.value, s.isList($0.label)) })
+                wanted[title] = VaultItem(service: r.service, account: r.account, kind: r.kind, meta: r.meta, description: r.description,
+                                          level: r.level, secret: s)
             }
         }
     } catch {

@@ -17,10 +17,12 @@ as one JSON string, which a server could not address by record.
   carries `"section": {id, label}`. A text Field is unchanged.
 - Record count changes add or remove sections, because the template is written whole. The digest
   tag covers the list (marked as a list), so an unchanged list makes no `op` write.
-- A server reads one value with `op read "op://<vault>/<title>/<Label> [1]/<key>"`, or rebuilds
-  the array with `op item get "<title>" --vault <vault> --format json`: take the
+- A server rebuilds the array with `op item get "<title>" --vault <vault> --format json`: take the
   fields whose `section.label` is `<Label> [<i>]`, group by section in `<i>` order, and make an
-  object `{label: value}` of each group.
+  object `{label: value}` of each group — `skills/mytokens/op/field.jq` does it (ADR-0022). `op read`
+  cannot address a record by the section's label: it refuses `[` in a reference (checked against real
+  1Password, mytokens#10); `op://<vault>/<title>/<section id>/<key>` with the section's id
+  (`section0`, `section1`, … in record order) does work.
 
 ## Considered Options
 
@@ -30,7 +32,6 @@ as one JSON string, which a server could not address by record.
 
 ## Consequences
 
-- Not verified against a real 1Password: this was built from the CLI help and the template shape
-  with a fake `op` in tests (the template it receives is asserted). That `op item edit --template`
-  replaces the whole field set (so that removed records go) and that `op read` resolves a section
-  label containing `[ ]` are assumed; if either fails, read with `op item get ... --format json`.
+- Checked against real 1Password (mytokens#10): the template makes the sections, `op item get --format json`
+  returns them with `section.label`, and `op read` refuses `[ ]` in a section label (above). That `op item
+  edit --template` replaces the whole field set is still assumed from the sync's edit.

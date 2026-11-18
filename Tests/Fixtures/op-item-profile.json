@@ -1,0 +1,105 @@
+{
+  "title": "scratch-10-profile",
+  "tags": [
+    "mytokens",
+    "mytokens-digest-99edd44a56d0a3a2b7bca046a3eeb016"
+  ],
+  "category": "SECURE_NOTE",
+  "additional_information": "p",
+  "sections": [
+    {
+      "id": "mytokens",
+      "label": "mytokens"
+    }
+  ],
+  "fields": [
+    {
+      "id": "notesPlain",
+      "type": "STRING",
+      "purpose": "NOTES",
+      "label": "notesPlain",
+      "value": "p",
+      "reference": "op://devbox/scratch-10-profile/notesPlain"
+    },
+    {
+      "id": "field0",
+      "type": "CONCEALED",
+      "label": "B_VAR",
+      "value": "it's",
+      "reference": "op://devbox/scratch-10-profile/B_VAR"
+    },
+    {
+      "id": "field1",
+      "type": "CONCEALED",
+      "label": "A_VAR",
+      "value": "x y",
+      "reference": "op://devbox/scratch-10-profile/A_VAR"
+    },
+    {
+      "id": "field2",
+      "section": {
+        "id": "mytokens",
+        "label": "mytokens"
+      },
+      "type": "STRING",
+      "label": "service",
+      "value": "scratch-10-profile",
+      "reference": "op://devbox/scratch-10-profile/mytokens/service"
+    },
+    {
+      "id": "field3",
+      "section": {
+        "id": "mytokens",
+        "label": "mytokens"
+      },
+      "type": "STRING",
+      "label": "account",
+      "value": "default",
+      "reference": "op://devbox/scratch-10-profile/mytokens/account"
+    },
+    {
+      "id": "field4",
+      "section": {
+        "id": "mytokens",
+        "label": "mytokens"
+      },
+      "type": "STRING",
+      "label": "kind",
+      "value": "profile",
+      "reference": "op://devbox/scratch-10-profile/mytokens/kind"
+    },
+    {
+      "id": "field5",
+      "section": {
+        "id": "mytokens",
+        "label": "mytokens"
+      },
+      "type": "STRING",
+      "label": "level",
+      "value": "server",
+      "reference": "op://devbox/scratch-10-profile/mytokens/level"
+    },
+    {
+      "id": "field6",
+      "section": {
+        "id": "mytokens",
+        "label": "mytokens"
+      },
+      "type": "STRING",
+      "label": "shape",
+      "value": "fields",
+      "reference": "op://devbox/scratch-10-profile/mytokens/shape"
+    },
+    {
+      "id": "field7",
+      "section": {
+        "id": "mytokens",
+        "label": "mytokens"
+      },
+      "type": "STRING",
+      "label": "order",
+      "value": "[\"B_VAR\",\"A_VAR\"]",
+      "reference": "op://devbox/scratch-10-profile/mytokens/order"
+    }
+  ]
+}

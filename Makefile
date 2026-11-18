@@ -29,7 +29,11 @@ MISE_VERSION := 2026.10.15
 MISE := $(shell command -v mise 2>/dev/null || printf '%s\n' '$(BIN_DIR)/mise')
 XCODEGEN := "$(MISE)" exec xcodegen@$(XCODEGEN_VERSION) -- xcodegen
 
-.PHONY: project build test install selftest verify signed dist release icon screenshots clean xcodegen-check xcodegen-install \
+# jq, pinned: the vault-reading programs (skills/mytokens/op) are tested with it. A jq already on
+# PATH or under $(BIN_DIR) is used; `make jq-install` installs this one under $(BIN_DIR) when absent.
+JQ_VERSION := 1.7.1
+
+.PHONY: project build test jq-install install selftest verify signed dist release icon screenshots clean xcodegen-check xcodegen-install \
 	release-verify release-wait set-version installed-version-check release-check-gh
 
 xcodegen-check:
@@ -44,6 +48,11 @@ xcodegen-install:
 
 project:
 	$(XCODEGEN) generate
+
+jq-install:
+	@if ! command -v jq >/dev/null 2>&1 && [ ! -x "$(BIN_DIR)/jq" ]; then \
+		tools/install-jq.sh "$(JQ_VERSION)" "$(BIN_DIR)/jq"; \
+	fi
 
 # Regenerate the app icon set from tools/makeicon.swift.
 icon:
@@ -62,7 +71,7 @@ build: project
 	xcodebuild -project $(PROJECT) -scheme $(APP) -configuration Release \
 		-derivedDataPath $(DERIVED) -allowProvisioningUpdates build
 
-test: project
+test: project jq-install
 	tools/xcodegen-need-test.sh
 	tools/asc-key-test.sh
 	tools/release-wait-test.sh

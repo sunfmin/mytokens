@@ -30,7 +30,7 @@ as a Server — every `server`-level Secret goes to every target (ADR-0012).
 - **One item per Secret**, title `<service>` (`<service>.<account>` when the account is not `default`; never a `/`,
   which `op://` cannot address), category Secure Note (`op item list --format json` shows the start of its notes as `additional_information`; an API Credential shows null), tag `mytokens`,
   and a tag `mytokens-digest-<hash>` of what the item holds. The Description is the notes. Every
-  Field is a **concealed** field, labelled by the Field's label (a bare value: `value`). The
+  Field is a **concealed** top-level field, labelled by the Field's label (a bare value: `value`). The
   store does not record which Fields came from `--set`, so none is written as plain text: the
   safe side. Items made earlier as API Credential are left as they are (a category cannot be edited, and their digest still matches, so the sync does not rewrite them); to get the Description into a list, `op item delete` them and the next sync recreates them as Secure Notes (`op://` references go by title, so they keep working).
 - **Values go to `op` on stdin** as an item template (`op item create|edit --template
@@ -48,8 +48,31 @@ as a Server — every `server`-level Secret goes to every target (ADR-0012).
   vault's status lives in the same per-Mac state under `1password:<vault>`; a vault failing 24
   hours is pushed through Bark like a host. A `put`/`rm` of a `server`-level Secret kicks the
   agent, which covers vaults too.
-- **A server reads** `op read "op://<vault>/<title>/<Label>"` with its own read-only
-  service account.
+- **The item holds the whole Secret, losslessly** (mytokens#10: a server reads its Secrets from the
+  vault with `op` alone, so nothing a Secret is may be lost). One mapping, Secret ⇄ item:
+  - **Description** → the notes (`notesPlain`); none ⇄ no notes.
+  - **Text Field** → a top-level concealed field labelled by the Field; a lone unlabelled value → `value`.
+  - **List Field** → one section per record `<Label> [<i>]`, one concealed field per key (ADR-0020).
+  - **Everything else** → the section **`mytokens`**, plain (non-concealed) STRING fields: `service`,
+    `account` (a title `a.b` is ambiguous: service names contain dots), `kind` (`static` | `parent` |
+    `profile`), `level`, `shape` (`bare` for the lone unlabelled value, `fields` for labelled ones, so
+    one Field labelled `value` is not a bare value), `order` (the Fields' labels in order, a JSON
+    array: a Profile's `export` order, and where a list sits among the text Fields), and `meta` (the
+    Meta as compact JSON; absent when there is none). A Field is a list when it has record sections,
+    else text.
+  - The metadata is in a section, and Fields are top-level, so a Field named `kind` still reads by
+    `op read "op://<vault>/<title>/kind"` as the Field; the metadata is `…/<title>/mytokens/kind`
+    (checked against real 1Password).
+  - `decodeVaultItem` (item JSON → Secret) is the inverse of the template; round trips are tested for
+    each shape. The digest tag is taken over the whole item and a format version, so an item written
+    by an earlier mapping counts as changed and the next sync rewrites it.
+- **A server reads with `op` alone**, with its own read-only service account (`OP_SERVICE_ACCOUNT_TOKEN`),
+  and the `jq` programs in `skills/mytokens/op/` (they `include "mytokens"`, so run with `jq -L <dir>`):
+  `secret.jq` → the same bytes as `mytokens get <service> --json`; `env.jq` → as `mytokens env
+  <service>` (a Profile); `field.jq --arg label <Label>` → as `mytokens get <service> --field <Label>`
+  (a list Field is its JSON array). The tests run each against encoded items and compare byte for byte
+  with mytokens' own output; `jq` is installed pinned into `$HOME/.local/bin` when the host has none
+  (`make jq-install`). One text Field: `op read "op://<vault>/<title>/<Label>"`.
 
 ## Considered Options
 
@@ -65,4 +88,4 @@ as a Server — every `server`-level Secret goes to every target (ADR-0012).
 - The vault holds every `server`-level value in clear to whoever the vault is shared with: that
   is the point, and the human chooses the vault.
 - `op` must be on the personal Mac's PATH (the agent's PATH has Homebrew's).
-- Not verified here: that `op` accepts `--template /dev/stdin`.
+- Checked against real 1Password (mytokens#10): `op item create` accepts `--template /dev/stdin`, and the items read back as the template says.

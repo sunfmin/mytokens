@@ -125,6 +125,45 @@ final class OnePasswordTests: XCTestCase {
         XCTAssertFalse(creates.contains { $0.stdin.contains("nope") || $0.stdin.contains("ops_TOKEN") })
     }
 
+    private func storeList(_ s: String, _ a: String, _ json: String) throws {
+        try laptop.upsert(service: s, account: a,
+                          secret: SecretValue(fields: [(label: "Hosts", value: try XCTUnwrap(ListValue.canonical(json)))], lists: ["Hosts"]),
+                          kind: "static", meta: nil, description: nil, level: .server, marks: SyncMarks())
+    }
+
+    private func template(_ c: Call) throws -> [String: Any] {
+        try XCTUnwrap(JSONSerialization.jsonObject(with: Data(c.stdin.utf8)) as? [String: Any])
+    }
+
+    func testAListFieldIsOneSectionPerRecordAndRecordCountChangesAddOrRemoveSections() throws {
+        try putToken()
+        try storeList("db", "prod", #"[{"user":"app","host":"db1","password":"p1"},{"host":"db2","user":"app","password":"p2"}]"#)
+        XCTAssertEqual(run(["onepassword", "add", "Servers"]).exitCode, 0)
+        try replay()
+        let t = try template(try XCTUnwrap(try writes().first))
+        let sections = try XCTUnwrap(t["sections"] as? [[String: Any]])
+        XCTAssertEqual(sections.map { $0["label"] as? String }, ["Hosts [1]", "Hosts [2]"])
+        let fields = try XCTUnwrap(t["fields"] as? [[String: Any]])
+        XCTAssertEqual(fields.map { $0["label"] as? String }, ["host", "password", "user", "host", "password", "user"])  // key order
+        XCTAssertTrue(fields.allSatisfy { $0["type"] as? String == "CONCEALED" })
+        let second = fields.filter { ($0["section"] as? [String: Any])?["label"] as? String == "Hosts [2]" }
+        XCTAssertEqual(second.compactMap { $0["value"] as? String }, ["db2", "p2", "app"])
+        // unchanged: no write
+        let mark = try writes().count
+        XCTAssertEqual(try? syncVault("Servers", store: laptop, cli: deps.onepassword).get(), ["no changes"])
+        XCTAssertEqual(try writes().count, mark)
+        // one record fewer: one section fewer; one more: one more
+        try storeList("db", "prod", #"[{"host":"db1","password":"p1","user":"app"}]"#)
+        XCTAssertEqual(try? syncVault("Servers", store: laptop, cli: deps.onepassword).get(), ["updated db/prod"])
+        try replay()
+        let fewer = try template(try XCTUnwrap(try writes().last))
+        XCTAssertEqual((fewer["sections"] as? [[String: Any]])?.count, 1)
+        try storeList("db", "prod", #"[{"a":"1"},{"a":"2"},{"a":"3"}]"#)
+        XCTAssertEqual(try? syncVault("Servers", store: laptop, cli: deps.onepassword).get(), ["updated db/prod"])
+        let more = try template(try XCTUnwrap(try writes().last))
+        XCTAssertEqual((more["sections"] as? [[String: Any]])?.map { $0["label"] as? String }, ["Hosts [1]", "Hosts [2]", "Hosts [3]"])
+    }
+
     func testASecondSyncWithNothingChangedMakesNoWrites() throws {
         try putToken()
         try store("github", "ci", "ghp_x")

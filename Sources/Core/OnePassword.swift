@@ -78,6 +78,12 @@ func runProcess(_ executable: String, _ arguments: [String], environment: [Strin
 /// The key a vault's status is kept under in Background Sync's state, apart from the hosts'.
 func vaultStatusKey(_ vault: String) -> String { "1password:\(vault)" }
 
+/// The title of a Secret's vault item: `<service>`, or `<service>.<account>` for a non-default
+/// account. No `/`, so `op://<vault>/<title>/<Label>` resolves (a `/` in a title does not).
+func vaultItemTitle(service: String, account: String) -> String {
+    account == "default" ? service : "\(service).\(account)"
+}
+
 /// One vault item as mytokens wants it.
 private struct VaultItem {
     var title: String
@@ -94,7 +100,8 @@ private struct VaultItem {
 
     /// The `op item` template, on stdin: every Field concealed (the store does not record which
     /// Fields came from `--set`), the Description as the notes.
-    var template: Data {
+    /// `forEdit`: no category, so an item taken over keeps the one it has.
+    func template(forEdit: Bool = false) -> Data {
         var fields: [[String: Any]] = []
         var sections: [[String: Any]] = []
         for f in self.fields {
@@ -117,8 +124,8 @@ private struct VaultItem {
         if let notes, !notes.isEmpty {
             fields.append(["id": "notesPlain", "label": "notesPlain", "type": "STRING", "purpose": "NOTES", "value": notes])
         }
-        var item: [String: Any] = ["title": title, "category": "API_CREDENTIAL",
-                                   "tags": [vaultItemTag, vaultDigestPrefix + digest], "fields": fields]
+        var item: [String: Any] = ["title": title, "tags": [vaultItemTag, vaultDigestPrefix + digest], "fields": fields]
+        if !forEdit { item["category"] = "API_CREDENTIAL" }
         if !sections.isEmpty { item["sections"] = sections }
         return (try? JSONSerialization.data(withJSONObject: item, options: [.sortedKeys])) ?? Data()
     }
@@ -129,6 +136,7 @@ private struct ListedItem: Decodable {
     var id: String
     var title: String
     var tags: [String]?
+    /// Only an item with a digest tag is the sync's own; a `mytokens`-tagged one without is hand-made.
     var digest: String? { tags?.first { $0.hasPrefix(vaultDigestPrefix) }.map { String($0.dropFirst(vaultDigestPrefix.count)) } }
 }
 
@@ -138,10 +146,36 @@ let vaultTokenMissing = """
 
     """
 
+/// The items the `server`-level Secrets want, by title. Two Secrets with one title fail, naming both.
+private func wantedVaultItems(_ store: SecretStore, _ target: SyncTarget) -> Result<[String: VaultItem], StepFailure> {
+    var wanted: [String: VaultItem] = [:]
+    var owners: [String: String] = [:]
+    do {
+        if target == .serverLevel {
+            for r in try store.list().sorted(by: { ($0.service, $0.account) < ($1.service, $1.account) })
+            where r.level == .server && r.service != onePasswordTokenService {
+                guard let s = try store.get(service: r.service, account: r.account) else { continue }
+                let title = vaultItemTitle(service: r.service, account: r.account)
+                let name = "\(r.service)/\(r.account)"
+                if let other = owners[title] {
+                    return .failure(StepFailure(step: "name the vault items",
+                        why: "\(other) and \(name) would both be the vault item \"\(title)\"; rename one (nothing was written)\n"))
+                }
+                owners[title] = name
+                wanted[title] = VaultItem(title: title, notes: r.description, fields: s.fields.map { ($0.label, $0.value, s.isList($0.label)) })
+            }
+        }
+    } catch {
+        return .failure(StepFailure(step: "read the secrets", why: "\(error)\n"))
+    }
+    return .success(wanted)
+}
+
 /// Sync one 1Password vault so it holds exactly this Mac's `server`-level Secrets (or none, for
-/// `.nothing`): one item per Secret, titled `<service>/<account>`. Items it made (the
-/// `mytokens` tag) whose Secret is gone or no longer `server`-level are archived; other items
-/// are never touched. Nothing is written when nothing changed. A failure names its step.
+/// `.nothing`): one item per Secret, titled `<service>` (`<service>.<account>` for a non-default account).
+/// An item is its own only with a `mytokens-digest-*` tag: those whose Secret is gone or no longer
+/// `server`-level are archived. A `mytokens`-tagged item without a digest whose title is wanted is
+/// taken over (edited in place); one whose title is not wanted, and every other item, is never touched. Nothing is written when nothing changed. A failure names its step.
 func syncVault(_ vault: String, store: SecretStore, cli: OnePasswordCLI, holding target: SyncTarget = .serverLevel)
     -> Result<[String], StepFailure> {
     // The service account token: a Secret on this Mac, never exported.
@@ -154,17 +188,10 @@ func syncVault(_ vault: String, store: SecretStore, cli: OnePasswordCLI, holding
     } catch {
         return .failure(StepFailure(step: "read the service account token", why: "\(error)\n"))
     }
-    var wanted: [String: VaultItem] = [:]
-    do {
-        if target == .serverLevel {
-            for r in try store.list() where r.level == .server && r.service != onePasswordTokenService {
-                guard let s = try store.get(service: r.service, account: r.account) else { continue }
-                let title = "\(r.service)/\(r.account)"
-                wanted[title] = VaultItem(title: title, notes: r.description, fields: s.fields.map { ($0.label, $0.value, s.isList($0.label)) })
-            }
-        }
-    } catch {
-        return .failure(StepFailure(step: "read the secrets", why: "\(error)\n"))
+    let wanted: [String: VaultItem]
+    switch wantedVaultItems(store, target) {
+    case .success(let w): wanted = w
+    case .failure(let f): return .failure(f)
     }
 
     func op(_ step: String, _ args: [String], stdin: Data = Data()) throws -> CommandResult {
@@ -183,12 +210,15 @@ func syncVault(_ vault: String, store: SecretStore, cli: OnePasswordCLI, holding
         }
         var lines: [String] = []
         var held: Set<String> = []
-        for item in items.filter({ $0.tags?.contains(vaultItemTag) == true }).sorted(by: { ($0.title, $0.id) < ($1.title, $1.id) }) {
+        let mine = items.filter { $0.digest != nil }.sorted(by: { ($0.title, $0.id) < ($1.title, $1.id) })
+        let handMade = items.filter { $0.digest == nil && $0.tags?.contains(vaultItemTag) == true }
+            .sorted(by: { ($0.title, $0.id) < ($1.title, $1.id) })
+        for item in mine {
             if let want = wanted[item.title], !held.contains(item.title) {
                 held.insert(item.title)
                 if item.digest != want.digest {
                     _ = try op("write the vault", ["item", "edit", item.id, "--vault", vault, "--template", "/dev/stdin"],
-                               stdin: want.template)
+                               stdin: want.template(forEdit: true))
                     lines.append("updated \(item.title)")
                 }
             } else {                      // its Secret is gone, or a second item of the same title
@@ -196,9 +226,16 @@ func syncVault(_ vault: String, store: SecretStore, cli: OnePasswordCLI, holding
                 lines.append("removed \(item.title)")
             }
         }
+        for item in handMade {            // taken over in place: same id, same category
+            guard let want = wanted[item.title], !held.contains(item.title) else { continue }
+            held.insert(item.title)
+            _ = try op("write the vault", ["item", "edit", item.id, "--vault", vault, "--template", "/dev/stdin"],
+                       stdin: want.template(forEdit: true))
+            lines.append("took over \(item.title)")
+        }
         for title in wanted.keys.sorted() where !held.contains(title) {
             _ = try op("write the vault", ["item", "create", "--vault", vault, "--template", "/dev/stdin"],
-                       stdin: wanted[title]!.template)
+                       stdin: wanted[title]!.template())
             lines.append("added \(title)")
         }
         return .success(lines.isEmpty ? ["no changes"] : lines)
@@ -207,6 +244,16 @@ func syncVault(_ vault: String, store: SecretStore, cli: OnePasswordCLI, holding
     } catch {
         return .failure(StepFailure(step: "write the vault", why: "\(error)\n"))
     }
+}
+
+/// How many `mytokens`-tagged items the vault holds that the sync does not own and no wanted Secret
+/// matches (hand-copied ones it leaves alone). nil when that can't be found out (no token, `op` failed).
+private func leftAloneCount(_ vault: String, store: SecretStore, cli: OnePasswordCLI) -> Int? {
+    guard let token = (try? store.get(service: onePasswordTokenService, account: "default"))?.loneValue, !token.isEmpty,
+          case .success(let wanted) = wantedVaultItems(store, .serverLevel),
+          let r = try? cli.run(["item", "list", "--vault", vault, "--tags", vaultItemTag, "--format", "json"], stdin: Data(), token: token),
+          r.exitCode == 0, let items = try? JSONDecoder().decode([ListedItem].self, from: Data(r.stdout.utf8)) else { return nil }
+    return items.filter { $0.digest == nil && $0.tags?.contains(vaultItemTag) == true && wanted[$0.title] == nil }.count
 }
 
 /// The line that fixes a vault's failure, where it is known.
@@ -235,6 +282,9 @@ func runOnePassword(_ verb: String, _ vaults: [String], store: SecretStore, deps
             return CommandResult(stdout: lines(listed.map { vault in
                 let status = statuses[vaultStatusKey(vault)]
                 var row = "\(vault)\t\(describeStatus(status))"
+                if let n = leftAloneCount(vault, store: store, cli: deps.onepassword), n > 0 {
+                    row += " — \(n) hand-made item\(n == 1 ? "" : "s") tagged \(vaultItemTag) left alone"
+                }
                 if let status, status.isFailing, let step = status.failedStep {
                     row += " — fix: " + vaultFixLine(vault: vault, StepFailure(step: step, why: status.failedError ?? ""))
                 }

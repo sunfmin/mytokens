@@ -17,8 +17,8 @@ as one JSON string, which a server could not address by record.
   carries `"section": {id, label}`. A text Field is unchanged.
 - Record count changes add or remove sections, because the template is written whole. The digest
   tag covers the list (marked as a list), so an unchanged list makes no `op` write.
-- A server reads one value with `op read "op://<vault>/<item>/<Label> [1]/<key>"`, or rebuilds
-  the array with `op item get "<service>/<account>" --vault <vault> --format json`: take the
+- A server reads one value with `op read "op://<vault>/<title>/<Label> [1]/<key>"`, or rebuilds
+  the array with `op item get "<title>" --vault <vault> --format json`: take the
   fields whose `section.label` is `<Label> [<i>]`, group by section in `<i>` order, and make an
   object `{label: value}` of each group.
 

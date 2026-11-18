@@ -105,7 +105,7 @@ final class OnePasswordTests: XCTestCase {
         try store("personal-only", "x", "nope", level: .personal)
         let r = run(["onepassword", "add", "Servers"])
         XCTAssertEqual(r.exitCode, 0, r.stderr)
-        XCTAssertEqual(r.stdout, "added aws/prod\nadded github/ci\nadded Servers to the vault list\n")
+        XCTAssertEqual(r.stdout, "added aws.prod\nadded github.ci\nadded Servers to the vault list\n")
         XCTAssertEqual(try vaults.read(), ["Servers"])
         let creates = try writes()
         XCTAssertEqual(creates.map { $0.args.prefix(2).joined(separator: " ") }, ["item create", "item create"])
@@ -114,7 +114,7 @@ final class OnePasswordTests: XCTestCase {
             XCTAssertFalse(c.args.joined().contains("ops_TOKEN") || c.args.joined().contains("ghp_SECRET"), "\(c.args)")
         }
         let gh = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(creates[1].stdin.utf8)) as? [String: Any])
-        XCTAssertEqual(gh["title"] as? String, "github/ci")
+        XCTAssertEqual(gh["title"] as? String, "github.ci")
         XCTAssertTrue((gh["tags"] as? [String])?.contains("mytokens") == true)
         let fields = try XCTUnwrap(gh["fields"] as? [[String: Any]])
         XCTAssertTrue(fields.contains { $0["type"] as? String == "CONCEALED" && $0["value"] as? String == "ghp_SECRET" })
@@ -154,12 +154,12 @@ final class OnePasswordTests: XCTestCase {
         XCTAssertEqual(try writes().count, mark)
         // one record fewer: one section fewer; one more: one more
         try storeList("db", "prod", #"[{"host":"db1","password":"p1","user":"app"}]"#)
-        XCTAssertEqual(try? syncVault("Servers", store: laptop, cli: deps.onepassword).get(), ["updated db/prod"])
+        XCTAssertEqual(try? syncVault("Servers", store: laptop, cli: deps.onepassword).get(), ["updated db.prod"])
         try replay()
         let fewer = try template(try XCTUnwrap(try writes().last))
         XCTAssertEqual((fewer["sections"] as? [[String: Any]])?.count, 1)
         try storeList("db", "prod", #"[{"a":"1"},{"a":"2"},{"a":"3"}]"#)
-        XCTAssertEqual(try? syncVault("Servers", store: laptop, cli: deps.onepassword).get(), ["updated db/prod"])
+        XCTAssertEqual(try? syncVault("Servers", store: laptop, cli: deps.onepassword).get(), ["updated db.prod"])
         let more = try template(try XCTUnwrap(try writes().last))
         XCTAssertEqual((more["sections"] as? [[String: Any]])?.map { $0["label"] as? String }, ["Hosts [1]", "Hosts [2]", "Hosts [3]"])
     }
@@ -187,7 +187,7 @@ final class OnePasswordTests: XCTestCase {
         try store("github", "ci", "two")
         try store("old", "x", "gone", level: .personal)        // lowered
         let r = syncVault("Servers", store: laptop, cli: deps.onepassword)
-        XCTAssertEqual(try? r.get(), ["updated github/ci", "removed old/x"])
+        XCTAssertEqual(try? r.get(), ["updated github.ci", "removed old.x"])
         let after = Array(try writes().dropFirst(mark))
         XCTAssertEqual(after.count, 2)
         XCTAssertTrue(after.contains { $0.args.prefix(3).joined(separator: " ").hasPrefix("item edit") && $0.stdin.contains("two") })
@@ -214,7 +214,7 @@ final class OnePasswordTests: XCTestCase {
         XCTAssertEqual(run(["onepassword", "add", "Servers"]).exitCode, 0)
         try replay()
         let r = run(["onepassword", "rm", "Servers"])
-        XCTAssertEqual(r.stdout, "removed github/ci\nremoved Servers from the vault list\n")
+        XCTAssertEqual(r.stdout, "removed github.ci\nremoved Servers from the vault list\n")
         XCTAssertEqual(try vaults.read(), [])
         XCTAssertEqual(run(["onepassword", "rm", "Servers"]).exitCode, 1)
     }
@@ -225,7 +225,7 @@ final class OnePasswordTests: XCTestCase {
         try vaults.write(["Servers"])
         var r = run(["server", "sync"])
         XCTAssertEqual(r.exitCode, 0, r.stderr)
-        XCTAssertTrue(r.stdout.contains("1Password vault Servers: added github/ci"), r.stdout)
+        XCTAssertTrue(r.stdout.contains("1Password vault Servers: added github.ci"), r.stdout)
         XCTAssertEqual(run(["onepassword", "list"]).stdout, "Servers\tlast synced 2026-11-12 08:00\n")
         // It fails; after 24 hours it is told through Bark, as a host would be.
         try "boom\n".write(toFile: dir + "/fail", atomically: true, encoding: .utf8)
@@ -246,9 +246,49 @@ final class OnePasswordTests: XCTestCase {
         XCTAssertEqual(runCommand(["onepassword", "add", "V"], server).exitCode, 64)
         XCTAssertEqual(runCommand(["put", vaultListService], deps).exitCode, 64)
         try putToken()
-        vault = [["id": "x", "title": "elsewhere/item", "tags": ["mytokens", "mytokens-digest-abc"]]]
+        vault = [["id": "x", "title": "elsewhere.item", "tags": ["mytokens", "mytokens-digest-abc"]]]
         try publishVault()
         _ = run(["onepassword", "add", "V"])
         XCTAssertNil(try laptop.get(service: "elsewhere", account: "item"))
+    }
+
+    func testAHandCopiedItemIsTakenOverInPlaceAndAnUnmatchedOneSurvivesTwoSyncs() throws {
+        try putToken()
+        try store("bark", "default", "https://bark.example/KEY")
+        vault = [["id": "hand1", "title": "bark", "tags": ["mytokens"], "category": "SECURE_NOTE"],
+                 ["id": "hand2", "title": "unrelated", "tags": ["mytokens"], "category": "SECURE_NOTE"]]
+        try publishVault()
+        XCTAssertEqual(try? syncVault("devbox", store: laptop, cli: deps.onepassword).get(), ["took over bark"])
+        let w = try writes()
+        XCTAssertEqual(w.count, 1)
+        XCTAssertEqual(Array(w[0].args.prefix(3)), ["item", "edit", "hand1"])
+        let t = try template(w[0])
+        XCTAssertEqual(t["title"] as? String, "bark")
+        XCTAssertNil(t["category"])                                  // its own category is kept
+        XCTAssertTrue((t["tags"] as? [String])?.contains { $0.hasPrefix("mytokens-digest-") } == true)
+        try replay()
+        XCTAssertEqual(try? syncVault("devbox", store: laptop, cli: deps.onepassword).get(), ["no changes"])
+        XCTAssertEqual(try writes().count, 1)
+        XCTAssertFalse(try writes().contains { $0.args.contains("hand2") })
+        try vaults.write(["devbox"])
+        XCTAssertTrue(run(["onepassword", "list"]).stdout.contains("1 hand-made item tagged mytokens left alone"))
+    }
+
+    func testANonDefaultAccountIsTitledServiceDotAccountAndNeverHasASlash() throws {
+        try putToken()
+        try store("github", "ci", "x")
+        try store("bark", "default", "y")
+        XCTAssertEqual(try? syncVault("V", store: laptop, cli: deps.onepassword).get(), ["added bark", "added github.ci"])
+        XCTAssertFalse(try writes().contains { (try? template($0))?["title"].map { "\($0)".contains("/") } ?? true })
+    }
+
+    func testATitleCollisionFailsNamingBothAndWritesNothing() throws {
+        try putToken()
+        try store("github", "ci", "x")
+        try store("github.ci", "default", "y")
+        let r = syncVault("V", store: laptop, cli: deps.onepassword)
+        guard case .failure(let f) = r else { return XCTFail("expected failure") }
+        XCTAssertTrue(f.why.contains("github/ci") && f.why.contains("github.ci/default"), f.why)
+        XCTAssertEqual(try writes().count, 0)
     }
 }

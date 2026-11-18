@@ -109,9 +109,10 @@ _Avoid_: fleet, inventory, known hosts (that is ssh's file).
 **1Password vault**:
 A target of Sync for machines that are not Macs running mytokens: a 1Password vault named by
 `mytokens onepassword add <vault>`, made to hold exactly the `server`-level Secrets, one item each
-(`<service>/<account>`, the Description as notes, every Field concealed, tag `mytokens`), with a
+(titled `<service>`, or `<service>.<account>` for a non-default account; the Description as notes,
+every Field concealed, tag `mytokens` plus a `mytokens-digest-*` tag that marks it as the sync's own), with a
 1Password service account whose token is the personal-level Secret `1password-service-account`.
-One-way: nothing is Adopted from it. Items mytokens did not make are never touched; Background
+One-way: nothing is Adopted from it. A hand-made `mytokens`-tagged item whose title is wanted is taken over in place; other items are never touched; Background
 Sync keeps it current (ADR-0022).
 _Avoid_: Server (a Server runs mytokens), backup, export.
 

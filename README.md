@@ -358,6 +358,7 @@ mytokens put 1password-service-account --description "1Password service account 
 mytokens onepassword add <vault>        # first sync, then listed; background sync keeps it current
 mytokens onepassword list               # each vault's last sync, or why it fails and the fix
 mytokens onepassword rm <vault>         # archives what mytokens made there, then unlists it
+mytokens onepassword keep <vault> <title> mac|1password   # settles a conflict: which side wins
 ```
 
 The service account token (`personal` level, never synced anywhere) needs write access to the
@@ -366,8 +367,13 @@ vault; it reaches `op` only in the child's environment. Each secret becomes one 
 tag `mytokens` and a digest tag). A hand-made `mytokens`-tagged item with a wanted title is taken over in
 place. The vault is two-way: an item you add or change in 1Password (any category) appears in mytokens as a
 `server`-level secret on the next sync and is rewritten into mytokens' format; one that can't be mapped without loss
-(two fields of one label, files) is not adopted and `onepassword list` says why. Changed on both sides is a conflict
-that `onepassword list` shows and neither side takes. A vault failing for 24 hours is
+(two fields of one label, files) is not adopted and `onepassword list` says why. Changed on both sides (or a
+hand-made item titled like a secret mytokens did not put there) is a conflict that `onepassword list` and the
+sync show and neither side takes; the conflict line names how to end it, `mytokens onepassword keep <vault>
+<title> mac|1password`: `mac` writes this Mac's secret over the item (a secret that is not `server`-level has the
+item archived instead), `1password` adopts the item over the secret. The next sync says nothing of it. `keep` is
+refused when the last sync reported no conflict on that title. (Don't `rm` one side, as for a server: `rm` on the
+Mac archives the vault item too.) A vault failing for 24 hours is
 pushed through Bark like a server. A machine reads it with its own read-only service account:
 
 ```sh

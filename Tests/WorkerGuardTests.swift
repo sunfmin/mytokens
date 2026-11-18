@@ -73,6 +73,7 @@ final class WorkerGuardTests: XCTestCase {
 
     func testOnePasswordAddIsRefused() { assertRefused(["onepassword", "add", "devbox"]) }
     func testOnePasswordRmIsRefused() { assertRefused(["onepassword", "rm", "devbox"]) }
+    func testOnePasswordKeepIsRefused() { assertRefused(["onepassword", "keep", "devbox", "stripe", "mac"]) }
     func testServerSyncIsRefused() { assertRefused(["server", "sync"]) }
     func testServerAddIsRefused() { assertRefused(["server", "add", "mini-jp"]) }
     func testServerRmIsRefused() { assertRefused(["server", "rm", "mini-jp"]) }

@@ -35,7 +35,7 @@ func refusedInWorker(_ what: String) -> CommandResult {
 func workerRefusal(_ cmd: String, _ positionals: [String], role: HostRole, serverLevel: () -> Bool) -> CommandResult? {
     let verb = positionals.first ?? ""
     switch cmd {
-    case "onepassword" where ["add", "rm"].contains(verb):
+    case "onepassword" where ["add", "rm", "keep"].contains(verb):
         return refusedInWorker("mytokens onepassword \(verb)")
     case "server" where ["add", "rm", "sync"].contains(verb):
         return refusedInWorker("mytokens server \(verb)")

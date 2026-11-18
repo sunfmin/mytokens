@@ -107,7 +107,14 @@ as a Server — every `server`-level Secret goes to every target (ADR-0012).
     sync inside that window must not create it again: the title's creation time is remembered for 2 minutes.
   - **Name clash.** An item the sync does not own whose title names a Secret on this Mac that the sync does
     not own (any level) is a **conflict**, not a takeover, except a `mytokens`-tagged item with a wanted title (the
-    2026-11-07 hand copies), still taken over in place.
+    2026-11-07 hand copies), still taken over in place. Its title counts as held: no second item is created.
+  - **Settling a conflict** (mytokens#16). `onepassword keep <vault> <title> mac|1password`, named on every
+    conflict line: a sync of the vault in which that one conflict is settled — `mac` writes the Mac's Secret over
+    the item (a name-clash Secret that is not `server`-level has the item archived instead), `1password` Adopts
+    the item over the Secret (`server`-level, origin the vault). Either is remembered as a sync's own write, so
+    the next sync says nothing. Refused, touching nothing, when the vault's last sync reported no conflict on
+    the title; exit 1 when this sync found none. Not ADR-0018's `rm` of one side: `rm` on the Mac archives the
+    item too.
   - **Budget** (measured, op 2.42): a service account may write 100 times an hour; every `create`/`edit`/`delete`
     is a write and every `op` call takes ~2 s. An unchanged vault costs one `item list`; an item is read only when
     its version moved; nothing unchanged is written.

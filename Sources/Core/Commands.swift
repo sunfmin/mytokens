@@ -251,6 +251,9 @@ private func usage() -> CommandResult {
           added or changed in the vault are adopted into mytokens (conflicts and
           unmappable items are shown by list); rm empties the vault of what
           mytokens made, then takes it off the list
+      mytokens onepassword keep <vault> <title> mac|1password
+          settles a conflict list shows: mac writes this Mac's secret over the
+          vault item, 1password adopts the item over the secret
       mytokens server add <host>
           sets up the server <host> over ssh: installs or upgrades MyTokens there,
           sets its role to server, runs selftest there, syncs, and adds it to the

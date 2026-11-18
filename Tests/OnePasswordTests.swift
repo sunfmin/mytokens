@@ -476,6 +476,7 @@ final class OnePasswordTests: XCTestCase {
         XCTAssertEqual(labels(try XCTUnwrap(try sec("mine")).1), ["=keep"])
         XCTAssertEqual(labels(try XCTUnwrap(try sec("srv")).1), ["=keep"])
         XCTAssertFalse(try writes().contains { $0.args.contains("p") || $0.args.contains("q") })
+        XCTAssertEqual(try writes().count, 0)        // no second item titled srv is created either
     }
 
     func testAnAdoptionCutShortIsFinishedAndRmAdoptsNothing() throws {
@@ -621,5 +622,112 @@ final class OnePasswordTests: XCTestCase {
         try replay()
         XCTAssertEqual(runCommand(["onepassword", "rm", "Servers"], d).exitCode, 0)
         XCTAssertEqual(counting.held, 2)
+    }
+
+    // `onepassword keep <vault> <title> mac|1password` settles one conflict (mytokens#16).
+
+    /// `stripe` adopted from the listed vault V, then changed on this Mac (`mac`) and in 1Password (`vault`):
+    /// the last sync (as `onepassword add`, recorded in the state) reported the conflict.
+    private func stripeInConflict() throws {
+        try putToken()
+        try handMade("h1", "stripe", fields: [["id": "1", "label": "key", "value": "v1"]])
+        XCTAssertEqual(run(["onepassword", "add", "V"]).stdout, "adopted stripe\nadded V to the vault list\n")
+        try replay()
+        XCTAssertEqual(run(["onepassword", "add", "V"]).stdout, "no changes\nV is on the vault list\n")
+        try store("stripe", fields: [("key", "mac")])
+        try editInVault("h1", "vault")
+        let r = run(["onepassword", "add", "V"])
+        XCTAssertTrue(r.stdout.hasPrefix("conflict stripe: changed in 1Password and on this Mac"), r.stdout)
+    }
+
+    func testAConflictLineNamesTheKeepCommandInListAndInTheSyncOutput() throws {
+        try stripeInConflict()
+        let hint = "settle it: mytokens onepassword keep V stripe mac|1password"
+        XCTAssertTrue(run(["onepassword", "list"]).stdout.contains("conflict stripe: changed in 1Password and on this Mac since the last sync; neither changed; " + hint),
+                      run(["onepassword", "list"]).stdout)
+        XCTAssertTrue(run(["server", "sync"]).stdout.contains(hint))
+        // a title or vault that needs quoting is quoted
+        XCTAssertEqual(vaultKeepHint("my vault", "a b"), "settle it: mytokens onepassword keep 'my vault' 'a b' mac|1password")
+    }
+
+    func testKeepMacWritesTheMacsSecretOverTheItemAndTheNextSyncSaysNothing() throws {
+        try stripeInConflict()
+        let before = try writes().count
+        let r = run(["onepassword", "keep", "V", "stripe", "mac"])
+        XCTAssertEqual(r.exitCode, 0, r.stderr)
+        XCTAssertEqual(r.stdout, "kept this Mac's stripe (written over 1Password's)\n")
+        XCTAssertEqual(try writes().count, before + 1)
+        XCTAssertTrue(try writes().last!.stdin.contains("\"mac\""))
+        XCTAssertEqual(labels(try XCTUnwrap(try sec("stripe")).1), ["key=mac"])
+        try replay()
+        XCTAssertEqual(run(["onepassword", "add", "V"]).stdout, "no changes\nV is on the vault list\n")
+        XCTAssertEqual(run(["onepassword", "list"]).stdout.contains("conflict"), false)
+        XCTAssertEqual(run(["onepassword", "keep", "V", "stripe", "mac"]).exitCode, 1)    // settled: nothing to keep
+    }
+
+    func testKeepOnePasswordAdoptsTheItemOverTheSecretAndTheNextSyncSaysNothing() throws {
+        try stripeInConflict()
+        let r = run(["onepassword", "keep", "V", "stripe", "1password"])
+        XCTAssertEqual(r.exitCode, 0, r.stderr)
+        XCTAssertEqual(r.stdout, "kept 1Password's stripe (adopted over this Mac's)\n")
+        let (rec, value) = try XCTUnwrap(try sec("stripe"))
+        XCTAssertEqual(labels(value), ["key=vault"])
+        XCTAssertEqual(rec.level, .server)
+        try replay()
+        XCTAssertEqual(run(["onepassword", "add", "V"]).stdout, "no changes\nV is on the vault list\n")
+        XCTAssertFalse(run(["onepassword", "list"]).stdout.contains("conflict"))
+    }
+
+    func testKeepIsRefusedWithoutAConflictAndTouchesNothing() throws {
+        try stripeInConflict()
+        try store("other", "default", "x")
+        _ = run(["onepassword", "add", "V"])
+        let before = try calls().count
+        for (argv, code) in [(["onepassword", "keep", "V", "other", "mac"], Int32(1)),         // no conflict on it
+                             (["onepassword", "keep", "W", "stripe", "mac"], 1),               // not a listed vault
+                             (["onepassword", "keep", "V", "stripe", "both"], 64),             // no such side
+                             (["onepassword", "keep", "V", "stripe"], 64)] {
+            let r = run(argv)
+            XCTAssertEqual(r.exitCode, code, "\(argv): \(r.stderr)")
+        }
+        XCTAssertTrue(run(["onepassword", "keep", "V", "other", "1password"]).stderr.contains("no conflict on other in the vault V"))
+        XCTAssertEqual(try calls().count, before)
+        XCTAssertEqual(labels(try XCTUnwrap(try sec("stripe")).1), ["key=mac"])
+    }
+
+    func testKeepSettlesAHandMadeItemNamingASecretTheSyncDoesNotOwn() throws {
+        try putToken()
+        try vaults.write(["V"])
+        try store("mine", "default", "keep", level: .personal)
+        try store("srv", "default", "keep", level: .server)
+        try store("ours", "default", "keep", level: .personal)
+        try handMade("p", "mine", fields: [["id": "1", "label": "k", "value": "other"]])
+        try handMade("q", "srv", fields: [["id": "1", "label": "k", "value": "other"]])
+        try handMade("r", "ours", fields: [["id": "1", "label": "k", "value": "theirs"]])
+        let conflicts = run(["server", "sync"]).stdout
+        for t in ["mine", "srv", "ours"] {
+            XCTAssertTrue(conflicts.contains("conflict \(t): a Secret of that name is on this Mac and the sync does not own it; neither changed; settle it: mytokens onepassword keep V \(t) mac|1password"), conflicts)
+        }
+        /// What `keep` said of `title` (each `keep` is a whole sync: the other conflicts are said too), the vault then replayed.
+        func keep(_ title: String, _ side: String) throws -> [String] {
+            let r = run(["onepassword", "keep", "V", title, side])
+            XCTAssertEqual(r.exitCode, 0, r.stderr)
+            try replay()
+            return r.stdout.split(separator: "\n").map(String.init).filter { !$0.hasPrefix("conflict ") }
+        }
+        // mac, server-level: the Secret is written over the item, which the sync then owns
+        XCTAssertEqual(try keep("srv", "mac"), ["kept this Mac's srv (written over 1Password's)"])
+        XCTAssertTrue(try writes().contains { $0.args.prefix(3) == ["item", "edit", "q"] && $0.stdin.contains("\"keep\"") })
+        // mac, personal: the item is archived, the Secret stays personal
+        XCTAssertEqual(try keep("mine", "mac"), ["kept this Mac's mine (personal-level, so not in the vault: 1Password's archived)"])
+        XCTAssertTrue(try writes().contains { $0.args.prefix(3) == ["item", "delete", "p"] })
+        XCTAssertEqual(try XCTUnwrap(try sec("mine")).0.level, .personal)
+        // 1password: Adopted over the Secret, server-level and the sync's
+        XCTAssertEqual(try keep("ours", "1password"), ["kept 1Password's ours (adopted over this Mac's)"])
+        let (rec, value) = try XCTUnwrap(try sec("ours"))
+        XCTAssertEqual(labels(value), ["k=theirs"])
+        XCTAssertEqual(rec.level, .server)
+        XCTAssertEqual(rec.origin, vaultOriginKey("V"))
+        XCTAssertEqual(run(["server", "sync"]).stdout.split(separator: "\n").last, "1Password vault V: no changes")
     }
 }

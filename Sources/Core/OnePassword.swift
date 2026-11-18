@@ -76,13 +76,16 @@ func vaultOriginKey(_ vault: String) -> String { "1password:\(vault)" }
 /// What this Mac remembers of one vault between syncs (kept in the vault's status, per Mac).
 /// `items`: for each item the sync owns, by id, the `version` 1Password listed after the sync last
 /// wrote or adopted it (nil when the write did not say) and the digest of what it then held; a
-/// listed version that differs means someone changed it in 1Password. `created`: when each title
-/// was created, because 1Password lists a new item only ~10 s later and a sync inside that window
-/// must not create it twice.
+/// listed version that differs means someone changed it in 1Password. `created` and `createdIds`:
+/// when each title was created and the id `create` answered with, because 1Password lists a new item
+/// only ~10 s later: a sync inside that window treats the title as held (it must not create it twice)
+/// and keeps what it knows of the id until the item is listed. (`createdIds` is optional: state
+/// written before it existed still reads.)
 struct VaultMemory: Codable, Equatable {
     struct Item: Codable, Equatable { var version: Int?; var digest: String }
     var items: [String: Item] = [:]
     var created: [String: Double] = [:]
+    var createdIds: [String: String]? = nil
 }
 
 final class VaultMemoryRef {
@@ -102,6 +105,19 @@ private struct ListedItem: Decodable {
     var category: String?
     /// Only an item with a digest tag is the sync's own; any other is hand-made.
     var digest: String? { tags?.first { $0.hasPrefix(vaultDigestPrefix) }.map { String($0.dropFirst(vaultDigestPrefix.count)) } }
+}
+
+/// How many writes the service account may still make: the smallest `remaining` of its token's write
+/// limit and its account's read/write limit (`op service-account ratelimit`, mytokens#14: 100 an
+/// hour per token, 1000 a day per account). nil when `op` does not say: then nothing is held back.
+private func remainingWrites(_ json: String) -> Int? {
+    guard let rows = (try? JSONSerialization.jsonObject(with: Data(json.utf8))) as? [[String: Any]] else { return nil }
+    let left = rows.compactMap { row -> Int? in
+        guard let remaining = row["remaining"] as? Int else { return nil }
+        let action = row["action"] as? String
+        return action == "write" || action == "read_write" ? remaining : nil
+    }
+    return left.min()
 }
 
 let vaultTokenMissing = """
@@ -158,7 +174,9 @@ private func adoptionDate(_ date: Date) -> String {
 /// - An item deleted in the vault whose Secret is `server`-level is written again.
 ///
 /// Lines starting `conflict` or `not adopted` are things the human decides; they come back on every
-/// sync until resolved. Nothing is written when nothing changed. A failure names its step.
+/// sync until resolved. Nothing is written when nothing changed, and an item never twice for one
+/// change. A write the service account's budget does not cover (`op service-account ratelimit`) is
+/// left for the next run, with a line `deferred <title>`. A failure names its step.
 func syncVault(_ vault: String, store: SecretStore, cli: OnePasswordCLI, holding target: SyncTarget = .serverLevel,
                now: Date = Date(), memory: VaultMemoryRef = VaultMemoryRef()) -> Result<[String], StepFailure> {
     // The service account token: a Secret on this Mac, never exported.
@@ -189,6 +207,20 @@ func syncVault(_ vault: String, store: SecretStore, cli: OnePasswordCLI, holding
     func written(_ r: CommandResult) -> (id: String?, version: Int?) {
         guard let o = (try? JSONSerialization.jsonObject(with: Data(r.stdout.utf8))) as? [String: Any] else { return (nil, nil) }
         return (o["id"] as? String, o["version"] as? Int)
+    }
+    var writesLeft: Int?
+    var budgetAsked = false
+    /// Whether one more write fits the service account's budget (asked of `op` once, at the first write).
+    func canWrite() throws -> Bool {
+        if !budgetAsked {
+            budgetAsked = true
+            let r = try? cli.run(["service-account", "ratelimit", "--format", "json"], stdin: Data(), token: token)
+            if let r, r.exitCode == 0 { writesLeft = remainingWrites(r.stdout) }
+        }
+        guard let left = writesLeft else { return true }
+        if left <= 0 { return false }
+        writesLeft = left - 1
+        return true
     }
     func edit(_ item: ListedItem, _ vi: VaultItem) throws -> Int? {
         written(try op("write the vault", ["item", "edit", item.id, "--vault", vault, "--format", "json"],
@@ -229,10 +261,23 @@ func syncVault(_ vault: String, store: SecretStore, cli: OnePasswordCLI, holding
                              meta: v.meta.flatMap(JSONUtil.parse), description: v.description, level: .server, marks: marks)
         }
 
+        let deferral = "the service account has no writes left this hour (op service-account ratelimit); the next run goes on"
+        /// Writes `vi` over `item` when the budget allows: its new version, or `.deferred` (a line says so).
+        enum Written { case version(Int?), deferred }
+        func tryEdit(_ item: ListedItem, _ vi: VaultItem, _ title: String) throws -> Written {
+            guard try canWrite() else { lines.append("deferred \(title): \(deferral)"); return .deferred }
+            return .version(try edit(item, vi))
+        }
+
         for item in mine {
             guard let want = wanted[item.title], !held.contains(item.title) else {
                 // its Secret is gone, or a second item of the same title
                 held.insert(item.title)
+                guard try canWrite() else {
+                    lines.append("deferred removing \(item.title): \(deferral)")
+                    if let memo = memory.value.items[item.id] { known[item.id] = memo }
+                    continue
+                }
                 _ = try op("write the vault", ["item", "delete", item.id, "--vault", vault, "--archive"])
                 lines.append("removed \(item.title)")
                 continue
@@ -244,29 +289,30 @@ func syncVault(_ vault: String, store: SecretStore, cli: OnePasswordCLI, holding
             let sameVersion = memo?.version != nil && memo?.version == item.version
             let wantDigest = want.digest
             func record(_ version: Int?, _ digest: String) { known[item.id] = VaultMemory.Item(version: version, digest: digest) }
-            if sameVersion {                       // nothing changed in 1Password: no read
-                if wantDigest == last { record(item.version, last) } else {
-                    record(try edit(item, want), wantDigest)
-                    lines.append("updated \(item.title)")
+            /// Writes `vi` over the item, remembers it and says `line`; a write the budget does not cover keeps what was known.
+            func write(_ vi: VaultItem, _ line: String) throws {
+                switch try tryEdit(item, vi, item.title) {
+                case .version(let v): record(v, vi.digest); lines.append(line)
+                case .deferred: if let memo { known[item.id] = memo }
                 }
+            }
+            if sameVersion {                       // nothing changed in 1Password: no read
+                if wantDigest == last { record(item.version, last) } else { try write(want, "updated \(item.title)") }
                 continue
             }
             let seen = (try? decodeVaultItem(try fetch(item))).map { normalized($0, like: want) }
             guard let seen else {                   // the item can no longer be read back: the Mac is the home
-                record(try edit(item, want), wantDigest)
-                lines.append("updated \(item.title)")
+                try write(want, "updated \(item.title)")
                 continue
             }
             if seen.digest == wantDigest {          // same content on both sides
-                if tagged != wantDigest { record(try edit(item, want), wantDigest); lines.append("updated \(item.title)") }
+                if tagged != wantDigest { try write(want, "updated \(item.title)") }
                 else { record(item.version, wantDigest) }
             } else if wantDigest == last {          // changed in 1Password only: Adopt it
                 try adoptIntoSecret(seen, marks: byTitle[item.title]?.marks ?? SyncMarks())
-                record(try edit(item, seen), seen.digest)
-                lines.append("adopted \(item.title) (changed in 1Password)")
+                try write(seen, "adopted \(item.title) (changed in 1Password)")
             } else if seen.digest == last {         // changed on the Mac only
-                record(try edit(item, want), wantDigest)
-                lines.append("updated \(item.title)")
+                try write(want, "updated \(item.title)")
             } else {
                 lines.append("conflict \(item.title): changed in 1Password and on this Mac since the last sync; neither changed")
                 if let memo { known[item.id] = memo }
@@ -282,9 +328,10 @@ func syncVault(_ vault: String, store: SecretStore, cli: OnePasswordCLI, holding
                 }
                 if let want = wanted[t], item.tags?.contains(vaultItemTag) == true {   // a hand copy: taken over in place
                     held.insert(t)
-                    let v = try edit(item, want)
-                    known[item.id] = VaultMemory.Item(version: v, digest: want.digest)
-                    lines.append("took over \(t)")
+                    if case .version(let v) = try tryEdit(item, want, t) {
+                        known[item.id] = VaultMemory.Item(version: v, digest: want.digest)
+                        lines.append("took over \(t)")
+                    }
                     continue
                 }
                 if let rec = byTitle[t] {
@@ -294,8 +341,10 @@ func syncVault(_ vault: String, store: SecretStore, cli: OnePasswordCLI, holding
                         held.insert(t)
                         let vi = VaultItem(service: rec.service, account: rec.account, kind: rec.kind, meta: rec.meta,
                                            description: rec.description, level: .server, secret: s)
-                        known[item.id] = VaultMemory.Item(version: try edit(item, vi), digest: vi.digest)
-                        lines.append("adopted \(t)")
+                        if case .version(let v) = try tryEdit(item, vi, t) {
+                            known[item.id] = VaultMemory.Item(version: v, digest: vi.digest)
+                            lines.append("adopted \(t)")
+                        }
                     } else {
                         lines.append("conflict \(t): a Secret of that name is on this Mac and the sync does not own it; neither changed")
                     }
@@ -311,19 +360,36 @@ func syncVault(_ vault: String, store: SecretStore, cli: OnePasswordCLI, holding
                 var vi = decoded
                 vi.description = decoded.description.map { "\(note)\n\($0)" } ?? note
                 try adoptIntoSecret(vi, marks: SyncMarks(origin: originKey))
-                known[item.id] = VaultMemory.Item(version: try edit(item, vi), digest: vi.digest)
-                lines.append("adopted \(t)")
+                // stored here either way: a deferred rewrite is finished by the next run (the cut-short case above)
+                if case .version(let v) = try tryEdit(item, vi, t) {
+                    known[item.id] = VaultMemory.Item(version: v, digest: vi.digest)
+                    lines.append("adopted \(t)")
+                }
             }
         }
 
+        // `create` answers with the id at once, 1Password lists the item ~10 s later: a title created
+        // inside that window counts as held, and what is known of its id is kept until it is listed.
+        var createdIds = memory.value.createdIds ?? [:]
+        createdIds = createdIds.filter { memory.value.created[$0.key] != nil }
+        let listedIds = Set(items.map(\.id))
+        for (title, id) in createdIds where !listedIds.contains(id) {
+            held.insert(title)
+            if known[id] == nil, let m = memory.value.items[id] { known[id] = m }
+        }
         for title in wanted.keys.sorted() where !held.contains(title) {
-            if memory.value.created[title] != nil { continue }      // created a moment ago; not listed yet
+            if memory.value.created[title] != nil { continue }
+            guard try canWrite() else { lines.append("deferred \(title): \(deferral)"); continue }
             let w = written(try op("write the vault", ["item", "create", "--vault", vault, "--format", "json"],
                                    stdin: wanted[title]!.template()))
             memory.value.created[title] = now.timeIntervalSince1970
-            if let id = w.id { known[id] = VaultMemory.Item(version: w.version, digest: wanted[title]!.digest) }
+            if let id = w.id {
+                known[id] = VaultMemory.Item(version: w.version, digest: wanted[title]!.digest)
+                createdIds[title] = id
+            }
             lines.append("added \(title)")
         }
+        memory.value.createdIds = createdIds.isEmpty ? nil : createdIds
         memory.value.items = known
         return .success(lines.isEmpty ? ["no changes"] : lines)
     } catch let failure as StepFailure {
@@ -333,9 +399,10 @@ func syncVault(_ vault: String, store: SecretStore, cli: OnePasswordCLI, holding
     }
 }
 
-/// The lines of a vault sync the human has to decide.
+/// The lines of a vault sync the human has to decide or know: conflicts, items not adopted, and
+/// writes the service account's budget deferred to the next run.
 func vaultAttention(_ lines: [String]) -> [String]? {
-    let a = lines.filter { $0.hasPrefix("conflict ") || $0.hasPrefix("not adopted ") }
+    let a = lines.filter { $0.hasPrefix("conflict ") || $0.hasPrefix("not adopted ") || $0.hasPrefix("deferred ") }
     return a.isEmpty ? nil : a
 }
 
@@ -373,28 +440,45 @@ func runOnePassword(_ verb: String, _ vaults: [String], store: SecretStore, deps
             }), stderr: "", exitCode: 0)
         case ("add", 1):
             guard validVault(vaults[0]) else { return fail("onepassword add needs a vault name (got \"\(vaults[0])\")\n", 64) }
-            let memory = VaultMemoryRef(deps.syncState.statuses()[vaultStatusKey(vaults[0])]?.vaultMemory ?? VaultMemory())
-            switch syncVault(vaults[0], store: store, cli: deps.onepassword, now: deps.now(), memory: memory) {
-            case .failure(let f):
-                return fail("onepassword add \(vaults[0]) failed to \(f.step); it is not added to the vault list:\n" + f.why)
-            case .success(var did):
-                deps.syncState.update(vaultStatusKey(vaults[0])) { $0.succeeded(at: deps.now()); $0.vaultMemory = memory.value; $0.attention = vaultAttention(did) }
-                if listed.contains(vaults[0]) { did.append("\(vaults[0]) is on the vault list") } else {
-                    try list.write(listed + [vaults[0]])
-                    did.append("added \(vaults[0]) to the vault list")
+            // Two syncs of one vault never run at once: this waits for a Background Sync run in progress.
+            var result = fail("onepassword add did not run\n")
+            deps.syncState.exclusively {
+                let memory = VaultMemoryRef(deps.syncState.statuses()[vaultStatusKey(vaults[0])]?.vaultMemory ?? VaultMemory())
+                switch syncVault(vaults[0], store: store, cli: deps.onepassword, now: deps.now(), memory: memory) {
+                case .failure(let f):
+                    result = fail("onepassword add \(vaults[0]) failed to \(f.step); it is not added to the vault list:\n" + f.why)
+                case .success(var did):
+                    deps.syncState.update(vaultStatusKey(vaults[0])) { $0.succeeded(at: deps.now()); $0.vaultMemory = memory.value; $0.attention = vaultAttention(did) }
+                    do {
+                        if listed.contains(vaults[0]) { did.append("\(vaults[0]) is on the vault list") } else {
+                            try list.write(listed + [vaults[0]])
+                            did.append("added \(vaults[0]) to the vault list")
+                        }
+                        result = CommandResult(stdout: lines(did), stderr: "", exitCode: 0)
+                    } catch { result = fail("\(error)\n") }
                 }
-                return CommandResult(stdout: lines(did), stderr: "", exitCode: 0)
             }
+            return result
         case ("rm", 1):
             guard listed.contains(vaults[0]) else { return fail("\(vaults[0]) is not on the vault list\n") }
-            switch syncVault(vaults[0], store: store, cli: deps.onepassword, holding: .nothing) {
-            case .failure(let f):
-                return fail("onepassword rm \(vaults[0]) failed to \(f.step); it stays on the vault list:\n" + f.why)
-            case .success(let did):
-                try list.write(listed.filter { $0 != vaults[0] })
-                deps.syncState.forget(vaultStatusKey(vaults[0]))
-                return CommandResult(stdout: lines(did + ["removed \(vaults[0]) from the vault list"]), stderr: "", exitCode: 0)
+            var result = fail("onepassword rm did not run\n")
+            deps.syncState.exclusively {
+                switch syncVault(vaults[0], store: store, cli: deps.onepassword, holding: .nothing) {
+                case .failure(let f):
+                    result = fail("onepassword rm \(vaults[0]) failed to \(f.step); it stays on the vault list:\n" + f.why)
+                case .success(let did):
+                    if did.contains(where: { $0.hasPrefix("deferred ") }) {
+                        result = fail("onepassword rm \(vaults[0]): the write budget ran out before the vault was emptied; it stays on the vault list (run it again later):\n" + lines(did))
+                        return
+                    }
+                    do {
+                        try list.write(listed.filter { $0 != vaults[0] })
+                        deps.syncState.forget(vaultStatusKey(vaults[0]))
+                        result = CommandResult(stdout: lines(did + ["removed \(vaults[0]) from the vault list"]), stderr: "", exitCode: 0)
+                    } catch { result = fail("\(error)\n") }
+                }
             }
+            return result
         default:
             return fail("usage: mytokens onepassword add <vault> | rm <vault> | list\n", 64)
         }

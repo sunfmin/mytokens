@@ -38,6 +38,8 @@ final class OnePasswordTests: XCTestCase {
             if [ -f "$d/fail" ]; then cat "$d/fail" >&2; exit 1; fi
             if [ "$1 $2" = "item list" ]; then cat "$d/list.json"; fi
             if [ "$1 $2" = "item get" ]; then cat "$d/items/$3.json" || exit 1; fi
+            if [ "$1 $2" = "service-account ratelimit" ]; then cat "$d/ratelimit.json" || exit 1; fi
+            if [ "$1 $2" = "item create" ] && [ -f "$d/create-answers" ]; then printf '{"id":"id%s","version":1}' "$n"; fi
 
             """
         try script.write(toFile: dir + "/bin/op", atomically: true, encoding: .utf8)
@@ -499,5 +501,125 @@ final class OnePasswordTests: XCTestCase {
         // not listed yet
         XCTAssertEqual(try? syncVault("V", store: laptop, cli: deps.onepassword, now: clock + 5, memory: memory).get(), ["no changes"])
         XCTAssertEqual(try writes().count, 1)
+    }
+
+    // MARK: the write budget, the create lag and the lock (mytokens#14)
+
+    /// What `op service-account ratelimit --format json` says: `remaining` writes for the token and the account.
+    private func ratelimit(writes remaining: Int) throws {
+        let rows: [[String: Any]] = [
+            ["type": "token", "action": "write", "limit": 100, "used": 100 - remaining, "remaining": remaining, "reset": 3000],
+            ["type": "token", "action": "read", "limit": 1000, "used": 0, "remaining": 1000, "reset": 3000],
+            ["type": "account", "action": "read_write", "limit": 1000, "used": 0, "remaining": 1000, "reset": 80000]]
+        try JSONSerialization.data(withJSONObject: rows).write(to: URL(fileURLWithPath: dir + "/ratelimit.json"))
+    }
+
+    func testASyncWritesWhatFitsTheBudgetSaysSoInListAndGoesOnNextRun() throws {
+        try putToken()
+        for s in ["a", "b", "c"] { try store(s) }
+        try ratelimit(writes: 2)
+        XCTAssertEqual(run(["onepassword", "add", "Servers"]).exitCode, 0)
+        XCTAssertEqual(try writes().count, 2)
+        let list = run(["onepassword", "list"]).stdout
+        XCTAssertTrue(list.contains("deferred c: the service account has no writes left"), list)
+        try replay()
+        // the next run, with room: the third is written, the first two are not written again
+        try ratelimit(writes: 98)
+        let mark = try writes().count
+        let r = try XCTUnwrap(try? syncVault("Servers", store: laptop, cli: deps.onepassword, now: clock + 600, memory: VaultMemoryRef()).get())
+        XCTAssertEqual(r, ["added c"])
+        XCTAssertEqual(try writes().count - mark, 1)
+    }
+
+    func testAnUnchangedItemIsNeverWrittenEvenWhenTheBudgetIsGone() throws {
+        try putToken()
+        try store("a"); try store("b")
+        XCTAssertEqual(run(["onepassword", "add", "Servers"]).exitCode, 0)
+        try replay()
+        try ratelimit(writes: 0)
+        let mark = try writes().count
+        XCTAssertEqual(try? syncVault("Servers", store: laptop, cli: deps.onepassword, now: clock + 600).get(), ["no changes"])
+        try store("a", "default", "changed")
+        let r = try XCTUnwrap(try? syncVault("Servers", store: laptop, cli: deps.onepassword, now: clock + 600).get())
+        XCTAssertEqual(r.count, 1)
+        XCTAssertTrue(r[0].hasPrefix("deferred a:"), "\(r)")
+        XCTAssertEqual(try writes().count, mark)
+    }
+
+    func testRmKeepsTheVaultOnTheListWhenTheBudgetRunsOutBeforeItIsEmpty() throws {
+        try putToken()
+        try store("a"); try store("b")
+        XCTAssertEqual(run(["onepassword", "add", "Servers"]).exitCode, 0)
+        try replay()
+        try ratelimit(writes: 1)
+        let r = run(["onepassword", "rm", "Servers"])
+        XCTAssertEqual(r.exitCode, 1)
+        XCTAssertTrue(r.stderr.contains("it stays on the vault list"), r.stderr)
+        XCTAssertEqual(try vaults.read(), ["Servers"])
+    }
+
+    func testAnOpThatDoesNotSayHowManyWritesAreLeftHoldsNothingBack() throws {
+        try putToken()
+        for s in ["a", "b", "c"] { try store(s) }       // no ratelimit.json: the fake op fails the call
+        XCTAssertEqual(run(["onepassword", "add", "Servers"]).exitCode, 0)
+        XCTAssertEqual(try writes().count, 3)
+    }
+
+    func testTheIdOfACreatedItemIsKeptUntilItIsListedAndNothingIsCreatedTwice() throws {
+        try putToken()
+        try FileManager.default.createFile(atPath: dir + "/create-answers", contents: Data())
+        try store("github", "ci", "x")
+        let memory = VaultMemoryRef()
+        XCTAssertEqual(try? syncVault("V", store: laptop, cli: deps.onepassword, now: clock, memory: memory).get(), ["added github.ci"])
+        let id = try XCTUnwrap(memory.value.createdIds?["github.ci"])
+        XCTAssertNotNil(memory.value.items[id])
+        // two syncs 2 s apart, 1Password not listing it yet: held, no write, the id still known
+        XCTAssertEqual(try? syncVault("V", store: laptop, cli: deps.onepassword, now: clock + 2, memory: memory).get(), ["no changes"])
+        XCTAssertEqual(try? syncVault("V", store: laptop, cli: deps.onepassword, now: clock + 4, memory: memory).get(), ["no changes"])
+        XCTAssertNotNil(memory.value.items[id])
+        XCTAssertEqual(try writes().count, 1)
+        // now listed (same version as the create said): no read, no write
+        try replay()
+        let reads = try gets().count
+        XCTAssertEqual(try? syncVault("V", store: laptop, cli: deps.onepassword, now: clock + 12, memory: memory).get(), ["no changes"])
+        XCTAssertEqual(try gets().count, reads)
+        XCTAssertEqual(try writes().count, 1)
+        // long after, the lag window is forgotten
+        XCTAssertEqual(try? syncVault("V", store: laptop, cli: deps.onepassword, now: clock + 600, memory: memory).get(), ["no changes"])
+        XCTAssertNil(memory.value.createdIds)
+    }
+
+    func testVaultMemoryWrittenBeforeCreatedIdsExistedStillReads() throws {
+        let old = #"{"items":{"i1":{"version":2,"digest":"d"}},"created":{"x":1.0}}"#
+        let m = try JSONDecoder().decode(VaultMemory.self, from: Data(old.utf8))
+        XCTAssertEqual(m.items["i1"]?.version, 2)
+        XCTAssertNil(m.createdIds)
+    }
+
+    /// A state that counts how many runs hold the lock, and how many at once.
+    private final class CountingState: BackgroundSyncState {
+        let inner = MemoryBackgroundSyncState()
+        var holding = 0, held = 0
+        func statuses() -> [String: HostSyncStatus] { inner.statuses() }
+        func save(_ statuses: [String: HostSyncStatus]) throws { try inner.save(statuses) }
+        func isPaused() -> Bool { inner.isPaused() }
+        func setPaused(_ paused: Bool) throws { try inner.setPaused(paused) }
+        func exclusively(_ body: () -> Void) { holding += 1; held += 1; body(); holding -= 1 }
+        func markPending() { inner.markPending() }
+        func takePending() -> Bool { inner.takePending() }
+    }
+
+    func testAddAndRmSyncTheVaultOnlyWhileHoldingTheRunLock() throws {
+        try putToken()
+        try store("a")
+        let counting = CountingState()
+        var d = deps
+        d.syncState = counting
+        XCTAssertEqual(runCommand(["onepassword", "add", "Servers"], d).exitCode, 0)
+        XCTAssertEqual(counting.held, 1)
+        XCTAssertEqual(counting.holding, 0)
+        try replay()
+        XCTAssertEqual(runCommand(["onepassword", "rm", "Servers"], d).exitCode, 0)
+        XCTAssertEqual(counting.held, 2)
     }
 }

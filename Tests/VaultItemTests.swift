@@ -108,6 +108,42 @@ final class VaultItemTests: XCTestCase {
         try XCTUnwrap(JSONSerialization.jsonObject(with: i.template()) as? [String: Any])
     }
 
+    /// What `op` accepts in an `op://` reference segment, apart from the space and `=` that ids never use.
+    private func isReadable(_ id: String) -> Bool {
+        !id.isEmpty && id.unicodeScalars.allSatisfy { $0.isASCII && (CharacterSet.alphanumerics.contains($0) || "_-.".unicodeScalars.contains($0)) }
+    }
+
+    func testEveryFieldAndListRecordGetsAnOpSafeIdAndTheLabelsStay() throws {
+        let hosts = try XCTUnwrap(ListValue.canonical(#"[{"host":"a","a:b":"1","a b":"2"},{"host":"b"}]"#))
+        try put("odd", secret: SecretValue(fields: [("中文", "cjk"), ("Access Key ID", "k"), ("a[b]:c", "u"), ("a_b__c", "v"),
+                                                   ("Hosts", hosts)], lists: ["Hosts"]))
+        let t = try template(try item("odd"))
+        let fields = try XCTUnwrap(t["fields"] as? [[String: Any]])
+        let sections = try XCTUnwrap(t["sections"] as? [[String: Any]])
+        let ids = fields.compactMap { $0["id"] as? String } + sections.compactMap { $0["id"] as? String }
+        XCTAssertTrue(ids.allSatisfy { $0 == "notesPlain" || isReadable($0) }, "\(ids)")
+        let top = fields.filter { $0["section"] == nil }
+        XCTAssertEqual(top.map { $0["label"] as? String }, ["中文", "Access Key ID", "a[b]:c", "a_b__c"])        // labels stay
+        XCTAssertEqual(top.map { $0["id"] as? String }, ["__", "Access_Key_ID", "a_b__c", "a_b__c_2"])            // collision numbered
+        XCTAssertEqual(sections.compactMap { $0["id"] as? String }, ["Hosts.1", "Hosts.2", "mytokens"])
+        XCTAssertEqual(sections.compactMap { $0["label"] as? String }, ["Hosts [1]", "Hosts [2]", "mytokens"])
+        let first = fields.filter { ($0["section"] as? [String: Any])?["id"] as? String == "Hosts.1" }
+        XCTAssertEqual(first.map { $0["label"] as? String }, ["a b", "a:b", "host"])
+        XCTAssertEqual(first.map { $0["id"] as? String }, ["a_b", "a_b_2", "host"])
+        // the metadata section says which id is which
+        let meta = try XCTUnwrap(fields.first { $0["label"] as? String == "ids" && $0["section"] != nil }?["value"] as? String)
+        let map = try XCTUnwrap(JSONUtil.parse(meta) as? [String: String])
+        XCTAssertEqual(map, ["中文": "__", "Access Key ID": "Access_Key_ID", "a[b]:c": "a_b__c", "a_b__c": "a_b__c_2", "Hosts": "Hosts"])
+        try assertRoundTrip("odd")
+    }
+
+    func testIdsAreDeterministicAndFollowTheContent() throws {
+        try put("a", secret: SecretValue(fields: [("中文", "x"), ("k", "y")]))
+        XCTAssertEqual(try item("a").template(), try item("a").template())
+        XCTAssertEqual(vaultSafeId(""), "_")
+        XCTAssertEqual(vaultSafeId("Hosts [1]"), "Hosts__1_")
+    }
+
     func testFieldsStayPlainTopLevelAndMetadataIsInItsOwnSection() throws {
         try put("app", secret: SecretValue(fields: [("kind", "FIELD"), ("level", "FIELD2")]), kind: "static")
         let t = try template(try item("app"))
@@ -117,7 +153,7 @@ final class VaultItemTests: XCTestCase {
         XCTAssertTrue(top.allSatisfy { $0["type"] as? String == "CONCEALED" })
         let meta = fields.filter { ($0["section"] as? [String: Any])?["label"] as? String == "mytokens" }
         XCTAssertTrue(meta.allSatisfy { $0["type"] as? String == "STRING" })
-        XCTAssertEqual(Set(meta.compactMap { $0["label"] as? String }), ["service", "account", "kind", "level", "shape", "order"])
+        XCTAssertEqual(Set(meta.compactMap { $0["label"] as? String }), ["service", "account", "kind", "level", "shape", "order", "ids"])
         XCTAssertEqual(meta.first { $0["label"] as? String == "kind" }?["value"] as? String, "static")
         let back = try decodeVaultItem(try item("app").template())
         XCTAssertEqual(back.secret.value(forField: "kind"), "FIELD")

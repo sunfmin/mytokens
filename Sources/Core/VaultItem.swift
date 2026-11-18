@@ -11,10 +11,18 @@ import Foundation
 //   list Field       → one section per record `<Label> [<i>]` (1-based), one CONCEALED field per key
 //   the rest         → the section `mytokens`, plain STRING fields (below)
 //
+// Labels stay as the Secret has them, but `op://` references accept only letters, digits, space,
+// `_`, `-`, `.` and `=` (mytokens#14), so a label like `Hosts [1]` or `中文` cannot be read by label.
+// Every field and section therefore also gets an `id` of letters, digits, `_`, `-`, `.` only: a
+// Field's id is its label with each other character replaced by `_` (a collision numbered `_2`,
+// `_3`…), a list record's section id is `<ListId>.<i>`, and a record's field id its key made safe
+// the same way. `op read "op://<vault>/<title>/<FieldId>"` and `"op://<vault>/<title>/<ListId>.<i>/<key>"`
+// read them; the `ids` metadata field (a JSON object, label → id) says which id is which.
+//
 // The metadata section is a section, not top-level fields, so a Field named `kind` still reads
 // by `op read` as the Field. Its fields: service, account, kind, level, shape (`bare` for the lone
 // unlabelled value, `fields` for labelled ones), order (the Fields' labels in order, a JSON
-// array), and meta (compact JSON; absent when the Secret has none).
+// array), ids (a JSON object, label → id), and meta (compact JSON; absent when the Secret has none).
 
 /// The label of the metadata section.
 let vaultMetadataSection = "mytokens"
@@ -25,7 +33,28 @@ let vaultBareFieldLabel = "value"
 let vaultItemTag = "mytokens"
 let vaultDigestPrefix = "mytokens-digest-"
 /// Changing the mapping changes this, so every item written by an older mapping reads as changed.
-private let vaultFormat = "mytokens-vault-2"
+private let vaultFormat = "mytokens-vault-3"
+
+/// A label as an `op://`-safe id: letters, digits, `_`, `-`, `.` kept, every other character `_`.
+func vaultSafeId(_ label: String) -> String {
+    let safe = String(label.unicodeScalars.map { c -> Character in
+        c.isASCII && (CharacterSet.alphanumerics.contains(c) || c == "_" || c == "-" || c == ".") ? Character(c) : "_"
+    })
+    return safe.isEmpty ? "_" : safe
+}
+
+/// Hands out ids in one scope, a taken one numbered: `Key`, `Key_2`, `Key_3`.
+private struct IdScope {
+    var used: Set<String>
+    init(reserved: [String] = []) { used = Set(reserved) }
+    mutating func take(_ label: String) -> String {
+        let base = vaultSafeId(label)
+        var id = base, n = 2
+        while used.contains(id) { id = "\(base)_\(n)"; n += 1 }
+        used.insert(id)
+        return id
+    }
+}
 
 /// The title of a Secret's vault item: `<service>`, or `<service>.<account>` for a non-default
 /// account. No `/`, so `op://<vault>/<title>/<Label>` resolves (a `/` in a title does not).
@@ -49,35 +78,49 @@ struct VaultItem {
     private func content(forEdit: Bool, loginIds: Bool = false) -> [String: Any] {
         var fields: [[String: Any]] = []
         var sections: [[String: Any]] = []
+        // top-level ids and section ids share one scope: `op://<vault>/<title>/<x>` names either
+        var top = IdScope(reserved: ["notesPlain"] + (loginIds ? ["username", "password"] : []))
+        var ids: [String: String] = [:]          // label → id (a list Field's: its section id before the `.<i>`)
         for f in secret.fields {
             let label = f.label.isEmpty ? vaultBareFieldLabel : f.label
             if secret.isList(f.label), let records = ListValue.records(f.value) {
                 // 1Password has no list type: one section per record, `<Label> [<i>]` (1-based),
                 // one concealed field per key, in key order (ADR-0020).
+                let listId = top.take(label)
+                ids[label] = listId
                 for (i, record) in records.enumerated() {
-                    let section: [String: Any] = ["id": "section\(sections.count)", "label": "\(label) [\(i + 1)]"]
+                    let sectionId = "\(listId).\(i + 1)"
+                    top.used.insert(sectionId)
+                    let section: [String: Any] = ["id": sectionId, "label": "\(label) [\(i + 1)]"]
                     sections.append(section)
+                    var inSection = IdScope()
                     for key in record.keys.sorted() {
-                        fields.append(["id": "field\(fields.count)", "label": key, "type": "CONCEALED",
+                        fields.append(["id": inSection.take(key), "label": key, "type": "CONCEALED",
                                        "value": record[key]!, "section": section])
                     }
                 }
             } else if loginIds && label == "username" {      // a Login's built-ins cannot be removed: reuse their ids
+                ids[label] = "username"
                 fields.append(["id": "username", "label": label, "type": "STRING", "purpose": "USERNAME", "value": f.value])
             } else if loginIds && label == "password" {
+                ids[label] = "password"
                 fields.append(["id": "password", "label": label, "type": "CONCEALED", "purpose": "PASSWORD", "value": f.value])
             } else {
-                fields.append(["id": "field\(fields.count)", "label": label, "type": "CONCEALED", "value": f.value])
+                let id = top.take(label)
+                ids[label] = id
+                fields.append(["id": id, "label": label, "type": "CONCEALED", "value": f.value])
             }
         }
         let section: [String: Any] = ["id": vaultMetadataSection, "label": vaultMetadataSection]
         sections.append(section)
         var metadata: [(String, String)] = [("service", service), ("account", account), ("kind", kind), ("level", level.rawValue),
                                             ("shape", secret.isLabelled ? "fields" : "bare"),
-                                            ("order", JSONUtil.compact(secret.fields.map { $0.label.isEmpty ? vaultBareFieldLabel : $0.label }) ?? "[]")]
+                                            ("order", JSONUtil.compact(secret.fields.map { $0.label.isEmpty ? vaultBareFieldLabel : $0.label }) ?? "[]"),
+                                            ("ids", JSONUtil.compact(ids) ?? "{}")]
         if let meta { metadata.append(("meta", meta)) }
+        var inMetadata = IdScope()
         for (label, value) in metadata {
-            fields.append(["id": "field\(fields.count)", "label": label, "type": "STRING", "value": value, "section": section])
+            fields.append(["id": inMetadata.take(label), "label": label, "type": "STRING", "value": value, "section": section])
         }
         if let description, !description.isEmpty {
             fields.append(["id": "notesPlain", "label": "notesPlain", "type": "STRING", "purpose": "NOTES", "value": description])

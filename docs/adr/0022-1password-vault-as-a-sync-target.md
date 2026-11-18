@@ -129,3 +129,34 @@ as a Server — every `server`-level Secret goes to every target (ADR-0012).
 - `op` must be on the personal Mac's PATH (the agent's PATH has Homebrew's).
 - Checked against real 1Password (mytokens#12, op 2.42.0, vault devbox): with the JSON piped on stdin and **no** `--template`, `op item create` and `op item edit` write bare-value, labelled, list-field and profile items, and `op read` and `skills/mytokens/op/*.jq` read them back. mytokens#10's check of `--template /dev/stdin` was wrong: op 2.42 refuses it with a pipe ("cannot create|edit an item from template and stdin at the same time"). op takes the stdin template only from a pipe, not a `<` file redirect. An `item edit` sent within seconds of the create can get a transient 409 from the server.
 - **Not yet checked against real 1Password (mytokens#13):** the two-way sync (Adopt, changes flowing back, conflicts) is tested only against a fake `op`. The real `devbox` run in the acceptance list was NOT done (the owner forbade running the sync against devbox after a test of mine archived production items). The owner must do it with `zz-` items made and removed with `op` directly. Facts measured by the control session are built in: edit JSON must carry `tags`, a Login's `username`/`password` ids are reused, `version` from `item list` detects changes, a new item is listed only ~10 s after `create`.
+
+- **Readable by `op://` for every label and list record; the write budget (mytokens#14).** Measured against real
+  1Password (op 2.42.0, a service account), 2026-11-18:
+  - `op://` references accept only letters, digits, space, `_`, `-`, `.`, `=`: `op://v/item/Hosts [1]/host`, a
+    label with `[ ] ( ) : # @ + , %`, `é` or CJK is "invalid character in secret reference". Custom field and
+    section `id`s are kept exactly and `op://` resolves them (also the same field id in two sections, and a
+    top-level and a section field of one id). So **labels stay as they are** and every field and section also
+    gets a deterministic `op://`-safe `id`: a Field's id is its label with each character outside
+    `[A-Za-z0-9_.-]` replaced by `_` (`中文` → `__`, `Access Key ID` → `Access_Key_ID`), a collision numbered
+    `_2`, `_3`; a list Field's id is made so and its record sections are `<ListId>.<i>`, a record field's id
+    its key made safe the same way, numbered within the section. Read: `op://<vault>/<title>/<FieldId>` and
+    `op://<vault>/<title>/<ListId>.<i>/<key>`. The `mytokens` section's `ids` field (a JSON object, label →
+    id) says which is which. The jq programs read labels and are unchanged. The mapping format is
+    `mytokens-vault-3`, so every item is rewritten once (about one write per Secret; the first sync of
+    `devbox`, ~25 Secrets, fits the 100 writes an hour).
+  - **The create lag.** `create` answers with the id at once, `op item list` lists the item ~10 s later. The
+    vault's sync state keeps `created` (title → time) and `createdIds` (title → id) for 2 minutes: a title
+    created in that window counts as held (no second create, so no "More than one item matches"), and what is
+    known of its id (version, digest) is kept until it is listed. Two syncs of one vault never run at once:
+    `onepassword add`/`rm` take the Mac's Background Sync run lock, as a background run does.
+  - **The write budget.** Every `item create/edit/delete` is a write: 100 an hour per token, 1000 a day per
+    account (`op service-account ratelimit --format json`; each `op` call is ~2 s). A sync never writes an
+    unchanged item (digest and listed version). Before its first write it asks `op` for the remaining writes
+    (the smaller of the token's `write` and the account's `read_write`); one that would exceed it is not made:
+    the sync says `deferred <title>: …`, `onepassword list` shows the line, and the next run goes on (a
+    deferred create is not remembered as created; an adoption already stored here is finished by the next
+    run). `onepassword rm` stays on the list when it could not empty the vault. When `op` does not say, nothing is
+    held back.
+  - **Checked for real** against the scratch vault `mytokens-scratch` (`make op-real-check`), not `devbox`:
+    production is never a test target (mytokens#15).
+

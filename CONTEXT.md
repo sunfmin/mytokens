@@ -21,6 +21,10 @@ AWS *Access Key ID* + *Secret Access Key*, or a database *Username* + *Password*
 Field is addressed by its **label** (the label is the key), and is masked on input
 unless explicitly revealed for paste-verification. A secret Field comes from the terminal, the
 popup or a One-time link, or — for a value a command makes — piped in on stdin (ADR-0017).
+A labelled Field is **text** (one string) or a **list**: an ordered array of flat records,
+each key a non-empty string and each value a string, e.g. one login per database host. A list
+is piped in on stdin only (`--field-from-stdin "<Label>" --list`), and a Profile cannot hold one
+(ADR-0019).
 _Avoid_: sub-secret, key/value pair (a Field's label is its identity, not an arbitrary key).
 
 **Description**:

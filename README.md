@@ -230,6 +230,27 @@ For several Fields, run it several times. It is refused when stdin is a terminal
 value a human knows goes in with `--fields`. The value stays in the pipe, out of argv, shell
 history, the output and files (ADR-0017).
 
+#### A list of records: `--list`
+
+A Field may hold a **list**: a JSON array of flat records whose values are all strings, such as
+one login per database host. Pipe it in with `--list`:
+
+```sh
+make-db-logins | mytokens put db-logins --description "App DB logins" \
+  --field-from-stdin "Hosts" --list
+# stdin: [{"host":"db1","user":"app","password":"…"},{"host":"db2","user":"app","password":"…"}]
+
+mytokens get db-logins --field Hosts   # the array, as compact JSON
+mytokens get db-logins --json          # {"fields":{"Hosts":[{…},{…}]},"level":"personal"}
+mytokens list                          # db-logins/default  static  personal  … fields: Hosts (list, 2 records)
+```
+
+Anything other than a non-empty array of such records is refused before anything is stored.
+`--fields`, `--set` and a `--field-from-stdin` without `--list` refuse a Field that is a list,
+and so do the popup, the terminal and the one-time link. A Profile cannot hold a list, because
+an environment variable holds one string. `sync` carries a list to a Server and adopts one back
+unchanged (ADR-0019).
+
 ### From your phone: the one-time link
 
 With neither a terminal nor a desktop — an agent running `put` on a server — `put` serves

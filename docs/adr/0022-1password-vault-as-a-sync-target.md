@@ -88,4 +88,4 @@ as a Server — every `server`-level Secret goes to every target (ADR-0012).
 - The vault holds every `server`-level value in clear to whoever the vault is shared with: that
   is the point, and the human chooses the vault.
 - `op` must be on the personal Mac's PATH (the agent's PATH has Homebrew's).
-- Checked against real 1Password (mytokens#10): `op item create` accepts `--template /dev/stdin`, and the items read back as the template says.
+- Checked against real 1Password (mytokens#12, op 2.42.0, vault devbox): with the JSON piped on stdin and **no** `--template`, `op item create` and `op item edit` write bare-value, labelled, list-field and profile items, and `op read` and `skills/mytokens/op/*.jq` read them back. mytokens#10's check of `--template /dev/stdin` was wrong: op 2.42 refuses it with a pipe ("cannot create|edit an item from template and stdin at the same time"). op takes the stdin template only from a pipe, not a `<` file redirect. An `item edit` sent within seconds of the create can get a transient 409 from the server.

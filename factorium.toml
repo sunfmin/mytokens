@@ -1,8 +1,18 @@
 # How factorium gates this repo (~/Developments/factorium/SPEC.md §3).
-# No [cut]: see "Cutting a version" in docs/agents/gate.md.
+# [cut]: see "Cutting a version" in docs/agents/gate.md.
 
 [gate]
 fast = "./gate.sh"
 fast_limit = 1200
 slow = "./gate.sh"
 slow_limit = 1200
+
+[cut]
+# Writes the version into project.yml and commits it; the cut then tags that
+# commit and pushes the tag, which release.yml builds, signs and publishes.
+# No `formula`: installing on this Mac is not part of the cut.
+steps = [
+  "make set-version VERSION=${FACTORIUM_VERSION#v}",
+  "git commit -am \"Release ${FACTORIUM_VERSION}\"",
+]
+limit = 300

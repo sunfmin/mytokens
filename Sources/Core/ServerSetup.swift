@@ -119,8 +119,15 @@ func serverList(_ list: ServerList, state: BackgroundSyncState) -> CommandResult
     do {
         let hosts = try list.read()
         let paused = state.isPaused() ? "background sync is paused on this Mac (mytokens server resume)\n" : ""
-        if hosts.isEmpty { return CommandResult(stdout: "", stderr: "no servers on the server list\n" + paused, exitCode: 0) }
         let statuses = state.statuses()
+        var release = ""
+        if let status = statuses[releaseStatusKey], status.isFailing {
+            release = "this Mac\tfailed to \(status.failedStep ?? "check for a new release")"
+            if let at = status.lastFailure { release += " at \(statusTime(at))" }
+            if let error = status.failedError, !error.isEmpty { release += ": " + error.split(whereSeparator: \.isNewline).joined(separator: " — ") }
+            release += "\n"
+        }
+        if hosts.isEmpty { return CommandResult(stdout: release, stderr: "no servers on the server list\n" + paused, exitCode: 0) }
         let rows = hosts.map { host -> String in
             let status = statuses[host]
             var row = "\(host)\t\(describeStatus(status))"
@@ -129,7 +136,7 @@ func serverList(_ list: ServerList, state: BackgroundSyncState) -> CommandResult
             }
             return row + "\n"
         }
-        return CommandResult(stdout: rows.joined(), stderr: paused, exitCode: 0)
+        return CommandResult(stdout: release + rows.joined(), stderr: paused, exitCode: 0)
     } catch {
         return CommandResult(stdout: "", stderr: "\(error)\n", exitCode: 1)
     }

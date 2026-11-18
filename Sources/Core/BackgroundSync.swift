@@ -399,10 +399,16 @@ private func backgroundSyncOnce(store: SecretStore, deps: Dependencies) -> Comma
         return CommandResult(stdout: "", stderr: "\(stamp): cannot read the server list: \(error)\n", exitCode: 1)
     }
     let remote = deps.backgroundRemote ?? deps.remote
-    let app = deps.app()
-    var all = state.statuses().filter { hosts.contains($0.key) || vaults.map(vaultStatusKey).contains($0.key) }   // forget hosts and vaults taken off the lists
+    var all = state.statuses().filter { $0.key == releaseStatusKey || hosts.contains($0.key) || vaults.map(vaultStatusKey).contains($0.key) }   // forget hosts and vaults taken off the lists
     var lines = ["\(stamp): \(hosts.isEmpty && vaults.isEmpty ? "no servers on the server list" : (hosts + vaults.map { "1Password vault \($0)" }).joined(separator: ", "))"]
     var anyFailed = false
+    // This Mac first (ADR-0023): a newer published Release, so the hosts below get the new version.
+    var releaseStatus = all[releaseStatusKey] ?? HostSyncStatus()
+    let upgrade = upgradeThisMacIfNewer(status: &releaseStatus, deps: deps, now: now)
+    lines += upgrade.lines
+    anyFailed = upgrade.failed
+    if deps.releases != nil { all[releaseStatusKey] = releaseStatus }
+    let app = deps.app()
     for host in hosts {
         var status = all[host] ?? HostSyncStatus()
         switch backgroundSync(host: host, store: store, via: remote, app: app, now: now) {

@@ -82,12 +82,12 @@ func vaultStatusKey(_ vault: String) -> String { "1password:\(vault)" }
 private struct VaultItem {
     var title: String
     var notes: String?
-    var fields: [(label: String, value: String)]
+    var fields: [(label: String, value: String, isList: Bool)]
 
     /// What the item holds, hashed: equal digests, equal items. Not a way to read a value back
     /// (the vault holds the values anyway).
     var digest: String {
-        let canonical: [Any] = [title, notes ?? "", fields.map { [$0.label, $0.value] }]
+        let canonical: [Any] = [title, notes ?? "", fields.map { $0.isList ? [$0.label, $0.value, "list"] : [$0.label, $0.value] }]
         let data = (try? JSONSerialization.data(withJSONObject: canonical, options: [.sortedKeys])) ?? Data()
         return SHA256.hash(data: data).prefix(16).map { String(format: "%02x", $0) }.joined()
     }
@@ -95,14 +95,31 @@ private struct VaultItem {
     /// The `op item` template, on stdin: every Field concealed (the store does not record which
     /// Fields came from `--set`), the Description as the notes.
     var template: Data {
-        var fields: [[String: Any]] = self.fields.enumerated().map { i, f in
-            ["id": "field\(i)", "label": f.label.isEmpty ? vaultBareFieldLabel : f.label, "type": "CONCEALED", "value": f.value]
+        var fields: [[String: Any]] = []
+        var sections: [[String: Any]] = []
+        for f in self.fields {
+            let label = f.label.isEmpty ? vaultBareFieldLabel : f.label
+            if f.isList, let records = ListValue.records(f.value) {
+                // 1Password has no list type: one section per record, `<Label> [<i>]` (1-based),
+                // one concealed field per key, in key order (ADR-0020).
+                for (i, record) in records.enumerated() {
+                    let section: [String: Any] = ["id": "section\(sections.count)", "label": "\(label) [\(i + 1)]"]
+                    sections.append(section)
+                    for key in record.keys.sorted() {
+                        fields.append(["id": "field\(fields.count)", "label": key, "type": "CONCEALED",
+                                       "value": record[key]!, "section": section])
+                    }
+                }
+            } else {
+                fields.append(["id": "field\(fields.count)", "label": label, "type": "CONCEALED", "value": f.value])
+            }
         }
         if let notes, !notes.isEmpty {
             fields.append(["id": "notesPlain", "label": "notesPlain", "type": "STRING", "purpose": "NOTES", "value": notes])
         }
-        let item: [String: Any] = ["title": title, "category": "API_CREDENTIAL",
+        var item: [String: Any] = ["title": title, "category": "API_CREDENTIAL",
                                    "tags": [vaultItemTag, vaultDigestPrefix + digest], "fields": fields]
+        if !sections.isEmpty { item["sections"] = sections }
         return (try? JSONSerialization.data(withJSONObject: item, options: [.sortedKeys])) ?? Data()
     }
 }
@@ -143,7 +160,7 @@ func syncVault(_ vault: String, store: SecretStore, cli: OnePasswordCLI, holding
             for r in try store.list() where r.level == .server && r.service != onePasswordTokenService {
                 guard let s = try store.get(service: r.service, account: r.account) else { continue }
                 let title = "\(r.service)/\(r.account)"
-                wanted[title] = VaultItem(title: title, notes: r.description, fields: s.fields)
+                wanted[title] = VaultItem(title: title, notes: r.description, fields: s.fields.map { ($0.label, $0.value, s.isList($0.label)) })
             }
         }
     } catch {

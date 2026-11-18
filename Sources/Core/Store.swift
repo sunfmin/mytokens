@@ -8,6 +8,7 @@ struct SecretRecord {
     var kind: String          // "static" | "parent" | "profile"
     var meta: String?         // compact JSON, or nil
     var fields: [String]?     // ordered field labels for a multi-field Secret, else nil
+    var lists: [String: Int]? = nil  // each list Field's label → its record count (ADR-0019), else nil
     var description: String?  // agent-authored purpose note (ADR-0006), or nil
     var level: Level          // how far the Secret may travel (ADR-0010)
     var pushed: Bool          // a Server's copy written or adopted by `sync`, which may also remove it (ADR-0012)
@@ -50,12 +51,31 @@ enum Level: String, CaseIterable {
 // bare-value Secret (ADR-0002); any labelled Fields serialize as a JSON object.
 // This is the currency of the store seam — callers add and read Secrets as
 // structured Fields and never touch the on-disk encoding.
+//
+// A Field is text or a **list** (ADR-0019): an array of flat string-valued records. A list
+// Field's value is its canonical compact JSON text (`ListValue.canonical`), and its label is
+// in `lists` — the one record of which Fields are lists.
 struct SecretValue {
     let fields: [(label: String, value: String)]
+    /// The labels of the list Fields; every one is also in `fields`.
+    let lists: Set<String>
 
     /// The unlabelled single-value Secret (today's common path).
-    init(single value: String) { self.fields = [(label: "", value: value)] }
-    init(fields: [(label: String, value: String)]) { self.fields = fields }
+    init(single value: String) { self.fields = [(label: "", value: value)]; self.lists = [] }
+    init(fields: [(label: String, value: String)], lists: Set<String> = []) {
+        self.fields = fields
+        self.lists = lists.intersection(fields.map(\.label))
+    }
+
+    /// Whether the Field `label` holds a list of records.
+    func isList(_ label: String) -> Bool { lists.contains(label) }
+
+    /// Each list Field's record count, or nil when there is none: what `list` shows.
+    var listCounts: [String: Int]? {
+        let counts = Dictionary(uniqueKeysWithValues: fields.filter { lists.contains($0.label) }
+            .map { ($0.label, ListValue.records($0.value)?.count ?? 0) })
+        return counts.isEmpty ? nil : counts
+    }
 
     /// True when the Secret carries labelled Fields (⇒ JSON storage); false for the
     /// lone unlabelled value (⇒ raw storage). Derived — the shape is never recorded twice.
@@ -80,6 +100,39 @@ struct SecretValue {
         var obj: [String: String] = [:]
         for f in fields { obj[f.label] = f.value }
         return JSONUtil.compact(obj)
+    }
+}
+
+/// A list Field's value (ADR-0019): a JSON array whose elements are flat objects, each key a
+/// non-empty string and each value a string. Its stored and printed form is compact JSON,
+/// records in order, keys sorted within each.
+enum ListValue {
+    /// The shape every refusal names.
+    static let shape = #"a JSON array of flat records with string values, e.g. [{"host":"db1","password":"…"}]"#
+
+    /// The records `text` holds, or nil when it is not that shape.
+    static func records(_ text: String) -> [[String: String]]? {
+        guard let array = JSONUtil.parse(text) as? [Any] else { return nil }
+        var records: [[String: String]] = []
+        for element in array {
+            guard let object = element as? [String: Any], !object.isEmpty else { return nil }
+            var record: [String: String] = [:]
+            for (key, value) in object {
+                // Only a JSON string passes: a number or bool does not bridge to String.
+                guard !key.isEmpty, let string = value as? String else { return nil }
+                record[key] = string
+            }
+            records.append(record)
+        }
+        return records
+    }
+
+    /// `text` in canonical form, or nil when it is not a non-empty list of records.
+    static func canonical(_ text: String) -> String? {
+        guard let records = records(text), !records.isEmpty,
+              let data = try? JSONSerialization.data(withJSONObject: records, options: [.sortedKeys, .withoutEscapingSlashes])
+        else { return nil }
+        return String(data: data, encoding: .utf8)
     }
 }
 
@@ -220,7 +273,8 @@ struct KeychainSecretStore: SecretStore {
         // The label schema is recorded for a labelled Secret only; the value's
         // encoding follows from it — raw bytes for the lone unlabelled value, a
         // {label: value} JSON object for labelled Fields (ADR-0005).
-        let comment = try CommentCodec.encode(kind: kind, meta: meta, fields: secret.schema, description: description, level: level, marks: marks)
+        let comment = try CommentCodec.encode(kind: kind, meta: meta, fields: secret.schema, lists: secret.listCounts,
+                                              description: description, level: level, marks: marks)
         let storedValue: String
         if secret.isLabelled {
             guard let json = secret.compactJSON() else { throw StoreError.encoding }
@@ -254,7 +308,8 @@ struct KeychainSecretStore: SecretStore {
               let data = attrs[kSecValueData as String] as? Data,
               let str = String(data: data, encoding: .utf8)
         else { throw mapErr(s) }
-        let schema = CommentCodec.decode(attrs[kSecAttrComment as String] as? String).fields
+        let comment = CommentCodec.decode(attrs[kSecAttrComment as String] as? String)
+        let schema = comment.fields
 
         // No schema ⇒ the raw bytes are the lone unlabelled value (ADR-0002).
         guard let schema else { return SecretValue(single: str) }
@@ -267,7 +322,7 @@ struct KeychainSecretStore: SecretStore {
             guard let v = obj[label] as? String else { throw StoreError.encoding }
             fields.append((label: label, value: v))
         }
-        return SecretValue(fields: fields)
+        return SecretValue(fields: fields, lists: Set((comment.lists ?? [:]).keys))
     }
 
     func list() throws -> [SecretRecord] {
@@ -288,7 +343,7 @@ struct KeychainSecretStore: SecretStore {
             guard label?.hasPrefix(mytokensLabelPrefix) == true else { return nil }
             let c = CommentCodec.decode(attrs[kSecAttrComment as String] as? String)
             return SecretRecord(service: service, account: account, kind: c.kind, meta: c.meta,
-                                fields: c.fields, description: c.description, level: c.level, pushed: c.marks.pushed,
+                                fields: c.fields, lists: c.lists, description: c.description, level: c.level, pushed: c.marks.pushed,
                                 adopted: c.marks.adopted, origin: c.marks.origin, changed: c.marks.changed)
         }
     }
@@ -304,15 +359,18 @@ struct KeychainSecretStore: SecretStore {
 // kind + arbitrary user meta + (for a multi-field Secret) the ordered field-label
 // schema + an optional agent-authored description + the level are packed into the
 // keychain comment attribute as one JSON object:
-// {"kind": "...", "level": "...", "meta": <json|null>, "fields": [<label>, …]?, "description": "…"?, "pushed": true?,
-//  "adopted": true?, "origin": "<host>"?, "changed": true?}.
-// "fields"/"description" and the sync marks are omitted when absent; an item stored before levels has no
+// {"kind": "...", "level": "...", "meta": <json|null>, "fields": [<label>, …]?, "lists": {<label>: <count>, …}?,
+//  "description": "…"?, "pushed": true?, "adopted": true?, "origin": "<host>"?, "changed": true?}.
+// "lists" names the list Fields (ADR-0019) with their record counts, so `list` shows them without
+// reading a value; the stored value object keeps each list as its JSON text, so a build from before
+// lists reads it as a text Field. "fields"/"lists"/"description" and the sync marks are omitted when absent; an item stored before levels has no
 // "level" and decodes as `personal` (ADR-0010), so older items decode unchanged.
 enum CommentCodec {
-    static func encode(kind: String, meta: Any?, fields: [String]?, description: String?, level: Level, marks: SyncMarks) throws -> String {
+    static func encode(kind: String, meta: Any?, fields: [String]?, lists: [String: Int]? = nil, description: String?, level: Level, marks: SyncMarks) throws -> String {
         var obj: [String: Any] = ["kind": kind, "level": level.rawValue]
         obj["meta"] = (meta == nil || meta is NSNull) ? NSNull() : meta!
         if let fields, !fields.isEmpty { obj["fields"] = fields }
+        if let lists, !lists.isEmpty { obj["lists"] = lists }
         if let description, !description.isEmpty { obj["description"] = description }
         if marks.pushed { obj["pushed"] = true }
         if marks.adopted { obj["adopted"] = true }
@@ -324,19 +382,20 @@ enum CommentCodec {
         return s
     }
 
-    static func decode(_ comment: String?) -> (kind: String, meta: String?, fields: [String]?, description: String?, level: Level, marks: SyncMarks) {
+    static func decode(_ comment: String?) -> (kind: String, meta: String?, fields: [String]?, lists: [String: Int]?, description: String?, level: Level, marks: SyncMarks) {
         guard let comment, let data = comment.data(using: .utf8),
               let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
-        else { return ("static", nil, nil, nil, .default, SyncMarks()) }
+        else { return ("static", nil, nil, nil, nil, .default, SyncMarks()) }
         let kind = (obj["kind"] as? String) ?? "static"
         let fields = obj["fields"] as? [String]
+        let lists = obj["lists"] as? [String: Int]
         let description = obj["description"] as? String
         let meta = (obj["meta"].map { $0 is NSNull ? nil : JSONUtil.compact($0) }) ?? nil
         // No level, or one this build doesn't know, travels nowhere: personal.
         let level = (obj["level"] as? String).flatMap(Level.init(rawValue:)) ?? .default
         let marks = SyncMarks(pushed: (obj["pushed"] as? Bool) ?? false, adopted: (obj["adopted"] as? Bool) ?? false,
                               origin: obj["origin"] as? String, changed: (obj["changed"] as? Bool) ?? false)
-        return (kind, meta, fields, description, level, marks)
+        return (kind, meta, fields, lists, description, level, marks)
     }
 }
 

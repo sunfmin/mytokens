@@ -20,7 +20,8 @@ import Foundation
 /// One Secret as it travels between a personal Mac and a Server: the whole record, values
 /// included. The wire format is private to this file — both ends of both pipes live here.
 private struct WireSecret: Codable, Equatable {
-    struct Field: Codable, Equatable { var label: String; var value: String }
+    /// `list` marks a list Field (ADR-0019), its value the list's JSON text; absent for text.
+    struct Field: Codable, Equatable { var label: String; var value: String; var list: Bool? = nil }
     var service: String
     var account: String
     var kind: String
@@ -40,10 +41,13 @@ private struct WireSecret: Codable, Equatable {
         level = record.level.rawValue
         meta = record.meta
         description = record.description
-        fields = secret.fields.map { Field(label: $0.label, value: $0.value) }
+        fields = secret.fields.map { Field(label: $0.label, value: $0.value, list: secret.isList($0.label) ? true : nil) }
     }
 
-    var secret: SecretValue { SecretValue(fields: fields.map { (label: $0.label, value: $0.value) }) }
+    var secret: SecretValue {
+        SecretValue(fields: fields.map { (label: $0.label, value: $0.value) },
+                    lists: Set(fields.filter { $0.list == true }.map(\.label)))
+    }
     var name: String { "\(service)/\(account)" }
     /// Same values, kind and meta: what a Secret *is*, apart from its note and level.
     func sameContent(_ other: WireSecret) -> Bool {

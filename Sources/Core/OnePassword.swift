@@ -93,6 +93,21 @@ final class VaultMemoryRef {
     init(_ value: VaultMemory = VaultMemory()) { self.value = value }
 }
 
+/// Which side a vault conflict is settled for (`onepassword keep`, mytokens#16): `mac` writes the
+/// Mac's Secret over the item, `onePassword` Adopts the item over the Secret.
+enum VaultSide: String { case mac, onePassword = "1password" }
+
+/// One conflict to settle in a sync: the item titled `title`, for `side`.
+struct VaultKeep: Equatable { var title: String; var side: VaultSide }
+
+/// The prefix of the line a sync says when it settled the conflict `keep` asked for.
+let vaultKeptPrefix = "kept "
+
+/// What a conflict line says to end it.
+func vaultKeepHint(_ vault: String, _ title: String) -> String {
+    "settle it: mytokens onepassword keep \(shellWord(vault)) \(shellWord(title)) mac|1password"
+}
+
 /// How long after a `create` a title is not created again.
 private let vaultListingLag: TimeInterval = 120
 
@@ -177,8 +192,12 @@ private func adoptionDate(_ date: Date) -> String {
 /// sync until resolved. Nothing is written when nothing changed, and an item never twice for one
 /// change. A write the service account's budget does not cover (`op service-account ratelimit`) is
 /// left for the next run, with a line `deferred <title>`. A failure names its step.
+///
+/// `keep` settles one conflict (`onepassword keep`, mytokens#16): the item titled so, if it is in
+/// conflict, takes the Mac's Secret (`mac`) or is Adopted over it (`1password`), with a line
+/// starting `kept `. A title not in conflict is not touched by it.
 func syncVault(_ vault: String, store: SecretStore, cli: OnePasswordCLI, holding target: SyncTarget = .serverLevel,
-               now: Date = Date(), memory: VaultMemoryRef = VaultMemoryRef()) -> Result<[String], StepFailure> {
+               now: Date = Date(), memory: VaultMemoryRef = VaultMemoryRef(), keep: VaultKeep? = nil) -> Result<[String], StepFailure> {
     // The service account token: a Secret on this Mac, never exported.
     let token: String
     do {
@@ -313,8 +332,14 @@ func syncVault(_ vault: String, store: SecretStore, cli: OnePasswordCLI, holding
                 try write(seen, "adopted \(item.title) (changed in 1Password)")
             } else if seen.digest == last {         // changed on the Mac only
                 try write(want, "updated \(item.title)")
+            } else if keep == VaultKeep(title: item.title, side: .mac) {
+                try write(want, "\(vaultKeptPrefix)this Mac's \(item.title) (written over 1Password's)")
+            } else if keep == VaultKeep(title: item.title, side: .onePassword) {
+                try adoptIntoSecret(seen, marks: byTitle[item.title]?.marks ?? SyncMarks())
+                try write(seen, "\(vaultKeptPrefix)1Password's \(item.title) (adopted over this Mac's)")
             } else {
-                lines.append("conflict \(item.title): changed in 1Password and on this Mac since the last sync; neither changed")
+                lines.append("conflict \(item.title): changed in 1Password and on this Mac since the last sync; neither changed; "
+                             + vaultKeepHint(vault, item.title))
                 if let memo { known[item.id] = memo }
             }
         }
@@ -345,8 +370,39 @@ func syncVault(_ vault: String, store: SecretStore, cli: OnePasswordCLI, holding
                             known[item.id] = VaultMemory.Item(version: v, digest: vi.digest)
                             lines.append("adopted \(t)")
                         }
+                    } else if keep?.title == t, keep?.side == .mac {
+                        // the Mac's Secret wins: a server-level one is written over the item, any other has it archived
+                        held.insert(t)
+                        if let want = wanted[t] {
+                            if case .version(let v) = try tryEdit(item, want, t) {
+                                known[item.id] = VaultMemory.Item(version: v, digest: want.digest)
+                                lines.append("\(vaultKeptPrefix)this Mac's \(t) (written over 1Password's)")
+                            }
+                        } else if try canWrite() {
+                            _ = try op("write the vault", ["item", "delete", item.id, "--vault", vault, "--archive"])
+                            lines.append("\(vaultKeptPrefix)this Mac's \(t) (\(rec.level.rawValue)-level, so not in the vault: 1Password's archived)")
+                        } else {
+                            lines.append("deferred \(t): \(deferral)")
+                        }
+                    } else if keep?.title == t, keep?.side == .onePassword {
+                        // 1Password's item wins: Adopted over the Secret, which becomes server-level and the sync's
+                        let decoded: VaultItem
+                        do { decoded = try decodeHandMadeItem(try fetch(item), title: t) } catch let e as VaultDecodeError {
+                            lines.append("not adopted \(t): \(e.description)")
+                            continue
+                        }
+                        held.insert(t)
+                        var vi = decoded
+                        vi.service = rec.service; vi.account = rec.account; vi.level = .server
+                        try adoptIntoSecret(vi, marks: SyncMarks(origin: originKey))
+                        if case .version(let v) = try tryEdit(item, vi, t) {
+                            known[item.id] = VaultMemory.Item(version: v, digest: vi.digest)
+                            lines.append("\(vaultKeptPrefix)1Password's \(t) (adopted over this Mac's)")
+                        }
                     } else {
-                        lines.append("conflict \(t): a Secret of that name is on this Mac and the sync does not own it; neither changed")
+                        held.insert(t)      // neither changed: no second item of the title is created either
+                        lines.append("conflict \(t): a Secret of that name is on this Mac and the sync does not own it; neither changed; "
+                                     + vaultKeepHint(vault, t))
                     }
                     continue
                 }
@@ -417,12 +473,23 @@ func vaultFixLine(vault: String, _ failure: StepFailure) -> String {
 
 private func validVault(_ v: String) -> Bool { !v.isEmpty && !v.hasPrefix("-") }
 
-/// `onepassword add|rm|list`, on a personal Mac. `add` makes the vault hold the `server`-level
+/// `onepassword add|rm|list|keep`, on a personal Mac. `add` makes the vault hold the `server`-level
 /// Secrets first and records it only when that worked; `rm` makes it hold none, then forgets it.
+/// `keep <vault> <title> mac|1password` settles one conflict the last sync reported (mytokens#16).
 func runOnePassword(_ verb: String, _ vaults: [String], store: SecretStore, deps: Dependencies) -> CommandResult {
     func fail(_ s: String, _ code: Int32 = 1) -> CommandResult { CommandResult(stdout: "", stderr: s, exitCode: code) }
     func lines(_ l: [String]) -> String { l.map { $0 + "\n" }.joined() }
     let list = deps.vaults
+    /// Syncs `vault` as Background Sync would and records its status: what it did, or why it failed.
+    /// Call it holding the run lock.
+    func syncRecorded(_ vault: String, keep: VaultKeep? = nil) -> Result<[String], StepFailure> {
+        let memory = VaultMemoryRef(deps.syncState.statuses()[vaultStatusKey(vault)]?.vaultMemory ?? VaultMemory())
+        let r = syncVault(vault, store: store, cli: deps.onepassword, now: deps.now(), memory: memory, keep: keep)
+        if case .success(let did) = r {
+            deps.syncState.update(vaultStatusKey(vault)) { $0.succeeded(at: deps.now()); $0.vaultMemory = memory.value; $0.attention = vaultAttention(did) }
+        }
+        return r
+    }
     do {
         let listed = try list.read()
         switch (verb, vaults.count) {
@@ -443,12 +510,10 @@ func runOnePassword(_ verb: String, _ vaults: [String], store: SecretStore, deps
             // Two syncs of one vault never run at once: this waits for a Background Sync run in progress.
             var result = fail("onepassword add did not run\n")
             deps.syncState.exclusively {
-                let memory = VaultMemoryRef(deps.syncState.statuses()[vaultStatusKey(vaults[0])]?.vaultMemory ?? VaultMemory())
-                switch syncVault(vaults[0], store: store, cli: deps.onepassword, now: deps.now(), memory: memory) {
+                switch syncRecorded(vaults[0]) {
                 case .failure(let f):
                     result = fail("onepassword add \(vaults[0]) failed to \(f.step); it is not added to the vault list:\n" + f.why)
                 case .success(var did):
-                    deps.syncState.update(vaultStatusKey(vaults[0])) { $0.succeeded(at: deps.now()); $0.vaultMemory = memory.value; $0.attention = vaultAttention(did) }
                     do {
                         if listed.contains(vaults[0]) { did.append("\(vaults[0]) is on the vault list") } else {
                             try list.write(listed + [vaults[0]])
@@ -479,8 +544,35 @@ func runOnePassword(_ verb: String, _ vaults: [String], store: SecretStore, deps
                 }
             }
             return result
+        case ("keep", 3):
+            let (vault, title) = (vaults[0], vaults[1])
+            guard let side = VaultSide(rawValue: vaults[2]) else {
+                return fail("onepassword keep takes mac or 1password as the side to keep (got \"\(vaults[2])\")\n", 64)
+            }
+            guard listed.contains(vault) else { return fail("\(vault) is not on the vault list\n") }
+            let noConflict = "no conflict on \(title) in the vault \(vault)"
+            // Refused, touching nothing, unless the last sync of the vault reported this conflict.
+            let attention = deps.syncState.statuses()[vaultStatusKey(vault)]?.attention ?? []
+            guard attention.contains(where: { $0.hasPrefix("conflict \(title): ") }) else {
+                return fail("\(noConflict) (onepassword list shows the conflicts); nothing kept\n")
+            }
+            var result = fail("onepassword keep did not run\n")
+            deps.syncState.exclusively {
+                switch syncRecorded(vault, keep: VaultKeep(title: title, side: side)) {
+                case .failure(let f):
+                    result = fail("onepassword keep \(vault) \(title) failed to \(f.step); neither side changed:\n" + f.why)
+                case .success(let did):
+                    // the sync ran either way; only a `kept` line means the conflict is settled
+                    if did.contains(where: { $0.hasPrefix(vaultKeptPrefix) }) {
+                        result = CommandResult(stdout: lines(did), stderr: "", exitCode: 0)
+                    } else {
+                        result = CommandResult(stdout: lines(did), stderr: "\(noConflict) settled by this run; nothing kept\n", exitCode: 1)
+                    }
+                }
+            }
+            return result
         default:
-            return fail("usage: mytokens onepassword add <vault> | rm <vault> | list\n", 64)
+            return fail("usage: mytokens onepassword add <vault> | rm <vault> | list | keep <vault> <title> mac|1password\n", 64)
         }
     } catch {
         return fail("\(error)\n")

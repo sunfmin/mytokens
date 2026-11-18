@@ -121,7 +121,7 @@ final class OnePasswordTests: XCTestCase {
         XCTAssertEqual(gh["category"] as? String, "SECURE_NOTE")
         XCTAssertEqual(fields.filter { $0["purpose"] as? String == "NOTES" }.map { $0["value"] as? String }, ["CI token"])  // exactly the Description
         let aws = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(creates[0].stdin.utf8)) as? [String: Any])
-        let labels = (aws["fields"] as? [[String: Any]])?.compactMap { $0["label"] as? String }
+        let labels = (aws["fields"] as? [[String: Any]])?.filter { $0["section"] == nil }.compactMap { $0["label"] as? String }
         XCTAssertEqual(labels, ["AccessKeyId", "SecretAccessKey"])
         XCTAssertFalse(creates.contains { $0.stdin.contains("nope") || $0.stdin.contains("ops_TOKEN") })
     }
@@ -142,9 +142,12 @@ final class OnePasswordTests: XCTestCase {
         XCTAssertEqual(run(["onepassword", "add", "Servers"]).exitCode, 0)
         try replay()
         let t = try template(try XCTUnwrap(try writes().first))
-        let sections = try XCTUnwrap(t["sections"] as? [[String: Any]])
+        func recordSections(_ t: [String: Any]) -> [[String: Any]] {      // the sections but the metadata one
+            (t["sections"] as? [[String: Any]] ?? []).filter { $0["label"] as? String != "mytokens" }
+        }
+        let sections = recordSections(t)
         XCTAssertEqual(sections.map { $0["label"] as? String }, ["Hosts [1]", "Hosts [2]"])
-        let fields = try XCTUnwrap(t["fields"] as? [[String: Any]])
+        let fields = try XCTUnwrap(t["fields"] as? [[String: Any]]).filter { ($0["section"] as? [String: Any])?["label"] as? String != "mytokens" }
         XCTAssertEqual(fields.map { $0["label"] as? String }, ["host", "password", "user", "host", "password", "user"])  // key order
         XCTAssertTrue(fields.allSatisfy { $0["type"] as? String == "CONCEALED" })
         let second = fields.filter { ($0["section"] as? [String: Any])?["label"] as? String == "Hosts [2]" }
@@ -158,11 +161,11 @@ final class OnePasswordTests: XCTestCase {
         XCTAssertEqual(try? syncVault("Servers", store: laptop, cli: deps.onepassword).get(), ["updated db.prod"])
         try replay()
         let fewer = try template(try XCTUnwrap(try writes().last))
-        XCTAssertEqual((fewer["sections"] as? [[String: Any]])?.count, 1)
+        XCTAssertEqual(recordSections(fewer).count, 1)
         try storeList("db", "prod", #"[{"a":"1"},{"a":"2"},{"a":"3"}]"#)
         XCTAssertEqual(try? syncVault("Servers", store: laptop, cli: deps.onepassword).get(), ["updated db.prod"])
         let more = try template(try XCTUnwrap(try writes().last))
-        XCTAssertEqual((more["sections"] as? [[String: Any]])?.map { $0["label"] as? String }, ["Hosts [1]", "Hosts [2]", "Hosts [3]"])
+        XCTAssertEqual(recordSections(more).map { $0["label"] as? String }, ["Hosts [1]", "Hosts [2]", "Hosts [3]"])
     }
 
     func testASecondSyncWithNothingChangedMakesNoWrites() throws {
@@ -273,6 +276,17 @@ final class OnePasswordTests: XCTestCase {
         XCTAssertFalse(try writes().contains { $0.args.contains("hand2") })
         try vaults.write(["devbox"])
         XCTAssertTrue(run(["onepassword", "list"]).stdout.contains("1 hand-made item tagged mytokens left alone"))
+    }
+
+    func testAnItemWrittenInTheOldFormatCountsAsChangedAndIsRewritten() throws {
+        try putToken()
+        try store("github", "ci", "x")
+        // The digest the old format gave: title, notes, [label, value] pairs.
+        vault = [["id": "old1", "title": "github.ci", "tags": ["mytokens", "mytokens-digest-0123456789abcdef0123456789abcdef"]]]
+        try publishVault()
+        XCTAssertEqual(try? syncVault("V", store: laptop, cli: deps.onepassword).get(), ["updated github.ci"])
+        try replay()
+        XCTAssertEqual(try? syncVault("V", store: laptop, cli: deps.onepassword).get(), ["no changes"])
     }
 
     func testANonDefaultAccountIsTitledServiceDotAccountAndNeverHasASlash() throws {

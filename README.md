@@ -369,10 +369,23 @@ pushed through Bark like a server. A machine reads it with its own read-only ser
 
 ```sh
 op read "op://<vault>/<title>/<Label>"
-op read "op://<vault>/<title>/<Label> [<i>]/<key>"   # a list field
 ```
 
-(a lone value's label is `value`). What each item is for (its Description, as the start of the notes):
+(a lone value's label is `value`). The item holds the whole secret, not only its values: the
+fields are plain top-level fields, and everything else (service, account, kind, level, meta, the fields'
+order) is in a `mytokens` section, so a server with `op` and `jq` and no mytokens reads it
+all. Its own token is `OP_SERVICE_ACCOUNT_TOKEN`. The programs are in `skills/mytokens/op/` of this
+repository, and print what mytokens prints:
+
+```sh
+P=<this repo>/skills/mytokens/op
+item() { op item get "<title>" --vault <vault> --format json; }
+item | jq -cSj -L $P -f $P/secret.jq                     # = mytokens get <service> --json
+item | jq -rj  -L $P -f $P/env.jq                        # a Profile: = mytokens env <service>
+item | jq -cSj -L $P --arg label <Label> -f $P/field.jq  # = mytokens get <service> --field <Label> (a list: its JSON array)
+```
+
+What each item is for (its Description, as the start of the notes):
 
 ```sh
 op item list --vault <v> --format json | jq -r '.[] | "\(.title)\t\(.additional_information)"'

@@ -407,8 +407,9 @@ enum JSONUtil {
     }
 
     /// Re-serialize a JSON value to compact, key-sorted text.
+    /// A `/` is written as is, as `jq -c` does (a vault server prints the same bytes, mytokens#10).
     static func compact(_ any: Any) -> String? {
-        guard let data = try? JSONSerialization.data(withJSONObject: any, options: [.sortedKeys, .fragmentsAllowed])
+        guard let data = try? JSONSerialization.data(withJSONObject: any, options: [.sortedKeys, .fragmentsAllowed, .withoutEscapingSlashes])
         else { return nil }
         return String(data: data, encoding: .utf8)
     }

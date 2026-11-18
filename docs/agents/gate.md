@@ -21,7 +21,10 @@ bundle, a failing test, or a run of no tests (`tools/xctest-run-test.sh`).
   (`XCODEGEN_VERSION` and `MISE_VERSION`) alone. `xcodegen-install` installs a
   missing mise into `~/.local/bin` from its official release after verifying its
   SHA-256, then installs the pinned XcodeGen.
-
+- **jq**: the tests run the vault-reading programs (`skills/mytokens/op/*.jq`) with it.
+  `make test` runs `make jq-install` first: a jq on PATH or in `~/.local/bin` is used; else the
+  pinned `JQ_VERSION` (`Makefile`) is installed into `~/.local/bin` from its official release
+  after verifying its SHA-256 (`tools/install-jq.sh`).
 
 ## Cutting a version
 

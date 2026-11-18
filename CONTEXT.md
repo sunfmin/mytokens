@@ -124,6 +124,7 @@ item of names, not a Secret, shared by the personal Macs.
 What each personal Mac's launchd agent does without being asked. Every 15 minutes, and right after
 a command there changes a `server`-level Secret, it Syncs every host on the **Server list**,
 first upgrading MyTokens there when it is missing or older. Each host is Synced on its own.
+Before that, at most once an hour, the Mac installs a newer published Release of itself (ADR-0023).
 `server list` shows when each host last Synced and why it fails. A host failing for 24 hours
 straight is reported through Bark once a day. `server pause` / `resume` turn it off and on for
 one Mac. It never runs on a Server (ADR-0016).

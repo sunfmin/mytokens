@@ -391,7 +391,12 @@ launchd agent (`com.sunfmin.mytokens.background-sync`) that runs `mytokens serve
   `server`, lowers to `personal`, removes). The command returns at once and the agent does the
   syncing.
 
-Each run first upgrades MyTokens on a host where it is missing or older (as `server add`
+Each run first checks, at most once an hour, the newest published Release of `sunfmin/mytokens`;
+when it is newer than the installed app, this Mac installs it (`scripts/install.sh`, with its
+selftest) and goes on with the new version. A failed check or install shows as a `this Mac` line in
+`server list` and never stops the hosts. `server pause` pauses it too (ADR-0023).
+
+Then it upgrades MyTokens on a host where it is missing or older (as `server add`
 does), then syncs it. Hosts are independent: one that is off or failing never stops the others.
 Before the Mac's first unlock after boot a run does nothing and waits. Your two Macs may both
 run at once; the second prints `no changes`.

@@ -48,6 +48,22 @@ final class BackgroundSyncTests: XCTestCase {
         func kick() { kicks += 1 }
     }
 
+    final class FakeReleases: ReleaseSource, AppInstaller {
+        var latest: String? = "0.2.0"          // nil: GitHub cannot be reached
+        var installFails = false
+        private(set) var checks = 0, installs = 0
+        func latestVersion() throws -> String {
+            checks += 1
+            guard let latest else { throw StepFailure(step: "check for a new release", why: "curl: (6) Could not resolve host\n") }
+            return latest
+        }
+        func install(script: Data) throws {
+            installs += 1
+            if installFails { throw StepFailure(step: "install the new release", why: "selftest failed\n") }
+        }
+    }
+
+    private var releases = FakeReleases()
     private var laptop = InMemorySecretStore()
     private var list = InMemoryServerList()
     private var state = MemoryBackgroundSyncState()
@@ -63,6 +79,7 @@ final class BackgroundSyncTests: XCTestCase {
         agent = RecordingAgent()
         bark = RecordingBarkTransport()
         fleet = FleetRemote()
+        releases = FakeReleases()
         clock = Date(timeIntervalSince1970: 1_794_441_600)
     }
 
@@ -72,7 +89,7 @@ final class BackgroundSyncTests: XCTestCase {
                                       stdin: { Data() }, now: { [unowned self] in self.clock }, bark: bark,
                                       servers: list,
                                       app: { AppRelease(version: "0.2.0", installScript: { Data("#!/bin/bash\n".utf8) }) },
-                                      syncState: state, agent: agent))
+                                      syncState: state, agent: agent, releases: releases, installer: releases))
     }
 
     private func serve(_ hosts: String...) {
@@ -318,7 +335,7 @@ final class BackgroundSyncTests: XCTestCase {
         _ = onLaptop(["server", "sync"])
         list.hosts = ["mini"]                                              // the other Mac ran server rm
         _ = onLaptop(["server", "sync"])
-        XCTAssertEqual(Set(state.hosts.keys), ["mini"])
+        XCTAssertEqual(Set(state.hosts.keys), ["mini", releaseStatusKey])
     }
 
     func testAManualSyncOfAListedHostIsItsLastSync() {
@@ -381,5 +398,75 @@ final class BackgroundSyncTests: XCTestCase {
         var ran = false
         file.exclusively { ran = true }
         XCTAssertTrue(ran)
+    }
+
+    // A personal Mac installs a newer published Release itself (ADR-0023).
+
+    func testANewerReleaseIsInstalledOnceBeforeTheHostsSync() {
+        serve("mini")
+        releases.latest = "0.3.0"
+        let r = onLaptop(["server", "sync"])
+        XCTAssertEqual(r.exitCode, 0, r.stdout + r.stderr)
+        XCTAssertEqual(releases.installs, 1)
+        XCTAssertTrue(r.stdout.contains("upgraded MyTokens on this Mac 0.2.0 to 0.3.0"), r.stdout)
+        XCTAssertNotNil(state.hosts["mini"]?.lastSuccess)                  // the hosts went on syncing
+        clock = clock.addingTimeInterval(3 * 3600)
+        _ = onLaptop(["server", "sync"])
+        XCTAssertEqual(releases.installs, 2)                               // the fake never changes the app's version
+    }
+
+    func testTheSameOrAnOlderReleaseInstallsNothing() {
+        serve("mini")
+        for latest in ["0.2.0", "0.1.9"] {
+            releases.latest = latest
+            clock = clock.addingTimeInterval(3 * 3600)
+            XCTAssertEqual(onLaptop(["server", "sync"]).exitCode, 0)
+        }
+        XCTAssertEqual(releases.checks, 2)
+        XCTAssertEqual(releases.installs, 0)
+    }
+
+    func testTheReleaseIsCheckedAtMostOncePerHour() {
+        serve("mini")
+        _ = onLaptop(["server", "sync"])
+        clock = clock.addingTimeInterval(15 * 60)
+        _ = onLaptop(["server", "sync"])
+        XCTAssertEqual(releases.checks, 1)
+        clock = clock.addingTimeInterval(46 * 60)
+        _ = onLaptop(["server", "sync"])
+        XCTAssertEqual(releases.checks, 2)
+    }
+
+    func testAFailedCheckOrInstallIsReportedAndTheHostsStillSync() {
+        serve("mini")
+        releases.latest = nil
+        var r = onLaptop(["server", "sync"])
+        XCTAssertEqual(r.exitCode, 1)
+        XCTAssertTrue(r.stdout.contains("this Mac: failed to check for a new release"), r.stdout)
+        XCTAssertNotNil(state.hosts["mini"]?.lastSuccess)
+        XCTAssertTrue(onLaptop(["server", "list"]).stdout.contains("this Mac\tfailed to check for a new release"), "shown in server list")
+
+        releases.latest = "0.3.0"
+        releases.installFails = true
+        clock = clock.addingTimeInterval(2 * 3600)
+        r = onLaptop(["server", "sync"])
+        XCTAssertTrue(r.stdout.contains("failed to install the new release"), r.stdout)
+        XCTAssertNotNil(state.hosts["mini"]?.lastSuccess)
+
+        releases.installFails = false
+        clock = clock.addingTimeInterval(2 * 3600)
+        _ = onLaptop(["server", "sync"])
+        XCTAssertFalse(onLaptop(["server", "list"]).stdout.contains("this Mac"))   // cleared
+    }
+
+    func testPauseAlsoPausesTheReleaseCheckAndAServerNeverChecks() {
+        serve("mini")
+        releases.latest = "0.3.0"
+        _ = onLaptop(["server", "pause"])
+        _ = onLaptop(["server", "sync"])
+        XCTAssertEqual(releases.checks, 0)
+        _ = onLaptop(["server", "resume"])
+        XCTAssertEqual(onLaptop(["server", "sync"], role: .server).exitCode, 64)
+        XCTAssertEqual(releases.checks, 0)
     }
 }

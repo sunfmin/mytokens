@@ -35,6 +35,8 @@ struct Dependencies {
     var backgroundRemote: Remote? = nil               // how its runs reach a Server; nil: `remote`
     var vaults: ServerList = MemoryNameList()            // the 1Password vault list (ADR-0022)
     var onepassword: OnePasswordCLI = OPCommand()        // how a vault is written
+    var releases: ReleaseSource? = nil                   // the newest published Release (ADR-0023); nil: no check
+    var installer: AppInstaller? = nil                   // how a newer one is installed
     static var live: Dependencies {
         .init(role: FileHostRoleSetting(),
               store: { KeychainSecretStore.opened($0.keychain) },
@@ -48,7 +50,9 @@ struct Dependencies {
               syncState: FileBackgroundSyncState(),
               agent: LaunchdAgent(),
               backgroundRemote: SSHRemote(unattended: true),
-              vaults: KeychainServerList.vaults)
+              vaults: KeychainServerList.vaults,
+              releases: GitHubReleaseSource(),
+              installer: ScriptAppInstaller())
     }
 }
 

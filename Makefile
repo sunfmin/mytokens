@@ -34,7 +34,7 @@ XCODEGEN := "$(MISE)" exec xcodegen@$(XCODEGEN_VERSION) -- xcodegen
 JQ_VERSION := 1.7.1
 
 .PHONY: project build test jq-install install selftest verify signed dist release icon screenshots clean xcodegen-check xcodegen-install \
-	release-verify release-wait set-version installed-version-check release-check-gh
+	release-verify release-wait set-version installed-version-check release-check-gh op-real-check
 
 xcodegen-check:
 	@command -v mise >/dev/null 2>&1 || [ -x "$(BIN_DIR)/mise" ] || { echo "mise is missing: run make -s xcodegen-install to install it from its official, checksum-verified release" >&2; exit 1; }
@@ -80,6 +80,13 @@ test: project jq-install
 	tools/adr-numbers-test.sh
 	xcodebuild -project $(PROJECT) -scheme $(APP) -derivedDataPath $(DERIVED) build-for-testing
 	tools/xctest-run.sh $(TEST_BUNDLE)
+
+# The real `op` check of the vault sync, against the scratch vault mytokens-scratch alone, from an
+# in-memory store with the token in the Secret 1password-scratch-service-account (mytokens#15).
+# Production vaults are never a test target. Not part of the gate.
+op-real-check: project jq-install
+	xcodebuild -project $(PROJECT) -scheme $(APP) -derivedDataPath $(DERIVED) build-for-testing
+	tools/op-real-check.sh $(TEST_BUNDLE)
 
 install: build
 	rm -rf "$(INSTALL_DIR)/$(BUNDLE)"

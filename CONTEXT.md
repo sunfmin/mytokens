@@ -116,6 +116,15 @@ One-way: nothing is Adopted from it. A hand-made `mytokens`-tagged item whose ti
 Sync keeps it current (ADR-0022).
 _Avoid_: Server (a Server runs mytokens), backup, export.
 
+**Scratch vault**:
+The 1Password vault `mytokens-scratch`, the only vault a test or check ever writes, with its own
+service account (read+write on that vault alone) whose token is the Secret
+`1password-scratch-service-account`. Production vaults and hosts are never a test target: inside a
+factorium worker (`FACTORIUM_WORKER` set) mytokens refuses `onepassword add|rm`, `sync`,
+`server add|rm|sync`, and a `put`/`rm` of a `server`-level Secret, before reading any token. The
+real check is `make op-real-check` (`docs/agents/gate.md`).
+_Avoid_: test vault (`devbox` and every other vault are production).
+
 **Vault list**:
 The vaults named by `onepassword add`, kept like the **Server list**: one synchronizable keychain
 item of names, not a Secret, shared by the personal Macs.

@@ -42,3 +42,21 @@ published: `make release-wait TAG=vx.y.z` (`tools/release-wait.sh`), `bash
 skills/mytokens/scripts/install.sh`, `make -s installed-version-check
 VERSION=x.y.z`. `make release-check-gh` checks a host has `gh` logged in with
 push rights. Self-upgrade is its own ticket.
+
+## Production is never a test target
+
+Nothing a worker, a test or a check runs may write a production 1Password vault (`devbox` or any
+other) or Sync a real host from this Mac's real store (mytokens#15: a worker once archived 23
+production items in `devbox`). Two things hold that:
+
+- **The worker guard.** factorium sets `FACTORIUM_WORKER` in every worker session; with it set,
+  mytokens refuses `onepassword add|rm`, `sync <host>`, `server add|rm|sync`, and a `put`/`rm` of a
+  `server`-level Secret (whose change starts Background Sync), before reading any token or writing
+  anything (`Sources/Core/WorkerGuard.swift`, `Tests/WorkerGuardTests.swift`).
+- **The scratch vault.** The real `op` check of the vault sync runs only against the vault
+  `mytokens-scratch`, with its own service account (read+write on that vault alone), token in the
+  Secret `1password-scratch-service-account`. `make op-real-check` (`tools/op-real-check.sh`) reads
+  that token, refuses unless `op vault list` with it shows exactly `mytokens-scratch`, and runs
+  `OnePasswordRealCheck`: the sync writes, reads back and empties the scratch vault from an
+  in-memory store, never the keychain's Secrets. It needs `op` and the Secret on the host, so it is
+  not part of the gate; in the gate that test is skipped.

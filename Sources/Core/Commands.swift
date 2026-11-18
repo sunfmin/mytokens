@@ -210,7 +210,8 @@ private func usage() -> CommandResult {
                              [--description "<text>"] [--level personal|server]
                              [--set "<NAME>=<value>" …]                  non-secret fields, from the CLI
                              [--fields "<Label>","<Label>" [--show "<Label>",…]]   secret fields: terminal, popup or one-time link
-                             [--field-from-stdin "<Label>"]             one secret field a command pipes in
+                             [--field-from-stdin "<Label>" [--list]]    one secret field a command pipes in;
+                                                                        with --list, a JSON array of flat records
           upserts the named fields into the secret, keeping the rest; with no
           --set/--fields it stores one bare value — or, on an existing secret given
           --level, changes only its metadata. Whole-replace: rm then put.
@@ -290,6 +291,11 @@ private func runPut(_ argv: [String], _ store: SecretStore, _ input: SecretInput
         guard !label.isEmpty else { return fail("--field-from-stdin needs the field's label\n", 64) }
         stdinLabel = label
     }
+    // `--list`: the piped value is a list of records (ADR-0019). Only stdin carries one.
+    let stdinIsList = args.present("list")
+    if stdinIsList, stdinLabel == nil {
+        return fail("--list goes with --field-from-stdin \"<Label>\": a list field is piped in as \(ListValue.shape)\n", 64)
+    }
     let writtenLabels = setPairs.map(\.label) + fieldLabels + (stdinLabel.map { [$0] } ?? [])
     let isLabelledWrite = !writtenLabels.isEmpty
 
@@ -316,7 +322,14 @@ private func runPut(_ argv: [String], _ store: SecretStore, _ input: SecretInput
         guard !value.isEmpty else {
             return fail("--field-from-stdin: stdin is empty; nothing stored. Pipe the value in; \(humanLine)\n", 64)
         }
-        stdinValue = value
+        if stdinIsList {
+            guard let list = ListValue.canonical(value) else {
+                return fail("--field-from-stdin \"\(stdinLabel)\" --list: stdin must be \(ListValue.shape); nothing stored\n", 64)
+            }
+            stdinValue = list
+        } else {
+            stdinValue = value
+        }
     }
 
     // Collect secret values from whichever input reaches a human, or throw the
@@ -416,6 +429,17 @@ private func runPut(_ argv: [String], _ store: SecretStore, _ input: SecretInput
             if let bad = writtenLabels.first(where: { !isValidEnvName($0) }) {
                 return fail("field \"\(bad)\" is not a valid environment-variable name (need [A-Za-z_][A-Za-z0-9_]*)\n", 64)
             }
+            if stdinIsList {
+                return fail("a Profile cannot hold a list field: an environment variable holds one string; nothing stored\n", 64)
+            }
+        }
+
+        // A list Field is written only from stdin with --list (ADR-0019): the terminal, popup,
+        // one-time link and --set each carry one string, and a text value would replace the list.
+        let stdinListLabels = stdinIsList ? stdinLabel.map { [$0] } ?? [] : []
+        if let existing, let list = writtenLabels.first(where: { existing.isList($0) && !stdinListLabels.contains($0) }) {
+            return fail("\(service)/\(account) field \"\(list)\" is a list; pipe it in as \(ListValue.shape) with: "
+                        + "mytokens put \(shellWord(service)) --field-from-stdin \(shellWord(list)) --list\n", 64)
         }
 
         // Preserve an existing meta/description when this put doesn't provide one.
@@ -436,6 +460,7 @@ private func runPut(_ argv: [String], _ store: SecretStore, _ input: SecretInput
             // Merge: keep existing fields (updating a named one in place), append new
             // ones in the order --set then --fields.
             var fields = existing?.fields ?? []
+            var lists = existing?.lists ?? []
             func upsertField(_ label: String, _ value: String) {
                 if let idx = fields.firstIndex(where: { $0.label == label }) {
                     fields[idx] = (label: label, value: value)
@@ -445,8 +470,11 @@ private func runPut(_ argv: [String], _ store: SecretStore, _ input: SecretInput
             }
             for (label, value) in setPairs { upsertField(label, value) }
             for label in fieldLabels { upsertField(label, promptedValues[label] ?? "") }
-            if let stdinLabel, let stdinValue { upsertField(stdinLabel, stdinValue) }
-            secret = SecretValue(fields: fields)
+            if let stdinLabel, let stdinValue {
+                upsertField(stdinLabel, stdinValue)
+                if stdinIsList { lists.insert(stdinLabel) } else { lists.remove(stdinLabel) }
+            }
+            secret = SecretValue(fields: fields, lists: lists)
         } else {
             // Bare single value (ADR-0002): one masked field with the empty label.
             secret = SecretValue(single: try prompt([Field(label: "", masked: true)], description)[""]!)
@@ -577,7 +605,10 @@ private func runGet(_ argv: [String], _ store: SecretStore, _ missing: (String, 
             let level = try store.list().first { $0.service == service && $0.account == account }?.level ?? .default
             var obj: [String: Any] = ["level": level.rawValue]
             if secret.isLabelled {
-                obj["fields"] = Dictionary(secret.fields.map { ($0.label, $0.value) }, uniquingKeysWith: { _, last in last })
+                // A list Field is the array itself, not its JSON text (ADR-0019).
+                obj["fields"] = Dictionary(secret.fields.map { f -> (String, Any) in
+                    (f.label, secret.isList(f.label) ? (ListValue.records(f.value) ?? []) as Any : f.value)
+                }, uniquingKeysWith: { _, last in last })
             } else {
                 obj["value"] = secret.fields[0].value
             }
@@ -627,6 +658,9 @@ private func runEnv(_ argv: [String], _ store: SecretStore, _ missing: (String, 
         }
         // Emit one `export NAME='VALUE'` per Field, in stored order. Labels were
         // validated at `put` time; re-check as defense against a corrupt item.
+        if let list = secret.fields.first(where: { secret.isList($0.label) }) {
+            return fail("\(service)/\(account) field '\(list.label)' is a list: an environment variable cannot hold one\n", 1)
+        }
         var lines: [String] = []
         for field in secret.fields {
             guard isValidEnvName(field.label) else {
@@ -647,7 +681,12 @@ private func runList(_ argv: [String], _ store: SecretStore) -> CommandResult {
         let rows = records.map { r -> String in
             var line = "\(r.service)/\(r.account)\t\(r.kind)\t\(r.level.rawValue)"
             if let description = r.description { line += "  — " + description }
-            if let fields = r.fields, !fields.isEmpty { line += "  fields: " + fields.joined(separator: ", ") }
+            if let fields = r.fields, !fields.isEmpty {
+                // A list Field shows its record count, never its values (ADR-0019).
+                line += "  fields: " + fields.map { label in
+                    r.lists?[label].map { "\(label) (list, \($0) record\($0 == 1 ? "" : "s"))" } ?? label
+                }.joined(separator: ", ")
+            }
             if let meta = r.meta { line += "  " + meta }
             return line
         }

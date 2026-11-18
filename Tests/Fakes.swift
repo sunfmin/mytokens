@@ -28,6 +28,7 @@ final class InMemorySecretStore: SecretStore {
                 kind: e.kind,
                 meta: e.meta.flatMap(JSONUtil.compact),
                 fields: e.secret.schema,
+                lists: e.secret.listCounts,
                 description: e.description,
                 level: e.level,
                 pushed: e.marks.pushed,

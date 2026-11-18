@@ -96,6 +96,7 @@ The value is plaintext once `get` returns it (acceptable on this trusted machine
 | `mytokens put <service> --set "<NAME>=<value>" …` | Upsert non-secret field(s) from the CLI — **no popup**. Repeatable. |
 | `mytokens put <service> --fields "<A>","<B>" [--show "<A>"]` | Upsert secret field(s) via one popup; masked unless `--show`. |
 | `<command> \| mytokens put <service> --field-from-stdin "<A>"` | Upsert one secret field from a command's output — **no popup**. Only for a value a command makes (see below). |
+| `<command> \| mytokens put <service> --field-from-stdin "<A>" --list` | Upsert a **list** field: stdin is a JSON array of flat string-valued records (`[{"host":"db1","password":"…"},…]`). Same rules as above. |
 | `mytokens get <service> [--account L]` | Raw value to stdout; non-zero exit if absent. |
 | `mytokens get <service> --field "<A>"` / `--json` | One field's raw value / the whole Secret as JSON: `{"fields":{…},"level":…}` (or `{"level":…,"value":…}` for a lone value). |
 | `mytokens env <service> [--account L]` | A Profile's env vars as shell `export` lines for `eval`. Errors on a non-Profile. |
@@ -150,7 +151,15 @@ Secret that deletes as a unit.
 - **Bare `get`** returns the raw value for a single-field Secret, but **errors** for a
   multi-field one and lists the field labels — use `--field`, or `--json` to dump the whole
   Secret (`{"fields": {label: value}, "level": …}`).
-- **`list`** shows the field labels (never values).
+- **`list`** shows the field labels (never values); a list field shows as `Hosts (list, 2 records)`.
+- **A list of records** (ADR-0019): when a credential is a set of same-shaped records — one login
+  per DB host, one token per runner — store them as one **list** field instead of numbered
+  fields: `<command> | mytokens put db --field-from-stdin "Hosts" --list`, stdin a JSON array of
+  flat objects whose keys are non-empty and whose values are all strings. Any other shape is
+  refused before anything is stored. The `--field-from-stdin` rules above apply: only a list a
+  command makes. `get --field Hosts` prints the array as compact JSON (pipe it to `jq`), and
+  `get --json` puts the array itself under `fields`. `--fields`/`--set`/popup/link refuse a list
+  field. A Profile cannot hold one, because `env` emits one string per variable.
 
 ### One Profile per project
 

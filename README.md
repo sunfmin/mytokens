@@ -370,6 +370,12 @@ place. The vault is two-way: an item you add or change in 1Password (any categor
 that `onepassword list` shows and neither side takes. A vault failing for 24 hours is
 pushed through Bark like a server. A machine reads it with its own read-only service account:
 
+An item adopted from the vault comes in as kind `static` (an item without mytokens metadata carries no kind), and a
+section field of a hand-made item becomes a top-level field: `op://<vault>/<title>/extra/api key` is read as
+`op://<vault>/<title>/api key`. To make an adopted item a Profile, change its kind in place — values, Description and
+level stay: `mytokens put <service> --kind profile` (every label must be an environment-variable name; `--kind static`
+changes it back; the next sync writes the new kind). Only a Parent still needs `rm` first.
+
 ```sh
 op read "op://<vault>/<title>/<Label>"
 ```

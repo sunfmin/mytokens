@@ -57,7 +57,7 @@ Secret or Profile that fits the job, and create a new one only when none does.
 If the Service has a Secret, use it. If `get` exits non-zero, the Secret isn't stored yet — offer to `put` it (secret values pop a secure popup and never pass through you; non-secret values you can pass on the CLI with `--set`):
 
 ```sh
-mytokens put <service> --description "<what it's for>" [--account <label>] [--kind static|parent] [--meta '<json>']
+mytokens put <service> --description "<what it's for>" [--account <label>] [--kind static|parent|profile] [--meta '<json>']
 # A credential with several parts (key + secret, user + password) → one popup:
 mytokens put aws --description "CI deploy: S3 uploads" --fields "Access Key ID","Secret Access Key" --show "Access Key ID"
 ```
@@ -134,6 +134,7 @@ Secret that deletes as a unit.
   Labels are comma-separated; every named field is required; `--show` reveals non-secret fields
   (identifiers) so the user can verify a paste — everything else is masked. Naming both fields
   in one `put` rotates them atomically. `--kind parent` is single-value and can't take `--fields`.
+- **Change the kind** of an existing Secret in place: `mytokens put <service> --kind profile|static` keeps values, Description and level (a Profile needs every label to be an env-var name; a Parent needs `rm` first). An item adopted from a 1Password vault comes in as `static` with a hand-made item's section fields moved to the top level (`op://<vault>/<title>/api key`, not `.../extra/api key`); make it a Profile this way.
 - **Update one field** without touching the rest (ADR-0009): `mytokens put aws --fields "Secret Access Key"`
   re-pops just that field; the Access Key ID is left as-is. Non-secret parts can go via
   `--set` instead of the popup, e.g. `mytokens put db --set "Username=svc_ci"`.

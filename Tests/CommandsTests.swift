@@ -407,10 +407,30 @@ final class CommandsTests: XCTestCase {
         XCTAssertTrue(list.stdout.contains("Claude Code to LongCat"))
     }
 
-    func testPutCannotChangeKindOnMerge() {
+    func testPutChangesKindInPlaceKeepingValuesAndDescription() {
         let store = InMemorySecretStore()
-        _ = runCommand(["put", "longcat", "--kind", "profile", "--set", "ANTHROPIC_MODEL=LongCat-2.0"], mdeps(store, values: nil))
-        let bad = runCommand(["put", "longcat", "--kind", "static", "--set", "ANTHROPIC_MODEL=LongCat-3.0"], mdeps(store, values: nil))
+        _ = runCommand(["put", "qwen", "--set", "A=1", "--set", "B=2", "--description", "d"], mdeps(store, values: nil))
+        let r = runCommand(["put", "qwen", "--kind", "profile"], mdeps(store, values: nil))
+        XCTAssertEqual(r.exitCode, 0, r.stderr)
+        XCTAssertEqual(runCommand(["env", "qwen"], mdeps(store, values: nil)).stdout, "export A='1'\nexport B='2'\n")
+        XCTAssertTrue(runCommand(["list"], mdeps(store, values: nil)).stdout.contains("d"))
+        // And back to static.
+        XCTAssertEqual(runCommand(["put", "qwen", "--kind", "static", "--set", "A=3"], mdeps(store, values: nil)).exitCode, 0)
+        XCTAssertNotEqual(runCommand(["env", "qwen"], mdeps(store, values: nil)).exitCode, 0)
+    }
+
+    func testPutKindProfileRefusedWhenLabelIsNotEnvName() {
+        let store = InMemorySecretStore()
+        _ = runCommand(["put", "qwen", "--set", "api key=1"], mdeps(store, values: nil))
+        let bad = runCommand(["put", "qwen", "--kind", "profile"], mdeps(store, values: nil))
+        XCTAssertNotEqual(bad.exitCode, 0)
+        XCTAssertTrue(bad.stderr.contains("not a valid environment-variable name"))
+    }
+
+    func testPutCannotChangeKindToOrFromParent() {
+        let store = InMemorySecretStore()
+        _ = runCommand(["put", "qwen", "--set", "A=1"], mdeps(store, values: nil))
+        let bad = runCommand(["put", "qwen", "--kind", "parent", "--set", "A=1"], mdeps(store, values: nil))
         XCTAssertNotEqual(bad.exitCode, 0)
         XCTAssertTrue(bad.stderr.contains("rm it first to change kind"))
     }

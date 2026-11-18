@@ -6,4 +6,6 @@
 # signing identity is needed here.
 set -eu
 cd "$(dirname "$0")"
+# Every ADR has its own number (mytokens#5).
+tools/adr-numbers.sh
 exec make test

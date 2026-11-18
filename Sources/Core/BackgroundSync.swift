@@ -421,7 +421,7 @@ private func backgroundSyncOnce(store: SecretStore, deps: Dependencies) -> Comma
         }
         all[host] = status
     }
-    // Each 1Password vault, on its own (ADR-0019): one-way, nothing adopted.
+    // Each 1Password vault, on its own (ADR-0022): one-way, nothing adopted.
     for vault in vaults {
         let key = vaultStatusKey(vault), name = "1Password vault \(vault)"
         var status = all[key] ?? HostSyncStatus()

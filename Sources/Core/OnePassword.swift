@@ -1,7 +1,7 @@
 import CryptoKit
 import Foundation
 
-// The 1Password vault target (ADR-0019): one more place Sync brings the `server`-level Secrets,
+// The 1Password vault target (ADR-0022): one more place Sync brings the `server`-level Secrets,
 // for machines that are not Macs running mytokens (Linux boxes, CI) and read the vault with a
 // 1Password service account. One-way: nothing is Adopted from a vault. The vault list is kept
 // like the Server list (ADR-0015). Values reach `op` only on its stdin; the service account

@@ -1,6 +1,7 @@
 # The gate
 
-`factorium.toml` runs `./gate.sh`. It generates the Xcode project with the pinned
+`factorium.toml` runs `./gate.sh`. It first refuses two ADRs that share a number
+(`tools/adr-numbers.sh`), then generates the Xcode project with the pinned
 XcodeGen and runs `make test`: the asc-key, release-wait, xcodegen-need and
 test-runner script checks and the unit tests.
 

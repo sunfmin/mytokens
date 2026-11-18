@@ -1,6 +1,6 @@
 # A list Field goes to the 1Password vault as one section per record
 
-Amends ADR-0019 (1Password vault) for the list Field of ADR-0019 (a Field may hold a list of records).
+Amends ADR-0022 (1Password vault) for the list Field of ADR-0019 (a Field may hold a list of records).
 
 ## Context
 

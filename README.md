@@ -228,7 +228,7 @@ and nothing else changes. Binary data goes in base64. It upserts like `--fields`
 Secret's other Fields, and combines with `--set`, `--description` and `--level` the same way.
 For several Fields, run it several times. It is refused when stdin is a terminal or empty: a
 value a human knows goes in with `--fields`. The value stays in the pipe, out of argv, shell
-history, the output and files (ADR-0017).
+history, the output and files (ADR-0021).
 
 #### A list of records: `--list`
 
@@ -370,7 +370,7 @@ pushed through Bark like a server. A machine reads it with its own read-only ser
 op read "op://<vault>/<service>/<account>/<Label>"
 ```
 
-(a lone value's label is `value`). See ADR-0019.
+(a lone value's label is `value`). See ADR-0022.
 
 ### Background sync
 

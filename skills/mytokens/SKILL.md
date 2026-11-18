@@ -139,7 +139,7 @@ Secret that deletes as a unit.
   `--set` instead of the popup, e.g. `mytokens put db --set "Username=svc_ci"`.
 - **A value a command makes** — a `.p12` from `security export`, a password from `openssl rand` —
   is piped straight in, with no popup: `openssl rand -base64 32 | mytokens put dev-id
-  --field-from-stdin "P12 password"` (ADR-0017). All of stdin is the one field's value (no length
+  --field-from-stdin "P12 password"` (ADR-0021). All of stdin is the one field's value (no length
   limit; one trailing newline stripped; base64 any binary). It upserts like `--fields` and
   combines with `--set`/`--description`/`--level`; one call per field. **Use it only when a
   command generates the value and pipes it in directly.** Never use it to relay a value the

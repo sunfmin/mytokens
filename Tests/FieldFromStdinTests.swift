@@ -1,7 +1,7 @@
 import XCTest
 
 // `put --field-from-stdin "<Label>"` stores one secret Field a command pipes in, with no
-// popup and no terminal prompt (ADR-0017). Driven through the stdin seam with fakes.
+// popup and no terminal prompt (ADR-0021). Driven through the stdin seam with fakes.
 final class FieldFromStdinTests: XCTestCase {
     private var store = InMemorySecretStore()
     private var input = RecordingSecretInput(.cancelled)

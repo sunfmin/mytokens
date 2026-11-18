@@ -68,6 +68,7 @@ test: project
 	tools/release-wait-test.sh
 	tools/signing-keychain-test.sh
 	tools/xctest-run-test.sh
+	tools/adr-numbers-test.sh
 	xcodebuild -project $(PROJECT) -scheme $(APP) -derivedDataPath $(DERIVED) build-for-testing
 	tools/xctest-run.sh $(TEST_BUNDLE)
 

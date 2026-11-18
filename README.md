@@ -374,7 +374,21 @@ pushed through Bark like a server. A machine reads it with its own read-only ser
 op read "op://<vault>/<title>/<Label>"
 ```
 
-(a lone value's label is `value`). The item holds the whole secret, not only its values: the
+(a lone value's label is `value`). `op://` accepts only letters, digits, space, `_`, `-`, `.` and `=`,
+so a label with `[`, `:` or CJK characters cannot be read by label; every field and list record also has an
+id made only of those characters (a Field's id is its label with each other character replaced by `_`,
+`Access Key ID` → `Access_Key_ID`, `中文` → `__`; a collision is numbered `_2`), and the `mytokens` section's `ids`
+field lists label → id:
+
+```sh
+op read "op://<vault>/<title>/<FieldId>"                  # a text Field, by its id
+op read "op://<vault>/<title>/<ListId>.<i>/<key>"         # record <i> (from 1) of a list Field
+op read "op://<vault>/<title>/mytokens/ids"               # {"<label>": "<id>", …}
+```
+
+A sync never writes an unchanged item, and holds back a write the service account's budget does not cover
+(`op service-account ratelimit`: 100 an hour per token); `onepassword list` shows it as `deferred` and the next
+run goes on. The item holds the whole secret, not only its values: the
 fields are plain top-level fields, and everything else (service, account, kind, level, meta, the fields'
 order) is in a `mytokens` section, so a server with `op` and `jq` and no mytokens reads it
 all. Its own token is `OP_SERVICE_ACCOUNT_TOKEN`. The programs are in `skills/mytokens/op/` of this

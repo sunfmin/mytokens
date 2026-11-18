@@ -33,8 +33,8 @@ as a Server — every `server`-level Secret goes to every target (ADR-0012).
   Field is a **concealed** top-level field, labelled by the Field's label (a bare value: `value`). The
   store does not record which Fields came from `--set`, so none is written as plain text: the
   safe side. Items made earlier as API Credential are left as they are (a category cannot be edited, and their digest still matches, so the sync does not rewrite them); to get the Description into a list, `op item delete` them and the next sync recreates them as Secure Notes (`op://` references go by title, so they keep working).
-- **Values go to `op` on stdin** as an item template (`op item create|edit --template
-  /dev/stdin`), never argv.
+- **Values go to `op` on stdin** as an item template (`op item create|edit` with the JSON piped on stdin and no
+  `--template`: op 2.42 refuses both together), never argv.
 - **Exactly the `server`-level Secrets.** `op item list --vault <v> --tags mytokens` shows what
   mytokens tagged. An item is the sync's own only with a `mytokens-digest-*` tag; one whose Secret is
   gone or no longer `server`-level (or a second item of one title) is archived (`op item delete

@@ -25,6 +25,14 @@ final class OnePasswordTests: XCTestCase {
             printf '%s\\n' "$@" > "$d/calls/$n.args"
             printf '%s' "$OP_SERVICE_ACCOUNT_TOKEN" > "$d/calls/$n.token"
             cat > "$d/calls/$n.stdin"
+            # real op 2.42 refuses --template together with a piped stdin
+            if [ "$1" = item ] && { [ "$2" = create ] || [ "$2" = edit ]; } && [ ! -t 0 ]; then
+              for a in "$@"; do
+                if [ "$a" = --template ]; then
+                  echo "[ERROR] unable to process line 1: cannot $2 an item from template and stdin at the same time" >&2; exit 1
+                fi
+              done
+            fi
             if [ -f "$d/fail" ]; then cat "$d/fail" >&2; exit 1; fi
             if [ "$1 $2" = "item list" ]; then cat "$d/list.json"; fi
 

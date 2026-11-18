@@ -1,6 +1,6 @@
 #!/bin/sh
-# The gate: what must pass before anything lands. docs/agents/afkconvoy.md
-# names it as `gate_command`, run through `afkconvoy exclusive`.
+# The gate: what must pass before anything lands. factorium.toml runs it
+# as both the fast and the slow gate.
 # It generates the project with the pinned XcodeGen and runs every test.
 # Tests build unsigned (CODE_SIGNING_ALLOWED: NO in project.yml), so no
 # signing identity is needed here.

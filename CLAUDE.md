@@ -8,19 +8,13 @@ iCloud Keychain and lets Claude auto-retrieve and mint them when calling APIs. S
 
 ### Issue tracker
 
-Issues live in the tracker the host names (sunfmin/control, control ADR 0002), labelled
-`repo:sunfmin/mytokens`; open them with the line `afkconvoy flows` gives. External PRs are
-**not** a triage surface. See `docs/agents/issue-tracker.md`.
+Issues live in factorium's local tracker (`factorium issue …`, checkout `mytokens`). See
+`docs/agents/issue-tracker.md`.
 
-### afkconvoy
+### Gate
 
-The fleet goes by `docs/agents/afkconvoy.md`; the gate is `./gate.sh`.
-
-### Triage labels
-
-The five canonical triage roles use their default label strings (`needs-triage`,
-`needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`). See
-`docs/agents/triage-labels.md`.
+`factorium.toml` runs `./gate.sh` (`make test`); what it needs on a host is in
+`docs/agents/afkconvoy.md` (gate-needs), whose cut section is not yet moved to factorium.
 
 ### Domain docs
 

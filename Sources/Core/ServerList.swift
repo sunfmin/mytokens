@@ -15,14 +15,20 @@ protocol ServerList {
 /// The service and account the Server list item is stored under. A Secret cannot take them:
 /// `put` and `rm` refuse the service.
 let serverListService = "mytokens.server-list"
-private let serverListAccount = "hosts"
-private let serverListLabel = "mytokens server list"
 
 /// Real list: a generic-password item in the data-protection keychain, synchronizable, under
 /// mytokens' access group, readable after first unlock like every Secret (ADR-0011). Its data
 /// is a JSON array of host names.
 struct KeychainServerList: ServerList {
     var keychain: Keychain = SystemKeychain()
+    var service = serverListService
+    var account = "hosts"
+    var label = "mytokens server list"
+
+    /// The 1Password vault list (ADR-0019): names of vaults, kept the same way.
+    static var vaults: KeychainServerList {
+        KeychainServerList(service: vaultListService, account: "vaults", label: "mytokens 1password vault list")
+    }
 
     private var query: [String: Any] {
         [
@@ -30,8 +36,8 @@ struct KeychainServerList: ServerList {
             kSecAttrAccessGroup as String: mytokensAccessGroup,
             kSecAttrSynchronizable as String: kCFBooleanTrue!,
             kSecUseDataProtectionKeychain as String: true,
-            kSecAttrService as String: serverListService,
-            kSecAttrAccount as String: serverListAccount,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account,
         ]
     }
 
@@ -53,7 +59,7 @@ struct KeychainServerList: ServerList {
         let data = try JSONEncoder().encode(Array(Set(hosts)).sorted())
         let changes: [String: Any] = [
             kSecValueData as String: data,
-            kSecAttrLabel as String: serverListLabel,
+            kSecAttrLabel as String: label,
             kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlock,
         ]
         let updated = keychain.update(query, changes)

@@ -388,10 +388,11 @@ private func backgroundSyncOnce(store: SecretStore, deps: Dependencies) -> Comma
     if state.isPaused() {
         return CommandResult(stdout: "\(stamp): paused on this Mac (mytokens server resume)\n", stderr: "", exitCode: 0)
     }
-    let hosts: [String]
+    let hosts: [String], vaults: [String]
     do {
         _ = try store.list()
         hosts = try deps.servers.read()
+        vaults = try deps.vaults.read()
     } catch StoreError.locked {
         return CommandResult(stdout: "\(stamp): this Mac has not been unlocked since it booted; waiting\n", stderr: "", exitCode: 0)
     } catch {
@@ -399,8 +400,8 @@ private func backgroundSyncOnce(store: SecretStore, deps: Dependencies) -> Comma
     }
     let remote = deps.backgroundRemote ?? deps.remote
     let app = deps.app()
-    var all = state.statuses().filter { hosts.contains($0.key) }   // forget hosts taken off the list
-    var lines = ["\(stamp): \(hosts.isEmpty ? "no servers on the server list" : hosts.joined(separator: ", "))"]
+    var all = state.statuses().filter { hosts.contains($0.key) || vaults.map(vaultStatusKey).contains($0.key) }   // forget hosts and vaults taken off the lists
+    var lines = ["\(stamp): \(hosts.isEmpty && vaults.isEmpty ? "no servers on the server list" : (hosts + vaults.map { "1Password vault \($0)" }).joined(separator: ", "))"]
     var anyFailed = false
     for host in hosts {
         var status = all[host] ?? HostSyncStatus()
@@ -412,12 +413,33 @@ private func backgroundSyncOnce(store: SecretStore, deps: Dependencies) -> Comma
             anyFailed = true
             status.failed(failure, at: now)
             lines.append("\(host): failed to \(failure.step): \(oneLine(failure.why))")
-            if let pushed = pushFailure(host: host, status: status, failure: failure, store: store, deps: deps, now: now) {
+            if let pushed = pushFailure(host: host, status: status, failure: failure, fix: fixLine(host: host, failure),
+                                        store: store, deps: deps, now: now) {
                 if pushed.delivered { status.lastPushed = now }
                 lines.append("\(host): \(pushed.said)")
             }
         }
         all[host] = status
+    }
+    // Each 1Password vault, on its own (ADR-0019): one-way, nothing adopted.
+    for vault in vaults {
+        let key = vaultStatusKey(vault), name = "1Password vault \(vault)"
+        var status = all[key] ?? HostSyncStatus()
+        switch syncVault(vault, store: store, cli: deps.onepassword) {
+        case .success(let did):
+            status.succeeded(at: now)
+            lines.append("\(name): " + did.joined(separator: ", "))
+        case .failure(let failure):
+            anyFailed = true
+            status.failed(failure, at: now)
+            lines.append("\(name): failed to \(failure.step): \(oneLine(failure.why))")
+            if let pushed = pushFailure(host: name, status: status, failure: failure, fix: vaultFixLine(vault: vault, failure),
+                                        store: store, deps: deps, now: now) {
+                if pushed.delivered { status.lastPushed = now }
+                lines.append("\(name): \(pushed.said)")
+            }
+        }
+        all[key] = status
     }
     try? state.save(all)
     return CommandResult(stdout: lines.map { $0 + "\n" }.joined(), stderr: "", exitCode: anyFailed ? 1 : 0)
@@ -426,7 +448,7 @@ private func backgroundSyncOnce(store: SecretStore, deps: Dependencies) -> Comma
 /// The Bark push for a host failing 24 hours straight, once a day, when this Mac has a `bark`
 /// Secret. Returns what to log about it, or nil when nothing is due; an undelivered push is
 /// tried again at the next run.
-private func pushFailure(host: String, status: HostSyncStatus, failure: StepFailure, store: SecretStore,
+private func pushFailure(host: String, status: HostSyncStatus, failure: StepFailure, fix: String, store: SecretStore,
                          deps: Dependencies, now: Date) -> (said: String, delivered: Bool)? {
     guard let since = status.failingSince, now.timeIntervalSince(since) >= backgroundFailurePushAfter else { return nil }
     if let last = status.lastPushed, now.timeIntervalSince(last) < backgroundFailurePushAfter { return nil }
@@ -436,7 +458,7 @@ private func pushFailure(host: String, status: HostSyncStatus, failure: StepFail
     let title = "mytokens: \(host) has not synced for \(hours) hours"
     var why = oneLine(failure.why)
     if why.count > 300 { why = String(why.prefix(300)) + "…" }
-    let body = "Failed to \(failure.step): \(why). Fix: \(fixLine(host: host, failure))"
+    let body = "Failed to \(failure.step): \(why). Fix: \(fix)"
     do {
         try deps.bark.push(to: url, title: title, body: body)
         return ("told you through Bark", true)

@@ -106,6 +106,19 @@ Syncs the host to hold no Secrets, then takes it off. Background Sync keeps ever
 current (ADR-0015).
 _Avoid_: fleet, inventory, known hosts (that is ssh's file).
 
+**1Password vault**:
+A target of Sync for machines that are not Macs running mytokens: a 1Password vault named by
+`mytokens onepassword add <vault>`, made to hold exactly the `server`-level Secrets, one item each
+(`<service>/<account>`, the Description as notes, every Field concealed, tag `mytokens`), with a
+1Password service account whose token is the personal-level Secret `1password-service-account`.
+One-way: nothing is Adopted from it. Items mytokens did not make are never touched; Background
+Sync keeps it current (ADR-0019).
+_Avoid_: Server (a Server runs mytokens), backup, export.
+
+**Vault list**:
+The vaults named by `onepassword add`, kept like the **Server list**: one synchronizable keychain
+item of names, not a Secret, shared by the personal Macs.
+
 **Background Sync**:
 What each personal Mac's launchd agent does without being asked. Every 15 minutes, and right after
 a command there changes a `server`-level Secret, it Syncs every host on the **Server list**,

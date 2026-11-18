@@ -1,0 +1,255 @@
+import CryptoKit
+import Foundation
+
+// The 1Password vault target (ADR-0019): one more place Sync brings the `server`-level Secrets,
+// for machines that are not Macs running mytokens (Linux boxes, CI) and read the vault with a
+// 1Password service account. One-way: nothing is Adopted from a vault. The vault list is kept
+// like the Server list (ADR-0015). Values reach `op` only on its stdin; the service account
+// token only as OP_SERVICE_ACCOUNT_TOKEN in the `op` child's environment.
+
+/// The service and account of the vault list's keychain item (a `ServerList` of vault names).
+/// A Secret cannot take the service: `put` and `rm` refuse it.
+let vaultListService = "mytokens.onepassword-vaults"
+
+/// The Secret that holds the service account token that writes to the vaults. `personal`: it is
+/// never exported anywhere, whatever level it is given.
+let onePasswordTokenService = "1password-service-account"
+
+/// What a vault item made by mytokens carries: this tag, and a digest tag of what it holds, so
+/// one `op item list` shows whether an item is current without reading any value.
+let vaultItemTag = "mytokens"
+private let vaultDigestPrefix = "mytokens-digest-"
+
+/// The label of the Field a bare (unlabelled) Secret's value goes in.
+let vaultBareFieldLabel = "value"
+
+/// A vault list that lives in memory only: `Dependencies`' default, as for the other state;
+/// `.live` uses the keychain's.
+final class MemoryNameList: ServerList {
+    var names: [String] = []
+    init() {}
+    func read() throws -> [String] { Array(Set(names)).sorted() }
+    func write(_ hosts: [String]) throws { names = Array(Set(hosts)).sorted() }
+}
+
+/// How `op` is run. Tests use a fake `op` on PATH through `OPCommand(path:)`.
+protocol OnePasswordCLI {
+    func run(_ args: [String], stdin: Data, token: String) throws -> CommandResult
+}
+
+/// Runs `op <args>` with `token` as OP_SERVICE_ACCOUNT_TOKEN in the child's environment only.
+struct OPCommand: OnePasswordCLI {
+    var path: String? = nil      // PATH for the child; nil keeps this process's
+
+    func run(_ args: [String], stdin: Data, token: String) throws -> CommandResult {
+        var env = ProcessInfo.processInfo.environment
+        if let path { env["PATH"] = path }
+        env["OP_SERVICE_ACCOUNT_TOKEN"] = token
+        return try runProcess("/usr/bin/env", ["op"] + args, environment: env, stdin: stdin)
+    }
+}
+
+/// Runs a process, feeding it `stdin`, draining both outputs while writing so a chatty child
+/// can't deadlock the pipe.
+func runProcess(_ executable: String, _ arguments: [String], environment: [String: String]? = nil,
+                stdin: Data) throws -> CommandResult {
+    let p = Process()
+    p.executableURL = URL(fileURLWithPath: executable)
+    p.arguments = arguments
+    if let environment { p.environment = environment }
+    let input = Pipe(), output = Pipe(), errors = Pipe()
+    p.standardInput = input
+    p.standardOutput = output
+    p.standardError = errors
+    try p.run()
+    var out = Data(), err = Data()
+    let group = DispatchGroup()
+    group.enter(); DispatchQueue.global().async { out = output.fileHandleForReading.readDataToEndOfFile(); group.leave() }
+    group.enter(); DispatchQueue.global().async { err = errors.fileHandleForReading.readDataToEndOfFile(); group.leave() }
+    try? input.fileHandleForWriting.write(contentsOf: stdin)
+    try? input.fileHandleForWriting.close()
+    p.waitUntilExit()
+    group.wait()
+    return CommandResult(stdout: String(decoding: out, as: UTF8.self),
+                         stderr: String(decoding: err, as: UTF8.self),
+                         exitCode: p.terminationStatus)
+}
+
+/// The key a vault's status is kept under in Background Sync's state, apart from the hosts'.
+func vaultStatusKey(_ vault: String) -> String { "1password:\(vault)" }
+
+/// One vault item as mytokens wants it.
+private struct VaultItem {
+    var title: String
+    var notes: String?
+    var fields: [(label: String, value: String)]
+
+    /// What the item holds, hashed: equal digests, equal items. Not a way to read a value back
+    /// (the vault holds the values anyway).
+    var digest: String {
+        let canonical: [Any] = [title, notes ?? "", fields.map { [$0.label, $0.value] }]
+        let data = (try? JSONSerialization.data(withJSONObject: canonical, options: [.sortedKeys])) ?? Data()
+        return SHA256.hash(data: data).prefix(16).map { String(format: "%02x", $0) }.joined()
+    }
+
+    /// The `op item` template, on stdin: every Field concealed (the store does not record which
+    /// Fields came from `--set`), the Description as the notes.
+    var template: Data {
+        var fields: [[String: Any]] = self.fields.enumerated().map { i, f in
+            ["id": "field\(i)", "label": f.label.isEmpty ? vaultBareFieldLabel : f.label, "type": "CONCEALED", "value": f.value]
+        }
+        if let notes, !notes.isEmpty {
+            fields.append(["id": "notesPlain", "label": "notesPlain", "type": "STRING", "purpose": "NOTES", "value": notes])
+        }
+        let item: [String: Any] = ["title": title, "category": "API_CREDENTIAL",
+                                   "tags": [vaultItemTag, vaultDigestPrefix + digest], "fields": fields]
+        return (try? JSONSerialization.data(withJSONObject: item, options: [.sortedKeys])) ?? Data()
+    }
+}
+
+/// An item already in the vault, from `op item list`.
+private struct ListedItem: Decodable {
+    var id: String
+    var title: String
+    var tags: [String]?
+    var digest: String? { tags?.first { $0.hasPrefix(vaultDigestPrefix) }.map { String($0.dropFirst(vaultDigestPrefix.count)) } }
+}
+
+let vaultTokenMissing = """
+    this Mac has no 1Password service account token; store it (it stays on this Mac):
+      mytokens put \(onePasswordTokenService) --description "1Password service account that writes the mytokens vault"
+
+    """
+
+/// Sync one 1Password vault so it holds exactly this Mac's `server`-level Secrets (or none, for
+/// `.nothing`): one item per Secret, titled `<service>/<account>`. Items it made (the
+/// `mytokens` tag) whose Secret is gone or no longer `server`-level are archived; other items
+/// are never touched. Nothing is written when nothing changed. A failure names its step.
+func syncVault(_ vault: String, store: SecretStore, cli: OnePasswordCLI, holding target: SyncTarget = .serverLevel)
+    -> Result<[String], StepFailure> {
+    // The service account token: a Secret on this Mac, never exported.
+    let token: String
+    do {
+        guard let value = try store.get(service: onePasswordTokenService, account: "default")?.loneValue, !value.isEmpty else {
+            return .failure(StepFailure(step: "read the service account token", why: vaultTokenMissing))
+        }
+        token = value
+    } catch {
+        return .failure(StepFailure(step: "read the service account token", why: "\(error)\n"))
+    }
+    var wanted: [String: VaultItem] = [:]
+    do {
+        if target == .serverLevel {
+            for r in try store.list() where r.level == .server && r.service != onePasswordTokenService {
+                guard let s = try store.get(service: r.service, account: r.account) else { continue }
+                let title = "\(r.service)/\(r.account)"
+                wanted[title] = VaultItem(title: title, notes: r.description, fields: s.fields)
+            }
+        }
+    } catch {
+        return .failure(StepFailure(step: "read the secrets", why: "\(error)\n"))
+    }
+
+    func op(_ step: String, _ args: [String], stdin: Data = Data()) throws -> CommandResult {
+        let r: CommandResult
+        do { r = try cli.run(args, stdin: stdin, token: token) } catch {
+            throw StepFailure(step: step, why: "\(error)\n")
+        }
+        guard r.exitCode == 0 else { throw StepFailure(step: step, why: r.stderr.isEmpty ? r.stdout : r.stderr) }
+        return r
+    }
+
+    do {
+        let listed = try op("list the vault", ["item", "list", "--vault", vault, "--tags", vaultItemTag, "--format", "json"])
+        guard let items = try? JSONDecoder().decode([ListedItem].self, from: Data(listed.stdout.utf8)) else {
+            throw StepFailure(step: "list the vault", why: "op did not answer with the vault's items\n")
+        }
+        var lines: [String] = []
+        var held: Set<String> = []
+        for item in items.filter({ $0.tags?.contains(vaultItemTag) == true }).sorted(by: { ($0.title, $0.id) < ($1.title, $1.id) }) {
+            if let want = wanted[item.title], !held.contains(item.title) {
+                held.insert(item.title)
+                if item.digest != want.digest {
+                    _ = try op("write the vault", ["item", "edit", item.id, "--vault", vault, "--template", "/dev/stdin"],
+                               stdin: want.template)
+                    lines.append("updated \(item.title)")
+                }
+            } else {                      // its Secret is gone, or a second item of the same title
+                _ = try op("write the vault", ["item", "delete", item.id, "--vault", vault, "--archive"])
+                lines.append("removed \(item.title)")
+            }
+        }
+        for title in wanted.keys.sorted() where !held.contains(title) {
+            _ = try op("write the vault", ["item", "create", "--vault", vault, "--template", "/dev/stdin"],
+                       stdin: wanted[title]!.template)
+            lines.append("added \(title)")
+        }
+        return .success(lines.isEmpty ? ["no changes"] : lines)
+    } catch let failure as StepFailure {
+        return .failure(failure)
+    } catch {
+        return .failure(StepFailure(step: "write the vault", why: "\(error)\n"))
+    }
+}
+
+/// The line that fixes a vault's failure, where it is known.
+func vaultFixLine(vault: String, _ failure: StepFailure) -> String {
+    if failure.step == "read the service account token" {
+        return "mytokens put \(onePasswordTokenService) --description \"1Password service account that writes the mytokens vault\""
+    }
+    if failure.why.contains("keychain is locked") { return "unlock this Mac's keychain (log in once)" }
+    return "check the service account can write \(shellWord(vault)) (op vault get \(shellWord(vault))), then: mytokens onepassword add \(shellWord(vault))"
+}
+
+private func validVault(_ v: String) -> Bool { !v.isEmpty && !v.hasPrefix("-") }
+
+/// `onepassword add|rm|list`, on a personal Mac. `add` makes the vault hold the `server`-level
+/// Secrets first and records it only when that worked; `rm` makes it hold none, then forgets it.
+func runOnePassword(_ verb: String, _ vaults: [String], store: SecretStore, deps: Dependencies) -> CommandResult {
+    func fail(_ s: String, _ code: Int32 = 1) -> CommandResult { CommandResult(stdout: "", stderr: s, exitCode: code) }
+    func lines(_ l: [String]) -> String { l.map { $0 + "\n" }.joined() }
+    let list = deps.vaults
+    do {
+        let listed = try list.read()
+        switch (verb, vaults.count) {
+        case ("list", 0):
+            if listed.isEmpty { return fail("no 1Password vaults on the vault list\n", 0) }
+            let statuses = deps.syncState.statuses()
+            return CommandResult(stdout: lines(listed.map { vault in
+                let status = statuses[vaultStatusKey(vault)]
+                var row = "\(vault)\t\(describeStatus(status))"
+                if let status, status.isFailing, let step = status.failedStep {
+                    row += " — fix: " + vaultFixLine(vault: vault, StepFailure(step: step, why: status.failedError ?? ""))
+                }
+                return row
+            }), stderr: "", exitCode: 0)
+        case ("add", 1):
+            guard validVault(vaults[0]) else { return fail("onepassword add needs a vault name (got \"\(vaults[0])\")\n", 64) }
+            switch syncVault(vaults[0], store: store, cli: deps.onepassword) {
+            case .failure(let f):
+                return fail("onepassword add \(vaults[0]) failed to \(f.step); it is not added to the vault list:\n" + f.why)
+            case .success(var did):
+                deps.syncState.update(vaultStatusKey(vaults[0])) { $0.succeeded(at: deps.now()) }
+                if listed.contains(vaults[0]) { did.append("\(vaults[0]) is on the vault list") } else {
+                    try list.write(listed + [vaults[0]])
+                    did.append("added \(vaults[0]) to the vault list")
+                }
+                return CommandResult(stdout: lines(did), stderr: "", exitCode: 0)
+            }
+        case ("rm", 1):
+            guard listed.contains(vaults[0]) else { return fail("\(vaults[0]) is not on the vault list\n") }
+            switch syncVault(vaults[0], store: store, cli: deps.onepassword, holding: .nothing) {
+            case .failure(let f):
+                return fail("onepassword rm \(vaults[0]) failed to \(f.step); it stays on the vault list:\n" + f.why)
+            case .success(let did):
+                try list.write(listed.filter { $0 != vaults[0] })
+                deps.syncState.forget(vaultStatusKey(vaults[0]))
+                return CommandResult(stdout: lines(did + ["removed \(vaults[0]) from the vault list"]), stderr: "", exitCode: 0)
+            }
+        default:
+            return fail("usage: mytokens onepassword add <vault> | rm <vault> | list\n", 64)
+        }
+    } catch {
+        return fail("\(error)\n")
+    }
+}

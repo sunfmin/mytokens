@@ -27,7 +27,8 @@ as a Server — every `server`-level Secret goes to every target (ADR-0012).
   gives it `server` level. It reaches `op` only as `OP_SERVICE_ACCOUNT_TOKEN` in the `op` child's
   environment, never argv, a file or output. Without it the sync fails at "read the service
   account token" and prints the `put` line to run.
-- **One item per Secret**, title `<service>/<account>`, category API Credential, tag `mytokens`,
+- **One item per Secret**, title `<service>` (`<service>.<account>` when the account is not `default`; never a `/`,
+  which `op://` cannot address), category API Credential, tag `mytokens`,
   and a tag `mytokens-digest-<hash>` of what the item holds. The Description is the notes. Every
   Field is a **concealed** field, labelled by the Field's label (a bare value: `value`). The
   store does not record which Fields came from `--set`, so none is written as plain text: the
@@ -35,15 +36,19 @@ as a Server — every `server`-level Secret goes to every target (ADR-0012).
 - **Values go to `op` on stdin** as an item template (`op item create|edit --template
   /dev/stdin`), never argv.
 - **Exactly the `server`-level Secrets.** `op item list --vault <v> --tags mytokens` shows what
-  mytokens made; an item whose Secret is gone or no longer `server`-level (or a second item of
-  one title) is archived (`op item delete --archive`, recoverable in 1Password). Items without
-  the `mytokens` tag are never touched. An item whose digest tag matches is left alone, so a
+  mytokens tagged. An item is the sync's own only with a `mytokens-digest-*` tag; one whose Secret is
+  gone or no longer `server`-level (or a second item of one title) is archived (`op item delete
+  --archive`, recoverable in 1Password). A `mytokens`-tagged item without a digest tag (copied by
+  hand) whose title is wanted is **taken over**: edited in place, same id and category, and it then
+  carries the digest tag. One whose title is wanted by no Secret, and items without the `mytokens`
+  tag, are never touched; `onepassword list` says how many such hand-made items a vault holds.
+  Two Secrets with one title fail the sync for that vault, naming both, with nothing written. An item whose digest tag matches is left alone, so a
   second sync with nothing changed makes no write — only the one `item list`.
 - **Background Sync (ADR-0016)** syncs every listed vault after the hosts, each on its own; a
   vault's status lives in the same per-Mac state under `1password:<vault>`; a vault failing 24
   hours is pushed through Bark like a host. A `put`/`rm` of a `server`-level Secret kicks the
   agent, which covers vaults too.
-- **A server reads** `op read "op://<vault>/<service>/<account>/<Label>"` with its own read-only
+- **A server reads** `op read "op://<vault>/<title>/<Label>"` with its own read-only
   service account.
 
 ## Considered Options
@@ -60,6 +65,4 @@ as a Server — every `server`-level Secret goes to every target (ADR-0012).
 - The vault holds every `server`-level value in clear to whoever the vault is shared with: that
   is the point, and the human chooses the vault.
 - `op` must be on the personal Mac's PATH (the agent's PATH has Homebrew's).
-- Not verified here: that `op` accepts `--template /dev/stdin`, and that `op://` resolves an
-  item title containing `/`. If it does not, read with
-  `op item get "<service>/<account>" --vault <vault> --fields label=<Label> --reveal`.
+- Not verified here: that `op` accepts `--template /dev/stdin`.

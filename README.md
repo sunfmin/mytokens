@@ -362,12 +362,14 @@ mytokens onepassword rm <vault>         # archives what mytokens made there, the
 
 The service account token (`personal` level, never synced anywhere) needs write access to the
 vault; it reaches `op` only in the child's environment. Each secret becomes one item titled
-`<service>/<account>` (Description as notes, every field concealed, tag `mytokens`). Items you made
-yourself are never touched, nothing is adopted from the vault, and a vault failing for 24 hours is
+`<service>` (`<service>.<account>` for a non-default account; Description as notes, every field concealed,
+tag `mytokens` and a digest tag). A hand-made `mytokens`-tagged item with a wanted title is taken over in
+place; any other item you made yourself is never touched, nothing is adopted from the vault, and a vault failing for 24 hours is
 pushed through Bark like a server. A machine reads it with its own read-only service account:
 
 ```sh
-op read "op://<vault>/<service>/<account>/<Label>"
+op read "op://<vault>/<title>/<Label>"
+op read "op://<vault>/<title>/<Label> [<i>]/<key>"   # a list field
 ```
 
 (a lone value's label is `value`). See ADR-0022.

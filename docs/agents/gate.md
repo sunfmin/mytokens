@@ -22,17 +22,20 @@ bundle, a failing test, or a run of no tests (`tools/xctest-run-test.sh`).
   missing mise into `~/.local/bin` from its official release after verifying its
   SHA-256, then installs the pinned XcodeGen.
 
+
 ## Cutting a version
 
-`factorium.toml` declares no `[cut]`. A Release is made by GitHub Actions on a
-pushed `v*` tag (`.github/workflows/release.yml`, ADR-0017), and the tag must
-carry the version in `MARKETING_VERSION` of `project.yml` (`make set-version
-VERSION=x.y.z`). By hand: set the version, commit, tag, push the tag, then
-`make release-wait TAG=vx.y.z` (`tools/release-wait.sh`), `bash
-skills/mytokens/scripts/install.sh`, and `make -s installed-version-check
-VERSION=x.y.z`. `make release-check-gh` checks a host has `gh` logged in with
-push rights.
+`factorium.toml` declares `[cut]`. The cut runs its `steps` in a clone at the
+base tip with `FACTORIUM_VERSION` set (e.g. `v0.1.14`, the next after the newest
+`v*` tag): `make set-version VERSION=${FACTORIUM_VERSION#v}` writes
+`MARKETING_VERSION` in `project.yml`, and a commit carries it. The cut then tags
+that commit and pushes the tag. The pushed `v*` tag is what makes the Release:
+`.github/workflows/release.yml` (ADR-0017) builds, signs, notarizes and
+publishes it, and checks the tag against `MARKETING_VERSION`. The tagged commit
+need not be on main. There is no `formula`.
 
-factorium's cut runs its `steps` before it tags, so the waiting and installing
-part, which needs the tag pushed first, has no place to run; the gap is filed
-on mytokens#3.
+Installing on this Mac is not part of the cut. By hand, once the Release is
+published: `make release-wait TAG=vx.y.z` (`tools/release-wait.sh`), `bash
+skills/mytokens/scripts/install.sh`, `make -s installed-version-check
+VERSION=x.y.z`. `make release-check-gh` checks a host has `gh` logged in with
+push rights. Self-upgrade is its own ticket.

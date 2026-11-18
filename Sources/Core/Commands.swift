@@ -37,6 +37,7 @@ struct Dependencies {
     var onepassword: OnePasswordCLI = OPCommand()        // how a vault is written
     var releases: ReleaseSource? = nil                   // the newest published Release (ADR-0023); nil: no check
     var installer: AppInstaller? = nil                   // how a newer one is installed
+    var inWorker: Bool = false                           // in a factorium worker: no vault or host writes (mytokens#15)
     static var live: Dependencies {
         .init(role: FileHostRoleSetting(),
               store: { KeychainSecretStore.opened($0.keychain) },
@@ -52,7 +53,8 @@ struct Dependencies {
               backgroundRemote: SSHRemote(unattended: true),
               vaults: KeychainServerList.vaults,
               releases: GitHubReleaseSource(),
-              installer: ScriptAppInstaller())
+              installer: ScriptAppInstaller(),
+              inWorker: inFactoriumWorker())
     }
 }
 
@@ -151,6 +153,16 @@ func runCommand(_ argv: [String], _ deps: Dependencies) -> CommandResult {
     // The Server list's item is not a Secret: no Secret may take its service (ADR-0015).
     if ["put", "rm"].contains(cmd), rest.first == serverListService || rest.first == vaultListService {
         return fail("\(rest.first!) is reserved for the server list and the 1Password vault list\n", 64)
+    }
+    // A factorium worker never reaches production vaults or hosts (mytokens#15).
+    if deps.inWorker {
+        let args = parseArgs(rest)
+        let refusal = workerRefusal(cmd, args.positionals, role: role) {
+            guard let service = args.service else { return false }
+            let existing = (try? store.list())?.first { $0.service == service && $0.account == args.account }
+            return existing?.level == .server || (cmd == "put" && args.flags["level"] == Level.server.rawValue)
+        }
+        if let refusal { return refusal }
     }
     switch cmd {
     case "put" where rest.contains("--stdin"): return runPutStdin(rest, store, deps.stdin, role)

@@ -397,6 +397,10 @@ op item get <title> --vault <v> --fields notesPlain     # the whole Description
 
 See ADR-0022.
 
+Production vaults are never a test target: real `op` checks write only the scratch vault
+`mytokens-scratch` (`make op-real-check`, see [`docs/agents/gate.md`](./docs/agents/gate.md)), and
+inside a factorium worker mytokens refuses every command that writes a vault or syncs a host.
+
 ### Background sync
 
 Each of your own Macs keeps every listed server current by itself. `install.sh` sets up a

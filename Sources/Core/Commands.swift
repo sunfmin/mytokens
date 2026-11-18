@@ -422,16 +422,21 @@ private func runPut(_ argv: [String], _ store: SecretStore, _ input: SecretInput
             return fail(pushedSecretRefusal(service: service, account: account), 64)
         }
 
-        // A merge can't change the kind (rm to change it); an absent item defaults to static.
+        // --kind changes an existing Secret's kind in place between static and profile (an Adopted
+        // item comes in as static); a Parent is a different shape, so it stays rm-first.
+        var kindChanges = false
         if let existingKind = record?.kind, let explicitKind, explicitKind != existingKind {
-            return fail("\(service)/\(account) already exists as kind '\(existingKind)'; rm it first to change kind\n", 64)
+            guard existingKind != "parent", explicitKind != "parent" else {
+                return fail("\(service)/\(account) already exists as kind '\(existingKind)'; rm it first to change kind\n", 64)
+            }
+            kindChanges = true
         }
         let kind = explicitKind ?? record?.kind ?? "static"
 
         // On an existing Secret, --level with no field to write changes only the
         // metadata: the values are kept and no popup appears (ADR-0010).
         // Only a --level given here counts: a Server's forced `server` level is no such request.
-        let isMetadataOnly = existing != nil && !isLabelledWrite && args.flags["level"] != nil
+        let isMetadataOnly = existing != nil && !isLabelledWrite && (args.flags["level"] != nil || kindChanges)
 
         // A Secret is either a lone bare value or a set of labelled fields; put can't
         // switch a secret between those shapes (rm first).
@@ -455,6 +460,14 @@ private func runPut(_ argv: [String], _ store: SecretStore, _ input: SecretInput
             }
             if let bad = writtenLabels.first(where: { !isValidEnvName($0) }) {
                 return fail("field \"\(bad)\" is not a valid environment-variable name (need [A-Za-z_][A-Za-z0-9_]*)\n", 64)
+            }
+            if kindChanges, let existing {
+                if let bad = existing.fields.map(\.label).first(where: { !isValidEnvName($0) }) {
+                    return fail("field \"\(bad)\" is not a valid environment-variable name (need [A-Za-z_][A-Za-z0-9_]*); nothing changed\n", 64)
+                }
+                if !existing.lists.isEmpty {
+                    return fail("a Profile cannot hold a list field: an environment variable holds one string; nothing changed\n", 64)
+                }
             }
             if stdinIsList {
                 return fail("a Profile cannot hold a list field: an environment variable holds one string; nothing stored\n", 64)

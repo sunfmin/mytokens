@@ -33,7 +33,7 @@ struct Dependencies {
     var syncState: BackgroundSyncState = MemoryBackgroundSyncState()   // this Mac's Background Sync (ADR-0016)
     var agent: BackgroundAgent = NoBackgroundAgent()  // the launchd agent that runs it
     var backgroundRemote: Remote? = nil               // how its runs reach a Server; nil: `remote`
-    var vaults: ServerList = MemoryNameList()            // the 1Password vault list (ADR-0019)
+    var vaults: ServerList = MemoryNameList()            // the 1Password vault list (ADR-0022)
     var onepassword: OnePasswordCLI = OPCommand()        // how a vault is written
     static var live: Dependencies {
         .init(role: FileHostRoleSetting(),
@@ -293,7 +293,7 @@ private func runPut(_ argv: [String], _ store: SecretStore, _ input: SecretInput
     // Secret fields: collected in the popup (masked unless --show).
     let fieldLabels = args.flags["fields"].map(splitCSV) ?? []
     let showLabels = Set(args.flags["show"].map(splitCSV) ?? [])
-    // One secret field piped in by the command that made it (ADR-0017): no prompt at all.
+    // One secret field piped in by the command that made it (ADR-0021): no prompt at all.
     var stdinLabel: String?
     if let raw = args.flags["field-from-stdin"] {
         let label = raw.trimmingCharacters(in: .whitespaces)
@@ -570,7 +570,7 @@ private func runServer(_ argv: [String], _ store: SecretStore, _ deps: Dependenc
     }
 }
 
-// `onepassword add|rm|list` keep the vault list and what the vaults hold (ADR-0019); like
+// `onepassword add|rm|list` keep the vault list and what the vaults hold (ADR-0022); like
 // `sync`, only on a personal Mac.
 private func runOnePasswordCommand(_ argv: [String], _ store: SecretStore, _ deps: Dependencies, _ role: HostRole) -> CommandResult {
     let args = parseArgs(argv)

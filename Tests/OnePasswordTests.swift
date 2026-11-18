@@ -1,6 +1,6 @@
 import XCTest
 
-// The 1Password vault target (ADR-0019): `onepassword add|rm|list` and Background Sync make a
+// The 1Password vault target (ADR-0022): `onepassword add|rm|list` and Background Sync make a
 // vault hold exactly the `server`-level Secrets. A fake `op` on PATH (a shell script) records
 // every call — arguments, the token in its environment, stdin — and answers `item list` from
 // a vault the test keeps in step with the calls it replays; no real 1Password is involved.

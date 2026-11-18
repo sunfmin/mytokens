@@ -20,7 +20,7 @@ composite credentials have several that belong together and rotate as a unit —
 AWS *Access Key ID* + *Secret Access Key*, or a database *Username* + *Password*. A
 Field is addressed by its **label** (the label is the key), and is masked on input
 unless explicitly revealed for paste-verification. A secret Field comes from the terminal, the
-popup or a One-time link, or — for a value a command makes — piped in on stdin (ADR-0017).
+popup or a One-time link, or — for a value a command makes — piped in on stdin (ADR-0021).
 A labelled Field is **text** (one string) or a **list**: an ordered array of flat records,
 each key a non-empty string and each value a string, e.g. one login per database host. A list
 is piped in on stdin only (`--field-from-stdin "<Label>" --list`), and a Profile cannot hold one
@@ -112,7 +112,7 @@ A target of Sync for machines that are not Macs running mytokens: a 1Password va
 (`<service>/<account>`, the Description as notes, every Field concealed, tag `mytokens`), with a
 1Password service account whose token is the personal-level Secret `1password-service-account`.
 One-way: nothing is Adopted from it. Items mytokens did not make are never touched; Background
-Sync keeps it current (ADR-0019).
+Sync keeps it current (ADR-0022).
 _Avoid_: Server (a Server runs mytokens), backup, export.
 
 **Vault list**:

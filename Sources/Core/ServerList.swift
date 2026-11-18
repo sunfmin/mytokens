@@ -25,7 +25,7 @@ struct KeychainServerList: ServerList {
     var account = "hosts"
     var label = "mytokens server list"
 
-    /// The 1Password vault list (ADR-0019): names of vaults, kept the same way.
+    /// The 1Password vault list (ADR-0022): names of vaults, kept the same way.
     static var vaults: KeychainServerList {
         KeychainServerList(service: vaultListService, account: "vaults", label: "mytokens 1password vault list")
     }

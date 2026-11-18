@@ -1,6 +1,6 @@
 # A labelled Field may hold a list of records
 
-Amends ADR-0005 (the field schema) and ADR-0017 (`--field-from-stdin`). A labelled **Field** is
+Amends ADR-0005 (the field schema) and ADR-0021 (`--field-from-stdin`). A labelled **Field** is
 text, as before, or a **list**: an ordered JSON array whose elements are flat objects, each key a
 non-empty string and each value a string, such as
 `[{"host":"db1","user":"app","password":"…"},{"host":"db2","user":"app","password":"…"}]`.
@@ -16,7 +16,7 @@ they went in one Field per record (`db1 password`, `db2 password`, …), which l
 ## Decision
 
 - **Entered from stdin only.** `put <service> --field-from-stdin "<Label>" --list` reads a JSON
-  array of records from stdin, under ADR-0017's rules: stdin only, refused when it is a terminal
+  array of records from stdin, under ADR-0021's rules: stdin only, refused when it is a terminal
   or empty, one trailing newline stripped, upserted beside the Secret's other Fields. Stdin that is
   not a non-empty array of non-empty flat records with string values is refused, and the message
   names the expected shape. The check runs before anything is read from or written to the store.
@@ -57,6 +57,6 @@ they went in one Field per record (`db1 password`, `db2 password`, …), which l
 
 - `SecretValue` carries `lists`, the labels of its list Fields. That is the one place the kind of
   a Field is recorded in memory, and `SecretRecord.lists` carries the counts derived from it.
-- ADR-0017's rule for stdin applies to a list as well: an agent pipes in only a list that a
+- ADR-0021's rule for stdin applies to a list as well: an agent pipes in only a list that a
   command makes, never values a human typed or pasted into chat. A list whose values only a
   human knows has no entry path yet.

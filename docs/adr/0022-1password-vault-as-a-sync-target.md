@@ -28,11 +28,11 @@ as a Server — every `server`-level Secret goes to every target (ADR-0012).
   environment, never argv, a file or output. Without it the sync fails at "read the service
   account token" and prints the `put` line to run.
 - **One item per Secret**, title `<service>` (`<service>.<account>` when the account is not `default`; never a `/`,
-  which `op://` cannot address), category API Credential, tag `mytokens`,
+  which `op://` cannot address), category Secure Note (`op item list --format json` shows the start of its notes as `additional_information`; an API Credential shows null), tag `mytokens`,
   and a tag `mytokens-digest-<hash>` of what the item holds. The Description is the notes. Every
   Field is a **concealed** field, labelled by the Field's label (a bare value: `value`). The
   store does not record which Fields came from `--set`, so none is written as plain text: the
-  safe side.
+  safe side. Items made earlier as API Credential are left as they are (a category cannot be edited, and their digest still matches, so the sync does not rewrite them); to get the Description into a list, `op item delete` them and the next sync recreates them as Secure Notes (`op://` references go by title, so they keep working).
 - **Values go to `op` on stdin** as an item template (`op item create|edit --template
   /dev/stdin`), never argv.
 - **Exactly the `server`-level Secrets.** `op item list --vault <v> --tags mytokens` shows what

@@ -100,6 +100,8 @@ private struct VaultItem {
 
     /// The `op item` template, on stdin: every Field concealed (the store does not record which
     /// Fields came from `--set`), the Description as the notes.
+    /// Category Secure Note: `op item list --format json` shows the start of its notes as
+    /// `additional_information` (an API Credential shows null), so the Description shows in a list.
     /// `forEdit`: no category, so an item taken over keeps the one it has.
     func template(forEdit: Bool = false) -> Data {
         var fields: [[String: Any]] = []
@@ -125,7 +127,7 @@ private struct VaultItem {
             fields.append(["id": "notesPlain", "label": "notesPlain", "type": "STRING", "purpose": "NOTES", "value": notes])
         }
         var item: [String: Any] = ["title": title, "tags": [vaultItemTag, vaultDigestPrefix + digest], "fields": fields]
-        if !forEdit { item["category"] = "API_CREDENTIAL" }
+        if !forEdit { item["category"] = "SECURE_NOTE" }
         if !sections.isEmpty { item["sections"] = sections }
         return (try? JSONSerialization.data(withJSONObject: item, options: [.sortedKeys])) ?? Data()
     }

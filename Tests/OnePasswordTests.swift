@@ -118,7 +118,8 @@ final class OnePasswordTests: XCTestCase {
         XCTAssertTrue((gh["tags"] as? [String])?.contains("mytokens") == true)
         let fields = try XCTUnwrap(gh["fields"] as? [[String: Any]])
         XCTAssertTrue(fields.contains { $0["type"] as? String == "CONCEALED" && $0["value"] as? String == "ghp_SECRET" })
-        XCTAssertTrue(fields.contains { $0["purpose"] as? String == "NOTES" && $0["value"] as? String == "CI token" })
+        XCTAssertEqual(gh["category"] as? String, "SECURE_NOTE")
+        XCTAssertEqual(fields.filter { $0["purpose"] as? String == "NOTES" }.map { $0["value"] as? String }, ["CI token"])  // exactly the Description
         let aws = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(creates[0].stdin.utf8)) as? [String: Any])
         let labels = (aws["fields"] as? [[String: Any]])?.compactMap { $0["label"] as? String }
         XCTAssertEqual(labels, ["AccessKeyId", "SecretAccessKey"])

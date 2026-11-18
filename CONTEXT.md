@@ -112,8 +112,9 @@ A target of Sync for machines that are not Macs running mytokens: a 1Password va
 (titled `<service>`, or `<service>.<account>` for a non-default account; the Description as notes,
 every Field concealed, tag `mytokens` plus a `mytokens-digest-*` tag that marks it as the sync's own), with a
 1Password service account whose token is the personal-level Secret `1password-service-account`.
-One-way: nothing is Adopted from it. A hand-made `mytokens`-tagged item whose title is wanted is taken over in place; other items are never touched; Background
-Sync keeps it current (ADR-0022).
+Two-way: an item added or changed in 1Password is **Adopted** into mytokens on the next sync, and the vault is the
+**origin** of what was entered there; the personal Mac stays the home (ADR-0022). A hand-made `mytokens`-tagged
+item whose title is wanted is taken over in place; Background Sync keeps it current.
 _Avoid_: Server (a Server runs mytokens), backup, export.
 
 **Vault list**:
@@ -131,7 +132,7 @@ one Mac. It never runs on a Server (ADR-0016).
 _Avoid_: auto-push, cron, daemon (say which).
 
 **Adopt**:
-What Sync does with a Secret entered on a Server: store it on the personal Mac, whole, as a
+What Sync does with a Secret entered on a Server (or in a **1Password vault**, as an item added there): store it on the personal Mac, whole, as a
 `server`-level Secret whose Description notes the Server and date, and mark it pushed on the
 Server — so from then on the personal Mac holds it too. The Server stays its **origin**: it may
 change it in place, and the next Sync Adopts the change into the personal Mac's copy (ADR-0018).
@@ -141,7 +142,7 @@ sides since the last Sync.
 _Avoid_: import, pull, merge.
 
 **Origin**:
-The Server an Adopted Secret was entered on, and the only Server that may change it in place.
+The Server (or 1Password vault) an Adopted Secret was entered on, and the only one that may change it in place.
 A Secret entered on a personal Mac has none: a personal Mac is its home (ADR-0018).
 _Avoid_: source, owner.
 

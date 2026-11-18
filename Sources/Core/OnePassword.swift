@@ -3,7 +3,7 @@ import Foundation
 
 // The 1Password vault target (ADR-0022): one more place Sync brings the `server`-level Secrets,
 // for machines that are not Macs running mytokens (Linux boxes, CI) and read the vault with a
-// 1Password service account. One-way: nothing is Adopted from a vault. The vault list is kept
+// 1Password service account. Two-way (mytokens#13): an item made in the vault is Adopted. The vault list is kept
 // like the Server list (ADR-0015). Values reach `op` only on its stdin; the service account
 // token only as OP_SERVICE_ACCOUNT_TOKEN in the `op` child's environment.
 
@@ -70,12 +70,37 @@ func runProcess(_ executable: String, _ arguments: [String], environment: [Strin
 /// The key a vault's status is kept under in Background Sync's state, apart from the hosts'.
 func vaultStatusKey(_ vault: String) -> String { "1password:\(vault)" }
 
+/// The origin mark of a Secret Adopted from a vault (ADR-0018 for a Server): never a host name.
+func vaultOriginKey(_ vault: String) -> String { "1password:\(vault)" }
+
+/// What this Mac remembers of one vault between syncs (kept in the vault's status, per Mac).
+/// `items`: for each item the sync owns, by id, the `version` 1Password listed after the sync last
+/// wrote or adopted it (nil when the write did not say) and the digest of what it then held; a
+/// listed version that differs means someone changed it in 1Password. `created`: when each title
+/// was created, because 1Password lists a new item only ~10 s later and a sync inside that window
+/// must not create it twice.
+struct VaultMemory: Codable, Equatable {
+    struct Item: Codable, Equatable { var version: Int?; var digest: String }
+    var items: [String: Item] = [:]
+    var created: [String: Double] = [:]
+}
+
+final class VaultMemoryRef {
+    var value = VaultMemory()
+    init(_ value: VaultMemory = VaultMemory()) { self.value = value }
+}
+
+/// How long after a `create` a title is not created again.
+private let vaultListingLag: TimeInterval = 120
+
 /// An item already in the vault, from `op item list`.
 private struct ListedItem: Decodable {
     var id: String
     var title: String
     var tags: [String]?
-    /// Only an item with a digest tag is the sync's own; a `mytokens`-tagged one without is hand-made.
+    var version: Int?
+    var category: String?
+    /// Only an item with a digest tag is the sync's own; any other is hand-made.
     var digest: String? { tags?.first { $0.hasPrefix(vaultDigestPrefix) }.map { String($0.dropFirst(vaultDigestPrefix.count)) } }
 }
 
@@ -111,13 +136,31 @@ private func wantedVaultItems(_ store: SecretStore, _ target: SyncTarget) -> Res
     return .success(wanted)
 }
 
-/// Sync one 1Password vault so it holds exactly this Mac's `server`-level Secrets (or none, for
-/// `.nothing`): one item per Secret, titled `<service>` (`<service>.<account>` for a non-default account).
-/// An item is its own only with a `mytokens-digest-*` tag: those whose Secret is gone or no longer
-/// `server`-level are archived. A `mytokens`-tagged item without a digest whose title is wanted is
-/// taken over (edited in place); one whose title is not wanted, and every other item, is never touched. Nothing is written when nothing changed. A failure names its step.
-func syncVault(_ vault: String, store: SecretStore, cli: OnePasswordCLI, holding target: SyncTarget = .serverLevel)
-    -> Result<[String], StepFailure> {
+private func adoptionDate(_ date: Date) -> String {
+    let f = DateFormatter()
+    f.locale = Locale(identifier: "en_US_POSIX")
+    f.dateFormat = "yyyy-MM-dd"
+    return f.string(from: date)
+}
+
+/// Sync one 1Password vault with this Mac, both ways (ADR-0022). The Mac is the home:
+///
+/// - Every `server`-level Secret is one item, titled `<service>` (`<service>.<account>` for a
+///   non-default account). An item is the sync's own with a `mytokens-digest-*` tag. A Secret that is
+///   gone or no longer `server`-level has its item archived.
+/// - An item changed in 1Password (its listed `version` is not the one remembered, and its content
+///   differs) while the Secret is unchanged is Adopted into the Secret; changed on both sides, it is a
+///   **conflict** and neither side changes. Only the Mac changed: written to the vault.
+/// - An item the sync did not make whose title names no Secret is Adopted: stored as a `server`-level
+///   Secret and rewritten in mytokens' format. One that cannot be mapped without loss is reported.
+///   One whose title names a Secret here that the sync does not own is a conflict — except a
+///   `mytokens`-tagged item with a wanted title, taken over in place (the hand copies of 2026-11-07).
+/// - An item deleted in the vault whose Secret is `server`-level is written again.
+///
+/// Lines starting `conflict` or `not adopted` are things the human decides; they come back on every
+/// sync until resolved. Nothing is written when nothing changed. A failure names its step.
+func syncVault(_ vault: String, store: SecretStore, cli: OnePasswordCLI, holding target: SyncTarget = .serverLevel,
+               now: Date = Date(), memory: VaultMemoryRef = VaultMemoryRef()) -> Result<[String], StepFailure> {
     // The service account token: a Secret on this Mac, never exported.
     let token: String
     do {
@@ -142,42 +185,146 @@ func syncVault(_ vault: String, store: SecretStore, cli: OnePasswordCLI, holding
         guard r.exitCode == 0 else { throw StepFailure(step: step, why: r.stderr.isEmpty ? r.stdout : r.stderr) }
         return r
     }
+    /// `id` and `version` from what a write printed, when it printed the item.
+    func written(_ r: CommandResult) -> (id: String?, version: Int?) {
+        guard let o = (try? JSONSerialization.jsonObject(with: Data(r.stdout.utf8))) as? [String: Any] else { return (nil, nil) }
+        return (o["id"] as? String, o["version"] as? Int)
+    }
+    func edit(_ item: ListedItem, _ vi: VaultItem) throws -> Int? {
+        written(try op("write the vault", ["item", "edit", item.id, "--vault", vault, "--format", "json"],
+                       stdin: vi.template(forEdit: true, loginIds: item.category == "LOGIN"))).version
+    }
+    func fetch(_ item: ListedItem) throws -> Data {
+        Data(try op("read the vault", ["item", "get", item.id, "--vault", vault, "--format", "json"]).stdout.utf8)
+    }
 
     do {
-        let listed = try op("list the vault", ["item", "list", "--vault", vault, "--tags", vaultItemTag, "--format", "json"])
+        let listed = try op("list the vault", ["item", "list", "--vault", vault, "--format", "json"])
         guard let items = try? JSONDecoder().decode([ListedItem].self, from: Data(listed.stdout.utf8)) else {
             throw StepFailure(step: "list the vault", why: "op did not answer with the vault's items\n")
         }
+        let records = try store.list()
+        var byTitle: [String: SecretRecord] = [:]
+        for r in records.sorted(by: { ($0.service, $0.account) < ($1.service, $1.account) }) {
+            let t = vaultItemTitle(service: r.service, account: r.account)
+            if byTitle[t] == nil { byTitle[t] = r }
+        }
+        let originKey = vaultOriginKey(vault)
         var lines: [String] = []
         var held: Set<String> = []
-        let mine = items.filter { $0.digest != nil }.sorted(by: { ($0.title, $0.id) < ($1.title, $1.id) })
-        let handMade = items.filter { $0.digest == nil && $0.tags?.contains(vaultItemTag) == true }
-            .sorted(by: { ($0.title, $0.id) < ($1.title, $1.id) })
+        let order: (ListedItem, ListedItem) -> Bool = { ($0.title, $0.id) < ($1.title, $1.id) }
+        let mine = items.filter { $0.digest != nil }.sorted(by: order)
+        let others = items.filter { $0.digest == nil }.sorted(by: order)
+        memory.value.created = memory.value.created.filter { now.timeIntervalSince1970 - $0.value < vaultListingLag }
+        var known: [String: VaultMemory.Item] = [:]
+
+        /// The Secret as the vault now says it, kept as the Mac's own (level, name from the Secret).
+        func normalized(_ seen: VaultItem, like want: VaultItem) -> VaultItem {
+            var v = seen
+            v.service = want.service; v.account = want.account; v.level = .server
+            return v
+        }
+        func adoptIntoSecret(_ v: VaultItem, marks: SyncMarks) throws {
+            try store.upsert(service: v.service, account: v.account, secret: v.secret, kind: v.kind,
+                             meta: v.meta.flatMap(JSONUtil.parse), description: v.description, level: .server, marks: marks)
+        }
+
         for item in mine {
-            if let want = wanted[item.title], !held.contains(item.title) {
+            guard let want = wanted[item.title], !held.contains(item.title) else {
+                // its Secret is gone, or a second item of the same title
                 held.insert(item.title)
-                if item.digest != want.digest {
-                    _ = try op("write the vault", ["item", "edit", item.id, "--vault", vault],
-                               stdin: want.template(forEdit: true))
-                    lines.append("updated \(item.title)")
-                }
-            } else {                      // its Secret is gone, or a second item of the same title
                 _ = try op("write the vault", ["item", "delete", item.id, "--vault", vault, "--archive"])
                 lines.append("removed \(item.title)")
+                continue
+            }
+            held.insert(item.title)
+            let tagged = item.digest!
+            let memo = memory.value.items[item.id]
+            let last = memo?.digest ?? tagged
+            let sameVersion = memo?.version != nil && memo?.version == item.version
+            let wantDigest = want.digest
+            func record(_ version: Int?, _ digest: String) { known[item.id] = VaultMemory.Item(version: version, digest: digest) }
+            if sameVersion {                       // nothing changed in 1Password: no read
+                if wantDigest == last { record(item.version, last) } else {
+                    record(try edit(item, want), wantDigest)
+                    lines.append("updated \(item.title)")
+                }
+                continue
+            }
+            let seen = (try? decodeVaultItem(try fetch(item))).map { normalized($0, like: want) }
+            guard let seen else {                   // the item can no longer be read back: the Mac is the home
+                record(try edit(item, want), wantDigest)
+                lines.append("updated \(item.title)")
+                continue
+            }
+            if seen.digest == wantDigest {          // same content on both sides
+                if tagged != wantDigest { record(try edit(item, want), wantDigest); lines.append("updated \(item.title)") }
+                else { record(item.version, wantDigest) }
+            } else if wantDigest == last {          // changed in 1Password only: Adopt it
+                try adoptIntoSecret(seen, marks: byTitle[item.title]?.marks ?? SyncMarks())
+                record(try edit(item, seen), seen.digest)
+                lines.append("adopted \(item.title) (changed in 1Password)")
+            } else if seen.digest == last {         // changed on the Mac only
+                record(try edit(item, want), wantDigest)
+                lines.append("updated \(item.title)")
+            } else {
+                lines.append("conflict \(item.title): changed in 1Password and on this Mac since the last sync; neither changed")
+                if let memo { known[item.id] = memo }
             }
         }
-        for item in handMade {            // taken over in place: same id, same category
-            guard let want = wanted[item.title], !held.contains(item.title) else { continue }
-            held.insert(item.title)
-            _ = try op("write the vault", ["item", "edit", item.id, "--vault", vault],
-                       stdin: want.template(forEdit: true))
-            lines.append("took over \(item.title)")
+
+        if target == .serverLevel {
+            for item in others {
+                let t = item.title
+                if held.contains(t) {
+                    lines.append("not adopted \(t): another item has the same title")
+                    continue
+                }
+                if let want = wanted[t], item.tags?.contains(vaultItemTag) == true {   // a hand copy: taken over in place
+                    held.insert(t)
+                    let v = try edit(item, want)
+                    known[item.id] = VaultMemory.Item(version: v, digest: want.digest)
+                    lines.append("took over \(t)")
+                    continue
+                }
+                if let rec = byTitle[t] {
+                    if rec.origin == originKey, rec.level == .server,
+                       let s = try store.get(service: rec.service, account: rec.account) {
+                        // An adoption cut short (stored here, the item never rewritten): finish it.
+                        held.insert(t)
+                        let vi = VaultItem(service: rec.service, account: rec.account, kind: rec.kind, meta: rec.meta,
+                                           description: rec.description, level: .server, secret: s)
+                        known[item.id] = VaultMemory.Item(version: try edit(item, vi), digest: vi.digest)
+                        lines.append("adopted \(t)")
+                    } else {
+                        lines.append("conflict \(t): a Secret of that name is on this Mac and the sync does not own it; neither changed")
+                    }
+                    continue
+                }
+                let decoded: VaultItem
+                do { decoded = try decodeHandMadeItem(try fetch(item), title: t) } catch let e as VaultDecodeError {
+                    lines.append("not adopted \(t): \(e.description)")
+                    continue
+                }
+                held.insert(t)
+                let note = "adopted from 1Password vault \(vault) on \(adoptionDate(now))"
+                var vi = decoded
+                vi.description = decoded.description.map { "\(note)\n\($0)" } ?? note
+                try adoptIntoSecret(vi, marks: SyncMarks(origin: originKey))
+                known[item.id] = VaultMemory.Item(version: try edit(item, vi), digest: vi.digest)
+                lines.append("adopted \(t)")
+            }
         }
+
         for title in wanted.keys.sorted() where !held.contains(title) {
-            _ = try op("write the vault", ["item", "create", "--vault", vault],
-                       stdin: wanted[title]!.template())
+            if memory.value.created[title] != nil { continue }      // created a moment ago; not listed yet
+            let w = written(try op("write the vault", ["item", "create", "--vault", vault, "--format", "json"],
+                                   stdin: wanted[title]!.template()))
+            memory.value.created[title] = now.timeIntervalSince1970
+            if let id = w.id { known[id] = VaultMemory.Item(version: w.version, digest: wanted[title]!.digest) }
             lines.append("added \(title)")
         }
+        memory.value.items = known
         return .success(lines.isEmpty ? ["no changes"] : lines)
     } catch let failure as StepFailure {
         return .failure(failure)
@@ -186,14 +333,10 @@ func syncVault(_ vault: String, store: SecretStore, cli: OnePasswordCLI, holding
     }
 }
 
-/// How many `mytokens`-tagged items the vault holds that the sync does not own and no wanted Secret
-/// matches (hand-copied ones it leaves alone). nil when that can't be found out (no token, `op` failed).
-private func leftAloneCount(_ vault: String, store: SecretStore, cli: OnePasswordCLI) -> Int? {
-    guard let token = (try? store.get(service: onePasswordTokenService, account: "default"))?.loneValue, !token.isEmpty,
-          case .success(let wanted) = wantedVaultItems(store, .serverLevel),
-          let r = try? cli.run(["item", "list", "--vault", vault, "--tags", vaultItemTag, "--format", "json"], stdin: Data(), token: token),
-          r.exitCode == 0, let items = try? JSONDecoder().decode([ListedItem].self, from: Data(r.stdout.utf8)) else { return nil }
-    return items.filter { $0.digest == nil && $0.tags?.contains(vaultItemTag) == true && wanted[$0.title] == nil }.count
+/// The lines of a vault sync the human has to decide.
+func vaultAttention(_ lines: [String]) -> [String]? {
+    let a = lines.filter { $0.hasPrefix("conflict ") || $0.hasPrefix("not adopted ") }
+    return a.isEmpty ? nil : a
 }
 
 /// The line that fixes a vault's failure, where it is known.
@@ -222,9 +365,7 @@ func runOnePassword(_ verb: String, _ vaults: [String], store: SecretStore, deps
             return CommandResult(stdout: lines(listed.map { vault in
                 let status = statuses[vaultStatusKey(vault)]
                 var row = "\(vault)\t\(describeStatus(status))"
-                if let n = leftAloneCount(vault, store: store, cli: deps.onepassword), n > 0 {
-                    row += " — \(n) hand-made item\(n == 1 ? "" : "s") tagged \(vaultItemTag) left alone"
-                }
+                for a in status?.attention ?? [] { row += "\n  \(a)" }
                 if let status, status.isFailing, let step = status.failedStep {
                     row += " — fix: " + vaultFixLine(vault: vault, StepFailure(step: step, why: status.failedError ?? ""))
                 }
@@ -232,11 +373,12 @@ func runOnePassword(_ verb: String, _ vaults: [String], store: SecretStore, deps
             }), stderr: "", exitCode: 0)
         case ("add", 1):
             guard validVault(vaults[0]) else { return fail("onepassword add needs a vault name (got \"\(vaults[0])\")\n", 64) }
-            switch syncVault(vaults[0], store: store, cli: deps.onepassword) {
+            let memory = VaultMemoryRef(deps.syncState.statuses()[vaultStatusKey(vaults[0])]?.vaultMemory ?? VaultMemory())
+            switch syncVault(vaults[0], store: store, cli: deps.onepassword, now: deps.now(), memory: memory) {
             case .failure(let f):
                 return fail("onepassword add \(vaults[0]) failed to \(f.step); it is not added to the vault list:\n" + f.why)
             case .success(var did):
-                deps.syncState.update(vaultStatusKey(vaults[0])) { $0.succeeded(at: deps.now()) }
+                deps.syncState.update(vaultStatusKey(vaults[0])) { $0.succeeded(at: deps.now()); $0.vaultMemory = memory.value; $0.attention = vaultAttention(did) }
                 if listed.contains(vaults[0]) { did.append("\(vaults[0]) is on the vault list") } else {
                     try list.write(listed + [vaults[0]])
                     did.append("added \(vaults[0]) to the vault list")

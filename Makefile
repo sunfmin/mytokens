@@ -153,7 +153,7 @@ release:
 		|| gh release upload "$(TAG)" "$(DIST_ZIP)" --clobber
 	@echo "released $(TAG): $(DIST_ZIP)"
 
-# A cut's `publish` (docs/agents/afkconvoy.md): the cut pushed the tag TAG; wait
+# A cut's `publish` (docs/agents/gate.md): the cut pushed the tag TAG; wait
 # for the release workflow's run on it, failing when that run fails.
 release-wait:
 	@test -n "$(TAG)" || { echo "usage: make release-wait TAG=v0.1.0" >&2; exit 2; }
@@ -163,7 +163,7 @@ selftest:
 	"$(BIN)" selftest
 
 # The app's version has one home: MARKETING_VERSION in project.yml, which becomes
-# CFBundleShortVersionString. A cut's `set` step runs this (docs/agents/afkconvoy.md).
+# CFBundleShortVersionString. A cut's `set` step runs this (docs/agents/gate.md).
 set-version:
 	@test -n "$(VERSION)" || { echo "usage: make set-version VERSION=0.1.5" >&2; exit 2; }
 	sed -i '' -E 's/^( *MARKETING_VERSION: )"[^"]*"/\1"$(VERSION)"/' project.yml
@@ -177,7 +177,7 @@ installed-version-check:
 		test "$$v" = "$(VERSION)" \
 		|| { echo "installed $(INSTALL_DIR)/$(BUNDLE) reports $$v, not $(VERSION)" >&2; exit 1; }
 
-# What a cut needs on a host (docs/agents/afkconvoy.md, the cut-needs block):
+# What a cut needs on a host (docs/agents/gate.md):
 # `gh`, logged in as a user who may push, to watch the tag's release run and
 # download the Release. Building and signing are the workflow's (ADR-0017).
 release-check-gh:

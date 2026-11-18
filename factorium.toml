@@ -1,5 +1,5 @@
 # How factorium gates this repo (~/Developments/factorium/SPEC.md §3).
-# No [cut] yet: the release flow in docs/agents/afkconvoy.md has not moved to factorium.
+# No [cut]: see "Cutting a version" in docs/agents/gate.md.
 
 [gate]
 fast = "./gate.sh"

@@ -235,8 +235,10 @@ private func usage() -> CommandResult {
       mytokens onepassword add <vault> | rm <vault> | list
           makes the 1Password vault hold exactly this Mac's server-level secrets
           (one item each, written with the service account token stored as the
-          secret 1password-service-account), and keeps the vault list; rm empties
-          the vault of what mytokens made, then takes it off the list
+          secret 1password-service-account), and keeps the vault list; items
+          added or changed in the vault are adopted into mytokens (conflicts and
+          unmappable items are shown by list); rm empties the vault of what
+          mytokens made, then takes it off the list
       mytokens server add <host>
           sets up the server <host> over ssh: installs or upgrades MyTokens there,
           sets its role to server, runs selftest there, syncs, and adds it to the

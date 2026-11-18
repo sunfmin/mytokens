@@ -16,11 +16,13 @@ struct HostSyncStatus: Codable, Equatable {
     var failingSince: Date?        // the first failure since the last success
     var lastFailure: Date?
     var lastPushed: Date?          // the last Bark push about this failure streak
+    var attention: [String]?       // a vault's conflicts and items not adopted, for `onepassword list`
+    var vaultMemory: VaultMemory?  // what the vault sync remembers of a vault's items (this Mac's)
 
     var isFailing: Bool { failedStep != nil }
 
     mutating func succeeded(at now: Date) {
-        self = HostSyncStatus(lastSuccess: now)
+        self = HostSyncStatus(lastSuccess: now, vaultMemory: vaultMemory)
     }
 
     mutating func failed(_ failure: StepFailure, at now: Date) {
@@ -427,13 +429,16 @@ private func backgroundSyncOnce(store: SecretStore, deps: Dependencies) -> Comma
         }
         all[host] = status
     }
-    // Each 1Password vault, on its own (ADR-0022): one-way, nothing adopted.
+    // Each 1Password vault, on its own (ADR-0022): two-way, the Mac the home.
     for vault in vaults {
         let key = vaultStatusKey(vault), name = "1Password vault \(vault)"
         var status = all[key] ?? HostSyncStatus()
-        switch syncVault(vault, store: store, cli: deps.onepassword) {
+        let memory = VaultMemoryRef(status.vaultMemory ?? VaultMemory())
+        switch syncVault(vault, store: store, cli: deps.onepassword, now: now, memory: memory) {
         case .success(let did):
             status.succeeded(at: now)
+            status.vaultMemory = memory.value
+            status.attention = vaultAttention(did)
             lines.append("\(name): " + did.joined(separator: ", "))
         case .failure(let failure):
             anyFailed = true

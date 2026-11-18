@@ -1,8 +1,9 @@
-# A 1Password vault is one more Sync target, for machines that are not Macs running mytokens
+# A 1Password vault is one more Sync target, two-way, for machines that are not Macs running mytokens
 
 `mytokens onepassword add <vault>` makes a 1Password vault hold exactly this Mac's `server`-level
 Secrets, one item each, written with a 1Password **service account**. Background Sync keeps it
-current. A Linux box or a CI job reads it with its own read-only service account.
+current. A Linux box or a CI job reads it with its own read-only service account. It is **two-way**
+(mytokens#13): an item added or changed in 1Password is Adopted into mytokens on the next sync; the personal Mac stays the home.
 
 ## Context
 
@@ -15,7 +16,8 @@ as a Server — every `server`-level Secret goes to every target (ADR-0012).
 ## Decision
 
 - **Glossary: 1Password vault** — a vault named by `onepassword add`, written by Sync. It is
-  *not* a Server (nothing runs mytokens there) and it is one-way: nothing is Adopted from it.
+  *not* a Server (nothing runs mytokens there). Like a Server it is an **origin**: what was entered there is Adopted
+  (ADR-0012, ADR-0018), see "Two-way" below.
 - **The vault list** is kept like the Server list (ADR-0015): one synchronizable keychain item
   (service `mytokens.onepassword-vaults`, account `vaults`), vault names only, not a Secret;
   `put` and `rm` refuse its service. `onepassword add <vault>` first makes the vault hold the
@@ -73,6 +75,43 @@ as a Server — every `server`-level Secret goes to every target (ADR-0012).
   (a list Field is its JSON array). The tests run each against encoded items and compare byte for byte
   with mytokens' own output; `jq` is installed pinned into `$HOME/.local/bin` when the host has none
   (`make jq-install`). One text Field: `op read "op://<vault>/<title>/<Label>"`.
+
+- **Two-way (mytokens#13).** Felix, 2026-11-18: 「做成一个同步。如果有人在 op 上面加了的话，也同步进 my tokens。」
+  The terms are a Server's (ADR-0012, ADR-0018); every item the sync reads is a `server`-level Secret, and what
+  differs is only where the change was made.
+  - **Adopt.** An item without a digest tag (not made by mytokens) whose title names no Secret on this Mac is
+    stored as a `server`-level Secret, whole, with origin mark `1password:<vault>`, its Description
+    `adopted from 1Password vault <v> on <date>` followed by the item's notes; then the item is rewritten
+    into mytokens' format (`op item edit`, with tags — a JSON without `tags` wipes them) so it is the sync's own and
+    its `op://<vault>/<title>/<Label>` paths are unchanged. A Login's `username` and `password` fields keep their ids
+    (they cannot be removed, a second `password` would appear). An adoption cut short (Secret stored, item not
+    rewritten) is finished next sync: the Secret's origin is this vault.
+  - **Decoding a hand-made item** (`decodeHandMadeItem`, any category): the title is `<service>.<account>` when it
+    has exactly one dot, else the whole title is the service and the account `default` (service names contain
+    dots, so a title with several dots cannot be split); notes → Description; every non-empty field → a Field
+    labelled as in 1Password, concealed or not (empty and null built-ins skipped); sections `<Label> [<i>]` → a
+    list Field. Not adopted, reported by name and reason in `onepassword list` (and in the sync's lines): two
+    fields of one label, files or a Document, a list and a field of one label, a field with no label, no values.
+    Login `urls` and tags are not kept.
+  - **Changes flow back.** The sync remembers, per Mac, for each item it owns: the `version` `op item list`
+    showed after it last wrote or adopted it, and the digest of what it then held (`VaultMemory`, in the vault's
+    status). Same listed version: nothing changed in 1Password, no read, and if the Secret's digest differs the Mac
+    changed, so it is written. Another version (or none remembered, or the write did not say): the item is read
+    once and compared: same content as the Secret → in sync; Secret unchanged since the last write → the
+    change is Adopted (and the item's tag rewritten); item unchanged → the Mac's change is written; both
+    changed → **conflict**, neither side changes, shown by `onepassword list` until the human resolves it.
+    Fields added in 1Password after the metadata's `order` are kept after the others. An owned item that can no
+    longer be read back (metadata deleted) is rewritten from the Secret: the Mac is the home.
+  - **Deletions.** A Secret removed or lowered to `personal` → its item archived. An item deleted in the vault
+    whose Secret is `server`-level → written again. 1Password lists a new item only ~10 s after `create`, so a
+    sync inside that window must not create it again: the title's creation time is remembered for 2 minutes.
+  - **Name clash.** An item the sync does not own whose title names a Secret on this Mac that the sync does
+    not own (any level) is a **conflict**, not a takeover, except a `mytokens`-tagged item with a wanted title (the
+    2026-11-07 hand copies), still taken over in place.
+  - **Budget** (measured, op 2.42): a service account may write 100 times an hour; every `create`/`edit`/`delete`
+    is a write and every `op` call takes ~2 s. An unchanged vault costs one `item list`; an item is read only when
+    its version moved; nothing unchanged is written.
+  - `onepassword rm` still adopts nothing. A Server's role is unchanged (mytokens#11).
 
 ## Considered Options
 

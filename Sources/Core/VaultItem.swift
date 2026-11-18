@@ -46,7 +46,7 @@ struct VaultItem {
     var title: String { vaultItemTitle(service: service, account: account) }
 
     /// The item's content as the template wants it, without tags: what the digest is taken over.
-    private func content(forEdit: Bool) -> [String: Any] {
+    private func content(forEdit: Bool, loginIds: Bool = false) -> [String: Any] {
         var fields: [[String: Any]] = []
         var sections: [[String: Any]] = []
         for f in secret.fields {
@@ -62,6 +62,10 @@ struct VaultItem {
                                        "value": record[key]!, "section": section])
                     }
                 }
+            } else if loginIds && label == "username" {      // a Login's built-ins cannot be removed: reuse their ids
+                fields.append(["id": "username", "label": label, "type": "STRING", "purpose": "USERNAME", "value": f.value])
+            } else if loginIds && label == "password" {
+                fields.append(["id": "password", "label": label, "type": "CONCEALED", "purpose": "PASSWORD", "value": f.value])
             } else {
                 fields.append(["id": "field\(fields.count)", "label": label, "type": "CONCEALED", "value": f.value])
             }
@@ -98,8 +102,9 @@ struct VaultItem {
     /// The `op item` template, on stdin. Category Secure Note: `op item list --format json` shows
     /// the start of its notes as `additional_information` (an API Credential shows null), so the
     /// Description shows in a list. `forEdit`: no category, so an item taken over keeps the one it has.
-    func template(forEdit: Bool = false) -> Data {
-        var item = content(forEdit: forEdit)
+    /// `loginIds`: the item is a Login, whose `username` and `password` fields keep their ids.
+    func template(forEdit: Bool = false, loginIds: Bool = false) -> Data {
+        var item = content(forEdit: forEdit, loginIds: loginIds)
         item["tags"] = [vaultItemTag, vaultDigestPrefix + digest]
         return encode(item)
     }
@@ -110,63 +115,124 @@ struct VaultDecodeError: Error, CustomStringConvertible {
     var description: String
 }
 
-/// `op item get --format json` (or a template) → the Secret it holds: the inverse of `VaultItem.template`.
+/// An item's JSON read without meaning: its notes, its mytokens metadata, and every non-empty
+/// field in item order. Empty and null values are skipped (a Login's and an API Credential's
+/// built-ins), and so are fields of a section with no label (1Password's own).
+private struct RawItem {
+    var notes: String?
+    var metadata: [String: String] = [:]
+    var cells: [(label: String, value: String, section: String?)] = []
+    var category: String?
+    var hasFiles = false
+
+    init(_ json: Data) throws {
+        guard let root = (try? JSONSerialization.jsonObject(with: json)) as? [String: Any] else {
+            throw VaultDecodeError(description: "not a JSON object")
+        }
+        category = root["category"] as? String
+        hasFiles = !((root["files"] as? [Any]) ?? []).isEmpty
+        for f in (root["fields"] as? [[String: Any]]) ?? [] {
+            let value = (f["value"] as? String) ?? ""
+            let label = (f["label"] as? String) ?? ""
+            if f["purpose"] as? String == "NOTES" { notes = value.isEmpty ? nil : value; continue }
+            let section = ((f["section"] as? [String: Any])?["label"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+            if section == vaultMetadataSection { metadata[label] = value; continue }
+            if value.isEmpty { continue }
+            cells.append((label, value, section))
+        }
+    }
+}
+
+private struct Interpreted {
+    var fields: [(label: String, value: String)] = []
+    var lists: Set<String> = []
+    var labels: [String] { fields.map(\.label) }
+}
+
+/// The Fields a set of cells make: a field of a section named `<Label> [<i>]` is a record of the
+/// list `<Label>`; every other field is a text Field labelled as in 1Password. Two Fields of one
+/// label cannot be kept apart, so they throw.
+private func interpret(_ cells: [(label: String, value: String, section: String?)]) throws -> Interpreted {
+    func bad(_ why: String) -> VaultDecodeError { VaultDecodeError(description: why) }
+    var order: [String] = []
+    var text: [String: String] = [:]
+    var records: [String: [String: [String: String]]] = [:]     // list label → section label → record
+    var indexes: [String: [String: Int]] = [:]
+    for c in cells {
+        if let s = c.section, s.hasSuffix("]"), let open = s.range(of: " [", options: .backwards),
+           let i = Int(s[open.upperBound..<s.index(before: s.endIndex)]) {
+            let list = String(s[..<open.lowerBound])
+            if records[list] == nil { order.append(list) }
+            if records[list]?[s]?[c.label] != nil { throw bad("two fields labelled \"\(c.label)\" in \"\(s)\"") }
+            records[list, default: [:]][s, default: [:]][c.label] = c.value
+            indexes[list, default: [:]][s] = i
+        } else {
+            if text[c.label] != nil { throw bad("two fields labelled \"\(c.label)\"") }
+            text[c.label] = c.value
+            order.append(c.label)
+        }
+    }
+    var out = Interpreted()
+    for label in order {
+        if let sections = records[label] {
+            if text[label] != nil { throw bad("\"\(label)\" is both a field and a list") }
+            let sorted = sections.keys.sorted { (indexes[label]![$0]!, $0) < (indexes[label]![$1]!, $1) }.map { sections[$0]! }
+            guard let compact = JSONUtil.compact(sorted), let canonical = ListValue.canonical(compact) else {
+                throw bad("list \"\(label)\" is not a list of records")
+            }
+            out.fields.append((label, canonical)); out.lists.insert(label)
+        } else {
+            out.fields.append((label, text[label]!))
+        }
+    }
+    return out
+}
+
+/// `op item get --format json` (or a template) of an item mytokens made → the Secret it holds: the
+/// inverse of `VaultItem.template`. A field or section added in 1Password after the metadata's
+/// `order` is kept too, after the others.
 func decodeVaultItem(_ json: Data) throws -> VaultItem {
     func bad(_ why: String) -> VaultDecodeError { VaultDecodeError(description: why) }
-    guard let root = (try? JSONSerialization.jsonObject(with: json)) as? [String: Any] else { throw bad("not a JSON object") }
-    let all = (root["fields"] as? [[String: Any]]) ?? []
-    func value(_ f: [String: Any]) -> String { (f["value"] as? String) ?? "" }
-    func sectionLabel(_ f: [String: Any]) -> String? { (f["section"] as? [String: Any])?["label"] as? String }
-    func label(_ f: [String: Any]) -> String { (f["label"] as? String) ?? "" }
-
-    var metadata: [String: String] = [:]
-    var top: [String: String] = [:]
-    var records: [String: [(index: Int, record: [String: String])]] = [:]
-    var sectionRecords: [String: [String: String]] = [:]     // section label → its record
-    var description: String?
-    for f in all {
-        if f["purpose"] as? String == "NOTES" { description = value(f).isEmpty ? nil : value(f); continue }
-        switch sectionLabel(f) {
-        case vaultMetadataSection?: metadata[label(f)] = value(f)
-        case let s?: sectionRecords[s, default: [:]][label(f)] = value(f)
-        case nil: top[label(f)] = value(f)
-        }
-    }
-    for (section, record) in sectionRecords {       // `<Label> [<i>]`: the last " [" opens the index
-        guard section.hasSuffix("]"), let open = section.range(of: " [", options: .backwards),
-              let i = Int(section[open.upperBound..<section.index(before: section.endIndex)]) else {
-            throw bad("section \"\(section)\" is not \"<Label> [<i>]\"")
-        }
-        records[String(section[..<open.lowerBound]), default: []].append((i, record))
-    }
+    let raw = try RawItem(json)
+    let all = try interpret(raw.cells)
     func need(_ name: String) throws -> String {
-        guard let v = metadata[name] else { throw bad("no \"\(name)\" in the \(vaultMetadataSection) section") }
+        guard let v = raw.metadata[name] else { throw bad("no \"\(name)\" in the \(vaultMetadataSection) section") }
         return v
     }
-    guard let level = Level(rawValue: try need("level")) else { throw bad("unknown level \"\(metadata["level"] ?? "")\"") }
+    guard let level = Level(rawValue: try need("level")) else { throw bad("unknown level \"\(raw.metadata["level"] ?? "")\"") }
+    guard let order = JSONUtil.parse(try need("order")) as? [String] else { throw bad("\"order\" is not a JSON array of labels") }
+    let bare = try need("shape") == "bare"
+    var fields: [(label: String, value: String)] = []
+    for label in order {
+        // an empty value is not read back as a cell: a Field in `order` without one is empty
+        fields.append(all.fields.first(where: { $0.label == label }) ?? (label, ""))
+    }
+    let extras = all.fields.filter { f in !order.contains(f.label) }
     let secret: SecretValue
-    if try need("shape") == "bare" {
-        guard let v = top[vaultBareFieldLabel] else { throw bad("no \"\(vaultBareFieldLabel)\" field") }
-        secret = SecretValue(single: v)
+    if bare && extras.isEmpty {
+        guard fields.count == 1 else { throw bad("no \"\(vaultBareFieldLabel)\" field") }
+        secret = SecretValue(single: fields[0].value)
     } else {
-        guard let order = JSONUtil.parse(try need("order")) as? [String] else { throw bad("\"order\" is not a JSON array of labels") }
-        var fields: [(label: String, value: String)] = []
-        var lists: Set<String> = []
-        for label in order {
-            if let rs = records[label] {
-                let sorted = rs.sorted { $0.index < $1.index }.map(\.record)
-                guard let text = JSONUtil.compact(sorted), let canonical = ListValue.canonical(text) else {
-                    throw bad("list \"\(label)\" is not a list of records")
-                }
-                fields.append((label, canonical)); lists.insert(label)
-            } else if let v = top[label] {
-                fields.append((label, v))
-            } else {
-                throw bad("no field \"\(label)\"")
-            }
-        }
-        secret = SecretValue(fields: fields, lists: lists)
+        secret = SecretValue(fields: fields + extras, lists: all.lists)
     }
     return VaultItem(service: try need("service"), account: try need("account"), kind: try need("kind"),
-                     meta: metadata["meta"], description: description, level: level, secret: secret)
+                     meta: raw.metadata["meta"], description: raw.notes, level: level, secret: secret)
+}
+
+/// An item someone made in 1Password (any category) → the Secret it would be: title → service
+/// (`<service>.<account>` when the title has exactly one dot, else the whole title with account
+/// `default`), notes → Description, each non-empty field → a Field labelled as in 1Password, a section
+/// `<Label> [<i>]` → a list Field. Throws why it cannot be mapped without loss.
+func decodeHandMadeItem(_ json: Data, title: String) throws -> VaultItem {
+    func bad(_ why: String) -> VaultDecodeError { VaultDecodeError(description: why) }
+    let raw = try RawItem(json)
+    if raw.category == "DOCUMENT" || raw.hasFiles { throw bad("it holds a file") }
+    if title.isEmpty { throw bad("it has no title") }
+    if let c = raw.cells.first(where: { $0.label.isEmpty }) { throw bad("a field of the section \"\(c.section ?? "")\" has no label") }
+    let all = try interpret(raw.cells)
+    guard !all.fields.isEmpty else { throw bad("it holds no values") }
+    let parts = title.split(separator: ".", omittingEmptySubsequences: false).map(String.init)
+    let (service, account) = parts.count == 2 && !parts[0].isEmpty && !parts[1].isEmpty ? (parts[0], parts[1]) : (title, "default")
+    return VaultItem(service: service, account: account, kind: "static", meta: nil, description: raw.notes, level: .server,
+                     secret: SecretValue(fields: all.fields, lists: all.lists))
 }

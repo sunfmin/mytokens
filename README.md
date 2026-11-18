@@ -364,7 +364,10 @@ The service account token (`personal` level, never synced anywhere) needs write 
 vault; it reaches `op` only in the child's environment. Each secret becomes one item titled
 `<service>` (`<service>.<account>` for a non-default account; Description as notes, every field concealed,
 tag `mytokens` and a digest tag). A hand-made `mytokens`-tagged item with a wanted title is taken over in
-place; any other item you made yourself is never touched, nothing is adopted from the vault, and a vault failing for 24 hours is
+place. The vault is two-way: an item you add or change in 1Password (any category) appears in mytokens as a
+`server`-level secret on the next sync and is rewritten into mytokens' format; one that can't be mapped without loss
+(two fields of one label, files) is not adopted and `onepassword list` says why. Changed on both sides is a conflict
+that `onepassword list` shows and neither side takes. A vault failing for 24 hours is
 pushed through Bark like a server. A machine reads it with its own read-only service account:
 
 ```sh

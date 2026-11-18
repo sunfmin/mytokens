@@ -14,7 +14,7 @@ Issues live in factorium's local tracker (`factorium issue …`, checkout `mytok
 ### Gate
 
 `factorium.toml` runs `./gate.sh` (`make test`); what it needs on a host is in
-`docs/agents/afkconvoy.md` (gate-needs), whose cut section is not yet moved to factorium.
+`docs/agents/gate.md` (gate-needs, why `make test` uses `xctest-run.sh`, why no cut is declared).
 
 ### Domain docs
 

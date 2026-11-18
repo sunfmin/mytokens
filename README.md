@@ -489,10 +489,9 @@ icon is generated from code (`make icon`).
 GitHub Actions makes each Release (ADR-0017). On a pushed `v*` tag, the `release` workflow
 ([`.github/workflows/release.yml`](./.github/workflows/release.yml)) runs `make release` on an
 Apple silicon macOS runner: archive, Developer ID export, notarize, staple, verify, zip, and
-`gh release create`. The afkconvoy fleet cuts each version once landed work is past the
-newest tag. It sets `MARKETING_VERSION` in `project.yml` (the version's one home), tags,
-pushes the tag, waits for the run, and installs the Release on its host. See the cut blocks in
-[`docs/agents/afkconvoy.md`](./docs/agents/afkconvoy.md). Run from the Actions tab, the
+`gh release create`. A maintainer sets `MARKETING_VERSION` in `project.yml` (the version's one home), tags,
+pushes the tag, waits for the run, and installs the Release. See
+[`docs/agents/gate.md`](./docs/agents/gate.md). Run from the Actions tab, the
 workflow builds, signs, notarizes and verifies without publishing, and keeps the zip as the
 run's artifact.
 

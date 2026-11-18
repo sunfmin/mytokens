@@ -65,7 +65,7 @@ newest Release while server add, Background Sync and the Bark miss landed.
 - Any host with `gh` can cut, whether its console is locked or not. Signing no longer depends
   on one person's Mac.
 - A failed run fails the cut at `publish`. Re-run the workflow (`gh run rerun <id>`) and go on
-  with `afkconvoy cut --from publish`. That watches the run again rather than starting another.
+  with `the release-wait step again`. That watches the run again rather than starting another.
 - The Admin-role key and the Developer ID identity sit in GitHub. Anyone who can change the
   workflow on a tag or `main` could use them. That is the repo's push access, the same people who can already publish
   Releases.

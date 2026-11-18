@@ -1,5 +1,5 @@
 #!/bin/sh
-# A cut's publish (docs/agents/afkconvoy.md, ADR-0017): pushes the tag TAG
+# A cut's publish (docs/agents/gate.md, ADR-0017): pushes the tag TAG
 # (a no-op when the cut's tag step already did) and waits for the release
 # workflow's run on that tag's commit, failing when the run fails. The run
 # builds, signs, notarizes, verifies and publishes the Release; this host only

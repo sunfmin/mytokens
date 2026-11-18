@@ -157,7 +157,7 @@ func syncVault(_ vault: String, store: SecretStore, cli: OnePasswordCLI, holding
             if let want = wanted[item.title], !held.contains(item.title) {
                 held.insert(item.title)
                 if item.digest != want.digest {
-                    _ = try op("write the vault", ["item", "edit", item.id, "--vault", vault, "--template", "/dev/stdin"],
+                    _ = try op("write the vault", ["item", "edit", item.id, "--vault", vault],
                                stdin: want.template(forEdit: true))
                     lines.append("updated \(item.title)")
                 }
@@ -169,12 +169,12 @@ func syncVault(_ vault: String, store: SecretStore, cli: OnePasswordCLI, holding
         for item in handMade {            // taken over in place: same id, same category
             guard let want = wanted[item.title], !held.contains(item.title) else { continue }
             held.insert(item.title)
-            _ = try op("write the vault", ["item", "edit", item.id, "--vault", vault, "--template", "/dev/stdin"],
+            _ = try op("write the vault", ["item", "edit", item.id, "--vault", vault],
                        stdin: want.template(forEdit: true))
             lines.append("took over \(item.title)")
         }
         for title in wanted.keys.sorted() where !held.contains(title) {
-            _ = try op("write the vault", ["item", "create", "--vault", vault, "--template", "/dev/stdin"],
+            _ = try op("write the vault", ["item", "create", "--vault", vault],
                        stdin: wanted[title]!.template())
             lines.append("added \(title)")
         }

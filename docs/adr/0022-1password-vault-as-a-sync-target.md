@@ -33,8 +33,8 @@ as a Server — every `server`-level Secret goes to every target (ADR-0012).
   Field is a **concealed** top-level field, labelled by the Field's label (a bare value: `value`). The
   store does not record which Fields came from `--set`, so none is written as plain text: the
   safe side. Items made earlier as API Credential are left as they are (a category cannot be edited, and their digest still matches, so the sync does not rewrite them); to get the Description into a list, `op item delete` them and the next sync recreates them as Secure Notes (`op://` references go by title, so they keep working).
-- **Values go to `op` on stdin** as an item template (`op item create|edit --template
-  /dev/stdin`), never argv.
+- **Values go to `op` on stdin** as an item template (`op item create|edit` with the JSON piped on stdin and no
+  `--template`: op 2.42 refuses both together), never argv.
 - **Exactly the `server`-level Secrets.** `op item list --vault <v> --tags mytokens` shows what
   mytokens tagged. An item is the sync's own only with a `mytokens-digest-*` tag; one whose Secret is
   gone or no longer `server`-level (or a second item of one title) is archived (`op item delete
@@ -88,4 +88,4 @@ as a Server — every `server`-level Secret goes to every target (ADR-0012).
 - The vault holds every `server`-level value in clear to whoever the vault is shared with: that
   is the point, and the human chooses the vault.
 - `op` must be on the personal Mac's PATH (the agent's PATH has Homebrew's).
-- Checked against real 1Password (mytokens#10): `op item create` accepts `--template /dev/stdin`, and the items read back as the template says.
+- Checked against real 1Password (mytokens#12, op 2.42.0, vault devbox): with the JSON piped on stdin and **no** `--template`, `op item create` and `op item edit` write bare-value, labelled, list-field and profile items, and `op read` and `skills/mytokens/op/*.jq` read them back. mytokens#10's check of `--template /dev/stdin` was wrong: op 2.42 refuses it with a pipe ("cannot create|edit an item from template and stdin at the same time"). op takes the stdin template only from a pipe, not a `<` file redirect. An `item edit` sent within seconds of the create can get a transient 409 from the server.

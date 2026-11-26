@@ -344,24 +344,122 @@ final class OnePasswordTests: XCTestCase {
         XCTAssertEqual(try writes().count, mark)
     }
 
-    func testAnItemOptokensWroteIsAdoptedByItsSectionAndKeepsItsFieldTypes() throws {
+    // An item an agent stored with `optokens put` (ADR-0025): adopted whole, then made the sync's own
+    // by its tags alone, so optokens reads it unchanged; later `optokens put`s flow back the same way.
+
+    /// `Tests/Fixtures/optokens-put.json` is what optokens 0.1.7 handed `op item create` for
+    /// `printf sk-throwaway | optokens put zz-fx4 --account ci --set Region=us-east-1 --field-from-stdin "Secret Key"
+    /// --description "CI deploy" --meta '{"a":1}'` (an `op` stand-in on PATH recorded its stdin).
+    private func optokensPut(listed: Bool = false) throws -> VaultMemoryRef {
         try putToken()
-        let theirs = try Data(contentsOf: URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("Fixtures/optokens-profile-meta.json"))
+        let theirs = try Data(contentsOf: URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("Fixtures/optokens-put.json"))
         try theirs.write(to: URL(fileURLWithPath: dir + "/items/o1.json"))
-        vault = [["id": "o1", "title": "fx-profile", "tags": ["optokens"], "category": "SECURE_NOTE", "version": 1]]
+        versions["o1"] = 1
+        vault = [["id": "o1", "title": "zz-fx4.ci", "tags": ["optokens"], "category": "SECURE_NOTE", "version": 1]]
         try publishVault()
-        XCTAssertEqual(try? syncVault("V", store: laptop, cli: deps.onepassword, now: clock).get(), ["adopted fx-profile"])
-        let (rec, value) = try XCTUnwrap(try sec("fx-profile"))
-        XCTAssertEqual(rec.kind, "profile")
-        XCTAssertEqual(rec.meta, #"{"account_id":"abc/1","n":[1,2],"zone":"b"}"#)
-        XCTAssertEqual(labels(value), ["B_VAR=it's", "A_VAR=x y"])
-        let t = try template(try XCTUnwrap(try writes().first))
-        let types = (t["fields"] as? [[String: Any]] ?? []).filter { ($0["section"] as? [String: Any])?["id"] as? String == "fields" }
-            .map { $0["type"] as? String }
-        XCTAssertEqual(types, ["STRING", "CONCEALED"])
-        XCTAssertTrue((t["tags"] as? [String])?.starts(with: ["optokens", "mytokens"]) == true)
+        let memory = VaultMemoryRef()
+        if listed {            // adopted by `onepassword add`, which keeps its memory in the state
+            XCTAssertEqual(run(["onepassword", "add", "V"]).stdout, "adopted zz-fx4.ci\nadded V to the vault list\n")
+            return memory
+        }
+        XCTAssertEqual(try? syncVault("V", store: laptop, cli: deps.onepassword, now: clock, memory: memory).get(), ["adopted zz-fx4.ci"])
+        return memory
+    }
+
+    /// What `optokens put zz-fx4 --account ci --set Region=<region>` does to the item: that Field changes, its
+    /// tags (mytokens' among them), sections and other fields are kept (optokens 0.1.7, through the same stand-in).
+    private func optokensSetRegion(_ region: String) throws {
+        var item = try XCTUnwrap(try JSONSerialization.jsonObject(with: Data(contentsOf: URL(fileURLWithPath: dir + "/items/o1.json"))) as? [String: Any])
+        item["fields"] = (item["fields"] as? [[String: Any]] ?? []).map { f in
+            var f = f
+            if f["label"] as? String == "Region" { f["value"] = region; f["type"] = "STRING" }
+            return f
+        }
+        try JSONSerialization.data(withJSONObject: item).write(to: URL(fileURLWithPath: dir + "/items/o1.json"))
+        versions["o1", default: 0] += 1
+        vault = vault.map { ($0["id"] as? String) == "o1" ? $0.merging(["version": versions["o1"]!, "tags": item["tags"] ?? []]) { $1 } : $0 }
+        try publishVault()
+    }
+
+    func testAnItemOptokensPutIsAdoptedWholeAndOnlyGainsTheTwoTags() throws {
+        let theirs = try JSONSerialization.jsonObject(with: Data(contentsOf: URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+            .appendingPathComponent("Fixtures/optokens-put.json"))) as? NSDictionary
+        _ = try optokensPut()
+        let get = run(["get", "zz-fx4", "--account", "ci", "--json"])
+        XCTAssertEqual(get.stdout, #"{"fields":{"Region":"us-east-1","Secret Key":"sk-throwaway"},"level":"server"}"#, get.stderr)
+        let (rec, value) = try XCTUnwrap(try sec("zz-fx4", "ci"))
+        XCTAssertEqual(rec.kind, "static")
+        XCTAssertEqual(rec.meta, #"{"a":1}"#)
+        XCTAssertEqual(rec.description, adoptionNote(host: "1Password vault V", on: clock) + "\nCI deploy")
+        XCTAssertEqual(rec.origin, "1password:V")
+        XCTAssertEqual(labels(value), ["Region=us-east-1", "Secret Key=sk-throwaway"])
+        // one write, an edit of that item, which differs from what optokens wrote only by mytokens' two tags
+        let w = try writes()
+        XCTAssertEqual(w.map { Array($0.args.prefix(3)) }, [["item", "edit", "o1"]])
+        var after = try template(w[0])
+        let tags = after["tags"] as? [String] ?? []
+        XCTAssertEqual(tags.count, 3)
+        XCTAssertEqual(Array(tags.prefix(2)), ["optokens", "mytokens"])
+        XCTAssertTrue(tags[2].hasPrefix(vaultDigestPrefix), "\(tags)")
+        after["tags"] = ["optokens"]
+        after["category"] = "SECURE_NOTE"        // an edit leaves the category as it is
+        XCTAssertEqual(after as NSDictionary, theirs)
+        // and optokens still reads it: its layout, its name, its Description
+        let back = try decodeVaultItem(Data(w[0].stdin.utf8))
+        XCTAssertEqual(back.description, "CI deploy")
+        XCTAssertEqual(back.title, "zz-fx4.ci")
+    }
+
+    func testASecondSyncAfterAdoptingAnOptokensItemWritesNothing() throws {
+        let memory = try optokensPut()
         try replay()
-        XCTAssertEqual(try? syncVault("V", store: laptop, cli: deps.onepassword, now: clock).get(), ["no changes"])
+        let before = try writes().count
+        XCTAssertEqual(try? syncVault("V", store: laptop, cli: deps.onepassword, now: clock, memory: memory).get(), ["no changes"])
+        XCTAssertEqual(try? syncVault("V", store: laptop, cli: deps.onepassword, now: clock, memory: memory).get(), ["no changes"])
+        XCTAssertEqual(try writes().count, before)
+        // the memory survives Background Sync's state: an older state without the Mac's digest still reads
+        let old = try JSONDecoder().decode(VaultMemory.self, from: Data(#"{"items":{"o1":{"version":2,"digest":"d"}},"created":{}}"#.utf8))
+        XCTAssertEqual(old.items["o1"]?.digest, "d")
+    }
+
+    func testAnOptokensPutToAnOwnedItemIsAdoptedAtTheNextSync() throws {
+        let memory = try optokensPut()
+        try replay()
+        XCTAssertEqual(try? syncVault("V", store: laptop, cli: deps.onepassword, now: clock, memory: memory).get(), ["no changes"])
+        try optokensSetRegion("eu-west-1")
+        let before = try writes().count
+        XCTAssertEqual(try? syncVault("V", store: laptop, cli: deps.onepassword, now: clock, memory: memory).get(),
+                       ["adopted zz-fx4.ci (changed in 1Password)"])
+        XCTAssertEqual(labels(try XCTUnwrap(try sec("zz-fx4", "ci")).1), ["Region=eu-west-1", "Secret Key=sk-throwaway"])
+        // its tag follows the new content, and nothing else of the item changes
+        let w = try writes()
+        XCTAssertEqual(w.count, before + 1)
+        let stored = try XCTUnwrap(try JSONSerialization.jsonObject(with: Data(contentsOf: URL(fileURLWithPath: dir + "/items/o1.json"))) as? [String: Any])
+        var after = try template(w.last!)
+        XCTAssertEqual((after["fields"] as? [[String: Any]])?.first { $0["label"] as? String == "Region" }?["type"] as? String, "STRING")
+        after["tags"] = nil
+        var was = stored; was["tags"] = nil; was["category"] = nil
+        XCTAssertEqual(after as NSDictionary, was as NSDictionary)
+        try replay()
+        XCTAssertEqual(try? syncVault("V", store: laptop, cli: deps.onepassword, now: clock, memory: memory).get(), ["no changes"])
+    }
+
+    func testAnOptokensPutAndAMacChangeToOneItemAreAConflictThatKeepSettles() throws {
+        _ = try optokensPut(listed: true)
+        try replay()
+        XCTAssertEqual(run(["onepassword", "add", "V"]).stdout, "no changes\nV is on the vault list\n")
+        try laptop.upsert(service: "zz-fx4", account: "ci", secret: SecretValue(fields: [("Region", "ap-1"), ("Secret Key", "sk-throwaway")]),
+                          kind: "static", meta: #"{"a":1}"#, description: "CI deploy", level: .server, marks: SyncMarks(origin: "1password:V"))
+        try optokensSetRegion("eu-west-1")
+        let before = try writes().count
+        let r = run(["onepassword", "add", "V"])
+        XCTAssertTrue(r.stdout.hasPrefix("conflict zz-fx4.ci: changed in 1Password and on this Mac"), r.stdout)
+        XCTAssertEqual(try writes().count, before)
+        let kept = run(["onepassword", "keep", "V", "zz-fx4.ci", "1password"])
+        XCTAssertEqual(kept.stdout, "kept 1Password's zz-fx4.ci (adopted over this Mac's)\n", kept.stderr)
+        XCTAssertEqual(labels(try XCTUnwrap(try sec("zz-fx4", "ci")).1), ["Region=eu-west-1", "Secret Key=sk-throwaway"])
+        try replay()
+        XCTAssertEqual(run(["onepassword", "add", "V"]).stdout, "no changes\nV is on the vault list\n")
     }
 
     func testANonDefaultAccountIsTitledServiceDotAccountAndNeverHasASlash() throws {

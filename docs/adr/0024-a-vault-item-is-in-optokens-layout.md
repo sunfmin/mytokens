@@ -32,7 +32,7 @@ Two formats in one vault meant `optokens` could not read what mytokens wrote.
   other than static or profile, a shape its fields do not fit). It takes the name from the section, never
   from the title. Notes and other sections are not the Secret's. An item optokens wrote (tag
   `optokens`, the section `optokens`) that the sync does not own is Adopted by that section, its kind,
-  Meta and types kept; any other is read as hand-made (ADR-0022), each field a Field by its label.
+  Meta and types kept, and only tagged (ADR-0025); any other is read as hand-made (ADR-0022), each field a Field by its label.
 - **What the layout cannot hold is not written:** a `parent` Secret (fix: `mytokens put <svc> --kind
   static`) and a Secret with a list Field (fix: `mytokens put <svc> --level personal`). The sync says
   `not written <title>: <why>; fix: <command>`, `onepassword list` shows the line, and an item already

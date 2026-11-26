@@ -145,6 +145,19 @@ struct VaultItem {
     }
 }
 
+/// The `op item edit` template (on stdin) that makes `stored` (as `op item get` printed it) the sync's own
+/// and changes nothing else: its tags gain `mytokens` and the digest tag of `digest` (an older
+/// digest tag replaced); every other tag, its title, its sections and every field (notes, types, ids) are
+/// sent back as they are, so optokens reads the item unchanged. nil when `stored` is not an item.
+func vaultRetagTemplate(_ stored: Data, digest: String) -> Data? {
+    guard let root = try? jsonObject(stored) else { return nil }
+    var tags = ((root["tags"] as? [String]) ?? []).filter { $0 != vaultItemTag && !$0.hasPrefix(vaultDigestPrefix) }
+    tags += [vaultItemTag, vaultDigestPrefix + digest]
+    var item: [String: Any] = ["tags": tags]
+    for key in ["title", "sections", "fields"] { item[key] = root[key] }
+    return try? JSONSerialization.data(withJSONObject: item, options: [.sortedKeys, .withoutEscapingSlashes])
+}
+
 /// Why an item is not a Secret.
 struct VaultDecodeError: Error, CustomStringConvertible {
     var description: String

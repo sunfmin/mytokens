@@ -115,7 +115,8 @@ Description and Meta in the section `optokens`; tags `optokens`, `mytokens` and 
 it as the sync's own. A `parent` Secret or one with a list Field is not written (`onepassword list` says the fix).
 It is written with a 1Password service account whose token is the personal-level Secret `1password-service-account`.
 Two-way: an item added or changed in 1Password is **Adopted** into mytokens on the next sync, and the vault is the
-**origin** of what was entered there; the personal Mac stays the home (ADR-0022). A hand-made `mytokens`-tagged
+**origin** of what was entered there; the personal Mac stays the home (ADR-0022). An item `optokens put` made is Adopted by its tags
+alone, as optokens wrote it (ADR-0025). A hand-made `mytokens`-tagged
 item whose title is wanted is taken over in place; Background Sync keeps it current.
 _Avoid_: Server (a Server runs mytokens), backup, export.
 

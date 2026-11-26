@@ -167,13 +167,6 @@ private func wantedVaultItems(_ store: SecretStore, _ target: SyncTarget) -> Res
     return .success(wanted)
 }
 
-private func adoptionDate(_ date: Date) -> String {
-    let f = DateFormatter()
-    f.locale = Locale(identifier: "en_US_POSIX")
-    f.dateFormat = "yyyy-MM-dd"
-    return f.string(from: date)
-}
-
 /// Sync one 1Password vault with this Mac, both ways (ADR-0022). The Mac is the home:
 ///
 /// - Every `server`-level Secret is one item, titled `<service>` (`<service>.<account>` for a
@@ -412,7 +405,7 @@ func syncVault(_ vault: String, store: SecretStore, cli: OnePasswordCLI, holding
                     continue
                 }
                 held.insert(t)
-                let note = "adopted from 1Password vault \(vault) on \(adoptionDate(now))"
+                let note = adoptionNote(host: "1Password vault \(vault)", on: now)
                 var vi = decoded
                 vi.description = decoded.description.map { "\(note)\n\($0)" } ?? note
                 try adoptIntoSecret(vi, marks: SyncMarks(origin: originKey))

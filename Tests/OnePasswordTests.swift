@@ -264,7 +264,7 @@ final class OnePasswordTests: XCTestCase {
         var r = run(["server", "sync"])
         XCTAssertEqual(r.exitCode, 0, r.stderr)
         XCTAssertTrue(r.stdout.contains("1Password vault Servers: added github.ci"), r.stdout)
-        XCTAssertEqual(run(["onepassword", "list"]).stdout, "Servers\tlast synced 2026-11-12 08:00\n")
+        XCTAssertEqual(run(["onepassword", "list"]).stdout, "Servers\tlast synced \(statusTime(clock))\n")
         // It fails; after 24 hours it is told through Bark, as a host would be.
         try "boom\n".write(toFile: dir + "/fail", atomically: true, encoding: .utf8)
         clock += 60
@@ -361,7 +361,7 @@ final class OnePasswordTests: XCTestCase {
         let (r, v) = try XCTUnwrap(try sec("stripe"))
         XCTAssertEqual(r.level, .server)
         XCTAssertEqual(r.origin, "1password:V")
-        XCTAssertEqual(r.description, "adopted from 1Password vault V on 2026-11-12\nthe live key")
+        XCTAssertEqual(r.description, adoptionNote(host: "1Password vault V", on: clock) + "\nthe live key")
         XCTAssertEqual(labels(v), ["username=me", "password=pw", "Api Key=sk_live"])
         let w = try XCTUnwrap(try writes().first)
         XCTAssertEqual(Array(w.args.prefix(5)), ["item", "edit", "h1", "--vault", "V"])

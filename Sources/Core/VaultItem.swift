@@ -6,11 +6,12 @@ import Foundation
 // the sync wrote, and the vault holds one format. `decodeVaultItem` is the inverse of `template`.
 //
 //   title            `<service>`, or `<service>.<account>` for a non-default account
-//   category, tags   Secure Note; `optokens`, beside mytokens' own `mytokens` and `mytokens-digest-<hash>`
+//   category, tags   Secure Note; `optokens`, beside mytokens' own `mytokens` (and any other tag the item had)
 //   each Field       a field of the section `fields`, in the Secret's order (a lone value: one field `value`),
 //                    CONCEALED, or the type the stored item already gives that label
 //   the rest         the section `optokens`: service, account, kind, shape (`value` | `fields`),
 //                    description and meta (compact JSON) when the Secret has them
+//   the section `mytokens`  one STRING field `digest`: what the sync last wrote (ADR-0026), not the Secret's
 //
 // The layout holds what optokens holds: a `static` or `profile` Secret of text Fields. A `parent`
 // Secret or one with a list Field is not written (`unwritable` says why, and the fix).
@@ -22,13 +23,17 @@ let vaultMetadataSection = "optokens"
 let vaultBareFieldLabel = "value"
 /// The tag optokens reads its items by.
 let vaultOptokensTag = "optokens"
-/// What a vault item the sync owns carries besides: this tag, and a digest tag of what it holds, so
-/// one `op item list` shows whether an item is current without reading any value.
+/// The tag of an item the sync owns (or a hand copy it may take over, ADR-0022).
 let vaultItemTag = "mytokens"
-let vaultDigestPrefix = "mytokens-digest-"
+/// The section and field of an item the sync owns that hold the digest of what it last wrote there
+/// (ADR-0026): one field, so 1Password's sidebar gains no tag per item.
+let vaultOwnSection = "mytokens"
+let vaultDigestLabel = "digest"
+/// The tag an older mytokens kept that digest in (`mytokens-digest-<hash>`, ADR-0022): read, never written.
+private let vaultLegacyDigestPrefix = "mytokens-digest-"
 /// Changing the layout changes this, so every item written by an older layout reads as changed
 /// and the next sync rewrites it once.
-private let vaultFormat = "mytokens-vault-4"
+private let vaultFormat = "mytokens-vault-5"
 
 private let concealed = "CONCEALED", plain = "STRING"
 private let metadataLabels = ["service", "account", "kind", "shape", "description", "meta"]
@@ -83,7 +88,7 @@ struct VaultItem {
         // outside any metadata section (this layout's, or the old layout's `mytokens`)
         var types: [String: String] = [:]
         let byPlace = storedFields.filter { section($0) == vaultValuesSection }
-            + storedFields.filter { ![vaultValuesSection, vaultMetadataSection, vaultItemTag].contains(section($0) ?? "") }
+            + storedFields.filter { ![vaultValuesSection, vaultMetadataSection, vaultOwnSection].contains(section($0) ?? "") }
         for f in byPlace {
             if let label = f["label"] as? String, let type = f["type"] as? String, type == concealed || type == plain,
                types[label] == nil { types[label] = type }
@@ -135,27 +140,56 @@ struct VaultItem {
         return SHA256.hash(data: data).prefix(16).map { String(format: "%02x", $0) }.joined()
     }
 
-    /// The `op item` template, on stdin. `stored`: the item it is written over (see `content`).
-    /// `forEdit`: no category, so an item taken over keeps the one it has.
+    /// The `op item` template, on stdin. `stored`: the item it is written over (see `content`; its
+    /// tags other than mytokens' are kept). `forEdit`: no category, so an item taken over keeps the one it has.
     func template(forEdit: Bool = false, over stored: Data? = nil) -> Data {
         let storedItem = stored.flatMap { (try? JSONSerialization.jsonObject(with: $0)) as? [String: Any] }
         var item = content(forEdit: forEdit, stored: storedItem)
-        item["tags"] = [vaultOptokensTag, vaultItemTag, vaultDigestPrefix + digest]
-        return encode(item)
+        item["tags"] = (storedItem?["tags"] as? [String]) ?? []
+        return encode(owned(item, digest: digest))
     }
 }
 
+/// `item` (a template) as the sync's own, holding what `digest` names: its tags are `optokens`, `mytokens`
+/// and every other it had but an old digest tag, and the field `digest` of the section `mytokens` is
+/// `digest` (one already there replaced). Its other sections and fields are left as they are.
+private func owned(_ item: [String: Any], digest: String) -> [String: Any] {
+    var item = item
+    let mine = [vaultOptokensTag, vaultItemTag]
+    item["tags"] = mine + ((item["tags"] as? [String]) ?? []).filter { !mine.contains($0) && !$0.hasPrefix(vaultLegacyDigestPrefix) }
+    item["fields"] = sectionedFields(item).filter { !($0.section == vaultOwnSection && $0.field["label"] as? String == vaultDigestLabel) }
+        .map(\.field) + [["id": "\(vaultOwnSection).\(vaultDigestLabel)", "section": ["id": vaultOwnSection], "type": plain,
+                          "label": vaultDigestLabel, "value": digest]]
+    var sections = (item["sections"] as? [[String: Any]]) ?? []
+    if !sections.contains(where: { $0["id"] as? String == vaultOwnSection }) {
+        sections.append(["id": vaultOwnSection, "label": vaultOwnSection])
+    }
+    item["sections"] = sections
+    return item
+}
+
 /// The `op item edit` template (on stdin) that makes `stored` (as `op item get` printed it) the sync's own
-/// and changes nothing else: its tags gain `mytokens` and the digest tag of `digest` (an older
-/// digest tag replaced); every other tag, its title, its sections and every field (notes, types, ids) are
-/// sent back as they are, so optokens reads the item unchanged. nil when `stored` is not an item.
-func vaultRetagTemplate(_ stored: Data, digest: String) -> Data? {
+/// holding what `digest` names, and changes nothing else (see `owned`): its title, its other sections and
+/// every other field (notes, types, ids) are sent back as they are, so optokens reads the item unchanged.
+/// nil when `stored` is not an item.
+func vaultOwnTemplate(_ stored: Data, digest: String) -> Data? {
     guard let root = try? jsonObject(stored) else { return nil }
-    var tags = ((root["tags"] as? [String]) ?? []).filter { $0 != vaultItemTag && !$0.hasPrefix(vaultDigestPrefix) }
-    tags += [vaultItemTag, vaultDigestPrefix + digest]
-    var item: [String: Any] = ["tags": tags]
-    for key in ["title", "sections", "fields"] { item[key] = root[key] }
-    return try? JSONSerialization.data(withJSONObject: item, options: [.sortedKeys, .withoutEscapingSlashes])
+    var item: [String: Any] = [:]
+    for key in ["title", "sections", "fields", "tags"] { item[key] = root[key] }
+    return try? JSONSerialization.data(withJSONObject: owned(item, digest: digest), options: [.sortedKeys, .withoutEscapingSlashes])
+}
+
+/// The digest of an older mytokens' tag among `tags`, if any: its item is the sync's own (ADR-0026).
+func vaultLegacyDigest(_ tags: [String]) -> String? {
+    tags.first { $0.hasPrefix(vaultLegacyDigestPrefix) }.map { String($0.dropFirst(vaultLegacyDigestPrefix.count)) }
+}
+
+/// What the sync last wrote into an item, as `op item get` printed it: its field `digest` of the section
+/// `mytokens`, else an older mytokens' digest tag. nil: neither, so the item is not the sync's by itself.
+func vaultWrittenDigest(_ stored: Data) -> String? {
+    guard let root = try? jsonObject(stored) else { return nil }
+    let field = sectionedFields(root).first { $0.section == vaultOwnSection && $0.field["label"] as? String == vaultDigestLabel }
+    return (field?.field["value"] as? String) ?? vaultLegacyDigest((root["tags"] as? [String]) ?? [])
 }
 
 /// Why an item is not a Secret.
@@ -255,7 +289,7 @@ func decodeHandMadeItem(_ json: Data, title: String) throws -> VaultItem {
         let value = (f["value"] as? String) ?? ""
         let label = (f["label"] as? String) ?? ""
         if f["purpose"] as? String == "NOTES" { notes = value.isEmpty ? nil : value; continue }
-        if section == "" || value.isEmpty { continue }
+        if section == "" || value.isEmpty || (section == vaultOwnSection && label == vaultDigestLabel) { continue }
         if label.isEmpty { throw bad("a field of the section \"\(section ?? "")\" has no label") }
         if fields.contains(where: { $0.label == label }) { throw bad("two fields labelled \"\(label)\"") }
         fields.append((label, value))

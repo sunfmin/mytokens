@@ -1,7 +1,9 @@
 # A 1Password vault is one more Sync target, two-way, for machines that are not Macs running mytokens
 
 The item mapping below (one item per Secret's fields, the Description, the `mytokens` section, the
-`op://` ids, the `jq` programs) is superseded by ADR-0024: an item is in optokens' layout.
+`op://` ids, the `jq` programs) is superseded by ADR-0024: an item is in optokens' layout. Ownership by the
+`mytokens-digest-*` tag, and the rejected option "Store a digest as a field", are superseded by ADR-0026: the
+digest is the field `digest` of the section `mytokens`.
 
 `mytokens onepassword add <vault>` makes a 1Password vault hold exactly this Mac's `server`-level
 Secrets, one item each, written with a 1Password **service account**. Background Sync keeps it

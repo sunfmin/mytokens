@@ -366,11 +366,11 @@ The service account token (`personal` level, never synced anywhere) needs write 
 vault; it reaches `op` only in the child's environment. Each secret becomes one item in optokens' layout, so
 `optokens get|env|list` reads it: titled `<service>` (`<service>.<account>` for a non-default account), every field
 in the section `fields` (a new one concealed; one already in the vault keeps its type), the service, account, kind,
-Description and meta in the section `optokens`, tags `optokens`, `mytokens` and a digest tag. A `parent` secret or
+Description and meta in the section `optokens`, tags `optokens` and `mytokens`, and a digest in the section `mytokens`. A `parent` secret or
 one with a list field is not written: `onepassword list` says so, with the command that fixes it. A hand-made `mytokens`-tagged item with a wanted title is taken over in
 place. The vault is two-way: an item you add or change in 1Password (any category) appears in mytokens as a
 `server`-level secret on the next sync and is rewritten into the vault's layout (one `optokens put` made only gains
-mytokens' tags, so optokens reads it unchanged); one that can't be mapped without loss
+mytokens' tag and digest field, so optokens reads it unchanged); one that can't be mapped without loss
 (two fields of one label, files) is not adopted and `onepassword list` says why. Changed on both sides (or a
 hand-made item titled like a secret mytokens did not put there) is a conflict that `onepassword list` and the
 sync show and neither side takes; the conflict line names how to end it, `mytokens onepassword keep <vault>

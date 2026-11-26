@@ -1,6 +1,9 @@
 # An item optokens put into a synced vault is Adopted by its tags alone
 
-Refines ADR-0022's "Adopt" for an item in optokens' layout (ADR-0024). The rest of ADR-0022 stands.
+Refines ADR-0022's "Adopt" for an item in optokens' layout (ADR-0024). The rest of ADR-0022 stands. Since
+ADR-0026 the digest tag below is the field `digest` of a section `mytokens`: the edit adds the tag `mytokens` and
+that section, and an item is optokens' own when it has neither that field nor an old digest tag and this Mac does not
+remember it.
 
 ## Context
 

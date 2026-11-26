@@ -427,12 +427,31 @@ final class CommandsTests: XCTestCase {
         XCTAssertTrue(bad.stderr.contains("not a valid environment-variable name"))
     }
 
-    func testPutCannotChangeKindToOrFromParent() {
+    func testPutCannotChangeKindToParent() {
         let store = InMemorySecretStore()
         _ = runCommand(["put", "qwen", "--set", "A=1"], mdeps(store, values: nil))
         let bad = runCommand(["put", "qwen", "--kind", "parent", "--set", "A=1"], mdeps(store, values: nil))
         XCTAssertNotEqual(bad.exitCode, 0)
         XCTAssertTrue(bad.stderr.contains("rm it first to change kind"))
+        _ = runCommand(["put", "gh"], deps(store, input: "tok"))
+        let bare = runCommand(["put", "gh", "--kind", "parent"], deps(store, input: nil))
+        XCTAssertNotEqual(bare.exitCode, 0)
+        XCTAssertTrue(bare.stderr.contains("rm it first to change kind"))
+    }
+
+    func testPutKindStaticTurnsParentIntoStaticInPlaceWithoutPopup() {
+        let store = InMemorySecretStore()
+        _ = runCommand(["put", "cloudflare", "--kind", "parent", "--description", "mints children",
+                        "--meta", "{\"zone\":\"z\"}", "--level", "server"], deps(store, input: "tok"))
+        // No input: a popup or terminal prompt would fail the put.
+        let r = runCommand(["put", "cloudflare", "--kind", "static"], deps(store, input: nil))
+        XCTAssertEqual(r.exitCode, 0, r.stderr)
+        XCTAssertEqual(runCommand(["get", "cloudflare"], deps(store, input: nil)).stdout, "tok")
+        let rec = try? store.list().first { $0.service == "cloudflare" }
+        XCTAssertEqual(rec?.kind, "static")
+        XCTAssertEqual(rec?.description, "mints children")
+        XCTAssertEqual(rec?.meta.flatMap(JSONUtil.parse) as? [String: String], ["zone": "z"])
+        XCTAssertEqual(rec?.level, .server)
     }
 
     // MARK: - Level (ADR-0010)

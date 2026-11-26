@@ -425,11 +425,12 @@ private func runPut(_ argv: [String], _ store: SecretStore, _ input: SecretInput
             return fail(pushedSecretRefusal(service: service, account: account), 64)
         }
 
-        // --kind changes an existing Secret's kind in place between static and profile (an Adopted
-        // item comes in as static); a Parent is a different shape, so it stays rm-first.
+        // --kind changes an existing Secret's kind in place: between static and profile (an Adopted
+        // item comes in as static), and a Parent down to static (mytokens#2). Becoming a Parent
+        // stays rm-first: a Parent is single-value, and put does not check an existing Secret is one.
         var kindChanges = false
         if let existingKind = record?.kind, let explicitKind, explicitKind != existingKind {
-            guard existingKind != "parent", explicitKind != "parent" else {
+            guard explicitKind != "parent", existingKind != "parent" || explicitKind == "static" else {
                 return fail("\(service)/\(account) already exists as kind '\(existingKind)'; rm it first to change kind\n", 64)
             }
             kindChanges = true

@@ -16,12 +16,10 @@ final class OnePasswordRealCheck: XCTestCase {
         try store.upsert(service: onePasswordTokenService, account: "default", secret: SecretValue(single: token),
                          kind: "static", meta: nil, description: nil, level: .personal, marks: SyncMarks())
         let value = "real-check-\(UUID().uuidString)"
-        let hosts = try XCTUnwrap(ListValue.canonical(#"[{"host":"a","port":"22"},{"host":"b","port":"2222"}]"#))
-        // labels `op://` cannot name: CJK, `[`/`:`, a space; and a list Field (mytokens#14)
+        // in optokens' layout (ADR-0024): every Field in the section `fields`
         try store.upsert(service: "op-real-check", account: "default",
                          secret: SecretValue(fields: [(label: "token", value: value), (label: "中文", value: "cjk-" + value),
-                                                      (label: "a[b]:c", value: "odd-" + value), (label: "Access Key ID", value: "key-" + value),
-                                                      (label: "Hosts", value: hosts)], lists: ["Hosts"]),
+                                                      (label: "Access Key ID", value: "key-" + value)]),
                          kind: "static", meta: nil, description: "written by tools/op-real-check.sh", level: .server, marks: SyncMarks())
         let cli = OPCommand()
         let memory = VaultMemoryRef()
@@ -42,14 +40,18 @@ final class OnePasswordRealCheck: XCTestCase {
         XCTAssertEqual(read.exitCode, 0, read.stderr)
         XCTAssertEqual(read.stdout.trimmingCharacters(in: .whitespacesAndNewlines), value)
 
-        // Every Field and list record is readable by `op read`, by its id.
+        // A Field is readable by `op read` at `fields/<Label>`, as optokens says, and what was written reads back.
         Thread.sleep(forTimeInterval: 10)
-        for (reference, expected) in [("token", value), ("__", "cjk-" + value), ("a_b__c", "odd-" + value),
-                                      ("Access_Key_ID", "key-" + value), ("Hosts.1/host", "a"), ("Hosts.2/port", "2222")] {
+        for (reference, expected) in [("fields/token", value), ("fields/Access Key ID", "key-" + value)] {
             let r = try cli.run(["read", "op://\(scratchVault)/op-real-check/\(reference)"], stdin: Data(), token: token)
             XCTAssertEqual(r.exitCode, 0, "\(reference): \(r.stderr)")
             XCTAssertEqual(r.stdout.trimmingCharacters(in: .whitespacesAndNewlines), expected, reference)
         }
+
+        let item = try cli.run(["item", "get", "op-real-check", "--vault", scratchVault, "--format", "json", "--reveal"], stdin: Data(), token: token)
+        let back = try decodeVaultItem(Data(item.stdout.utf8))
+        XCTAssertEqual(back.secret.fields.map(\.value), [value, "cjk-" + value, "key-" + value])
+        XCTAssertEqual(back.description, "written by tools/op-real-check.sh")
 
         // Nothing changed: nothing written.
         XCTAssertEqual(try syncVault(scratchVault, store: store, cli: cli, memory: memory).get(), ["no changes"])

@@ -109,9 +109,11 @@ _Avoid_: fleet, inventory, known hosts (that is ssh's file).
 **1Password vault**:
 A target of Sync for machines that are not Macs running mytokens: a 1Password vault named by
 `mytokens onepassword add <vault>`, made to hold exactly the `server`-level Secrets, one item each
-(titled `<service>`, or `<service>.<account>` for a non-default account; the Description as notes,
-every Field concealed, tag `mytokens` plus a `mytokens-digest-*` tag that marks it as the sync's own), with a
-1Password service account whose token is the personal-level Secret `1password-service-account`.
+in **optokens' layout**, so `optokens get|env|list` reads it on any machine (ADR-0024): titled `<service>`, or
+`<service>.<account>` for a non-default account; every Field in the section `fields`, the name, kind, shape,
+Description and Meta in the section `optokens`; tags `optokens`, `mytokens` and a `mytokens-digest-*` tag that marks
+it as the sync's own. A `parent` Secret or one with a list Field is not written (`onepassword list` says the fix).
+It is written with a 1Password service account whose token is the personal-level Secret `1password-service-account`.
 Two-way: an item added or changed in 1Password is **Adopted** into mytokens on the next sync, and the vault is the
 **origin** of what was entered there; the personal Mac stays the home (ADR-0022). A hand-made `mytokens`-tagged
 item whose title is wanted is taken over in place; Background Sync keeps it current.

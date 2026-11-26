@@ -1,40 +1,116 @@
-import CryptoKit
 import XCTest
 
-// A Secret ⇄ a 1Password vault item (ADR-0022, mytokens#10): the encoding is lossless, and a
-// server with only `op` and `jq` reads the same bytes mytokens itself prints.
+// A `server`-level Secret ⇄ a 1Password vault item in optokens' layout (ADR-0024): the item the sync
+// writes is the one optokens writes for the same Secret, and decodes back to that Secret.
 final class VaultItemTests: XCTestCase {
     private var store = InMemorySecretStore()
 
     override func setUp() { store = InMemorySecretStore() }
 
-    private var deps: Dependencies { Dependencies(store: store, input: CannedSecretInput(value: nil)) }
-
-    fileprivate func put(_ service: String, _ account: String = "default", secret: SecretValue, kind: String = "static", meta: Any? = nil,
-                     description: String? = nil, level: Level = .server) throws {
+    private func put(_ service: String, _ account: String = "default", secret: SecretValue, kind: String = "static", meta: Any? = nil,
+                     description: String? = nil) throws {
         try store.upsert(service: service, account: account, secret: secret, kind: kind, meta: meta, description: description,
-                         level: level, marks: SyncMarks())
+                         level: .server, marks: SyncMarks())
     }
 
     private func item(_ service: String, _ account: String = "default") throws -> VaultItem {
         let r = try XCTUnwrap(try store.list().first { $0.service == service && $0.account == account })
         return VaultItem(service: r.service, account: r.account, kind: r.kind, meta: r.meta, description: r.description,
-                         level: r.level, secret: try XCTUnwrap(try store.get(service: service, account: account)))
+                         secret: try XCTUnwrap(try store.get(service: service, account: account)))
     }
 
-    private func assertRoundTrip(_ service: String, _ account: String = "default", file: StaticString = #filePath, line: UInt = #line) throws {
-        let before = try item(service, account)
-        let after = try decodeVaultItem(before.template())
+    private func assertSame(_ after: VaultItem, _ before: VaultItem, file: StaticString = #filePath, line: UInt = #line) {
         XCTAssertEqual(after.service, before.service, file: file, line: line)
         XCTAssertEqual(after.account, before.account, file: file, line: line)
         XCTAssertEqual(after.kind, before.kind, file: file, line: line)
         XCTAssertEqual(after.meta, before.meta, file: file, line: line)
         XCTAssertEqual(after.description, before.description, file: file, line: line)
-        XCTAssertEqual(after.level, before.level, file: file, line: line)
         XCTAssertEqual(after.secret.fields.map(\.label), before.secret.fields.map(\.label), file: file, line: line)
         XCTAssertEqual(after.secret.fields.map(\.value), before.secret.fields.map(\.value), file: file, line: line)
-        XCTAssertEqual(after.secret.lists, before.secret.lists, file: file, line: line)
         XCTAssertEqual(after.secret.isLabelled, before.secret.isLabelled, file: file, line: line)
+        XCTAssertEqual(after.digest, before.digest, file: file, line: line)
+    }
+
+    private func assertRoundTrip(_ service: String, _ account: String = "default", file: StaticString = #filePath, line: UInt = #line) throws {
+        let before = try item(service, account)
+        assertSame(try decodeVaultItem(before.template()), before, file: file, line: line)
+    }
+
+    private func json(_ data: Data) throws -> [String: Any] {
+        try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+    }
+
+    private func fields(_ data: Data) throws -> [[String: Any]] { try XCTUnwrap(try json(data)["fields"] as? [[String: Any]]) }
+
+    private func values(_ data: Data) throws -> [[String: Any]] {
+        try fields(data).filter { ($0["section"] as? [String: Any])?["id"] as? String == "fields" }
+    }
+
+    // MARK: the item optokens writes
+
+    private func fixture(_ name: String) throws -> Data {
+        try Data(contentsOf: URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("Fixtures/optokens-\(name).json"))
+    }
+
+    /// An item with every `id` dropped, and the tags mytokens adds beside optokens' own.
+    private func comparable(_ data: Data) throws -> NSDictionary {
+        var item = try json(data)
+        item["fields"] = try fields(data).map { f -> [String: Any] in var f = f; f["id"] = nil; return f }
+        item["tags"] = (item["tags"] as? [String])?.filter { $0 != vaultItemTag && !$0.hasPrefix(vaultDigestPrefix) }
+        return item as NSDictionary
+    }
+
+    /// The fixtures are what optokens 0.1.6 handed `op item create` (an `op` stand-in on PATH recorded its
+    /// stdin) after `optokens put` of the same Secret; the bare ones are built by optokens' `item::template`
+    /// rules (a bare `put` takes its value on a one-time link only). The sync writes each new Field
+    /// CONCEALED; a Field optokens took from `--set` is STRING, and a rewrite over it keeps that.
+    func testTheItemTheSyncWritesIsTheItemOptokensWritesAndDecodesBack() throws {
+        let cases: [(String, VaultItem)] = [
+            ("bare", VaultItem(service: "fx-bare", account: "default", kind: "static", meta: nil, description: nil,
+                               secret: SecretValue(single: "v/1 'q'"))),
+            ("bare-meta", VaultItem(service: "fx-bare-meta", account: "default", kind: "static", meta: #"{"account_id":"abc/1","ttl":3600}"#,
+                                    description: "部署用\nsecond line", secret: SecretValue(single: "v/1 'q'"))),
+            ("fields", VaultItem(service: "fx-fields", account: "ci", kind: "static", meta: nil, description: "CI deploy",
+                                 secret: SecretValue(fields: [("Region", "us-east-1"), ("Endpoint", "https://x.example/a"), ("Secret Key", "sk/2")]))),
+            ("profile-meta", VaultItem(service: "fx-profile", account: "default", kind: "profile", meta: #"{"account_id":"abc/1","n":[1,2],"zone":"b"}"#,
+                                       description: nil, secret: SecretValue(fields: [("B_VAR", "it's"), ("A_VAR", "x y")]))),
+        ]
+        for (name, secret) in cases {
+            let theirs = try fixture(name)
+            XCTAssertEqual(try comparable(secret.template(over: theirs)), try comparable(theirs), name)
+            assertSame(try decodeVaultItem(theirs), secret)
+            assertSame(try decodeVaultItem(secret.template()), secret)
+            // a new item: every Field CONCEALED, the rest as optokens writes it
+            let fresh = try comparable(secret.template()).mutableCopy() as! NSMutableDictionary
+            let mine = try comparable(theirs).mutableCopy() as! NSMutableDictionary
+            for item in [fresh, mine] {
+                item["fields"] = (item["fields"] as! [[String: Any]]).map { f -> [String: Any] in
+                    var f = f
+                    if (f["section"] as? [String: Any])?["id"] as? String == "fields" { f["type"] = "CONCEALED" }
+                    return f
+                }
+            }
+            XCTAssertEqual(fresh, mine, name)
+        }
+    }
+
+    func testAFieldKeepsTheTypeTheVaultGivesItAndANewFieldIsConcealed() throws {
+        try put("app", secret: SecretValue(fields: [("Region", "eu"), ("Token", "t")]))
+        let first = try item("app").template()
+        XCTAssertEqual(try values(first).map { $0["type"] as? String }, ["CONCEALED", "CONCEALED"])
+        // someone shows Region in 1Password; the Secret then gains a Field
+        var stored = try json(first)
+        stored["fields"] = try fields(first).map { f -> [String: Any] in
+            var f = f
+            if f["label"] as? String == "Region" { f["type"] = "STRING" }
+            return f
+        }
+        let edited = try JSONSerialization.data(withJSONObject: stored)
+        try put("app", secret: SecretValue(fields: [("Region", "us"), ("Token", "t2"), ("New", "n")]))
+        let again = try item("app").template(forEdit: true, over: edited)
+        XCTAssertEqual(try values(again).map { $0["label"] as? String }, ["Region", "Token", "New"])
+        XCTAssertEqual(try values(again).map { $0["type"] as? String }, ["STRING", "CONCEALED", "CONCEALED"])
+        XCTAssertEqual(try item("app").digest, try decodeVaultItem(again).digest)     // a type is not content
     }
 
     // MARK: round trips
@@ -54,47 +130,33 @@ final class VaultItemTests: XCTestCase {
         try put("b", secret: SecretValue(single: "v"))
         XCTAssertTrue(try decodeVaultItem(try item("a").template()).secret.isLabelled)
         XCTAssertFalse(try decodeVaultItem(try item("b").template()).secret.isLabelled)
+        XCTAssertNotEqual(try item("a").digest, try item("b").digest)
         try assertRoundTrip("a")
     }
 
-    func testAProfileRoundTrips() throws {
-        try put("glm", secret: SecretValue(fields: [("ANTHROPIC_BASE_URL", "https://x.example/api"), ("ANTHROPIC_AUTH_TOKEN", "it's")]), kind: "profile")
+    func testAProfileWithMetaRoundTrips() throws {
+        try put("glm", secret: SecretValue(fields: [("ANTHROPIC_BASE_URL", "https://x.example/api"), ("ANTHROPIC_AUTH_TOKEN", "it's")]),
+                kind: "profile", meta: ["account_id": "abc/1", "default_ttl_seconds": 3600])
         try assertRoundTrip("glm")
-        XCTAssertEqual(try decodeVaultItem(try item("glm").template()).kind, "profile")
+        XCTAssertEqual(try decodeVaultItem(try item("glm").template()).meta, #"{"account_id":"abc/1","default_ttl_seconds":3600}"#)
     }
 
-    func testAParentTokenWithMetaRoundTrips() throws {
-        try put("cloudflare", secret: SecretValue(single: "cf"), kind: "parent", meta: ["account_id": "abc/1", "default_ttl_seconds": 3600])
-        try assertRoundTrip("cloudflare")
-        XCTAssertEqual(try decodeVaultItem(try item("cloudflare").template()).kind, "parent")
-        XCTAssertNotNil(try decodeVaultItem(try item("cloudflare").template()).meta)
-    }
-
-    func testAListFieldRoundTrips() throws {
-        let list = try XCTUnwrap(ListValue.canonical(#"[{"user":"app","host":"db1","password":"p/1"},{"host":"db2","user":"app","password":"p2"}]"#))
-        try put("db", "prod", secret: SecretValue(fields: [("Hosts", list)], lists: ["Hosts"]))
-        try assertRoundTrip("db", "prod")
-    }
-
-    func testASecretWithBothListAndStringFieldsRoundTripsInOrder() throws {
-        let list = try XCTUnwrap(ListValue.canonical(#"[{"a":"1"},{"a":"2"},{"a":"3"}]"#))
-        try put("mix", secret: SecretValue(fields: [("Token", "t"), ("Hosts [1]", "tricky"), ("Hosts", list), ("Zed", "z")], lists: ["Hosts"]))
-        try assertRoundTrip("mix")
-    }
-
-    func testANonDefaultAccountAndADottedServiceRoundTrip() throws {
-        try put("guild-hub.mac-studio", "ci.2", secret: SecretValue(single: "x"), level: .personal)
+    func testANonDefaultAccountAndADottedServiceRoundTripByTheSectionNotTheTitle() throws {
+        try put("guild-hub.mac-studio", "ci.2", secret: SecretValue(single: "x"))
         let back = try decodeVaultItem(try item("guild-hub.mac-studio", "ci.2").template())
         XCTAssertEqual(back.service, "guild-hub.mac-studio")
         XCTAssertEqual(back.account, "ci.2")
-        XCTAssertEqual(back.level, .personal)
+        XCTAssertEqual(back.title, "guild-hub.mac-studio.ci.2")
         try assertRoundTrip("guild-hub.mac-studio", "ci.2")
     }
 
-    func testADescriptionWithNewlinesAndCJKRoundTrips() throws {
+    func testADescriptionWithNewlinesAndCJKIsInTheSectionNotTheNotes() throws {
         try put("cn", secret: SecretValue(fields: [("令牌", "值\n第二行"), ("k", "v")]), description: "部署用令牌\nsecond line: “quotes” & emoji 🔑")
         try assertRoundTrip("cn")
-        XCTAssertEqual(try decodeVaultItem(try item("cn").template()).description, "部署用令牌\nsecond line: “quotes” & emoji 🔑")
+        let t = try item("cn").template()
+        XCTAssertFalse(try fields(t).contains { $0["purpose"] as? String == "NOTES" })
+        XCTAssertEqual(try fields(t).first { $0["label"] as? String == "description" }?["value"] as? String,
+                       "部署用令牌\nsecond line: “quotes” & emoji 🔑")
     }
 
     func testNoDescriptionRoundTripsAsNone() throws {
@@ -102,192 +164,56 @@ final class VaultItemTests: XCTestCase {
         XCTAssertNil(try decodeVaultItem(try item("nodesc").template()).description)
     }
 
-    // MARK: the format
-
-    private func template(_ i: VaultItem) throws -> [String: Any] {
-        try XCTUnwrap(JSONSerialization.jsonObject(with: i.template()) as? [String: Any])
-    }
-
-    /// What `op` accepts in an `op://` reference segment, apart from the space and `=` that ids never use.
-    private func isReadable(_ id: String) -> Bool {
-        !id.isEmpty && id.unicodeScalars.allSatisfy { $0.isASCII && (CharacterSet.alphanumerics.contains($0) || "_-.".unicodeScalars.contains($0)) }
-    }
-
-    func testEveryFieldAndListRecordGetsAnOpSafeIdAndTheLabelsStay() throws {
-        let hosts = try XCTUnwrap(ListValue.canonical(#"[{"host":"a","a:b":"1","a b":"2"},{"host":"b"}]"#))
-        try put("odd", secret: SecretValue(fields: [("中文", "cjk"), ("Access Key ID", "k"), ("a[b]:c", "u"), ("a_b__c", "v"),
-                                                   ("Hosts", hosts)], lists: ["Hosts"]))
-        let t = try template(try item("odd"))
-        let fields = try XCTUnwrap(t["fields"] as? [[String: Any]])
-        let sections = try XCTUnwrap(t["sections"] as? [[String: Any]])
-        let ids = fields.compactMap { $0["id"] as? String } + sections.compactMap { $0["id"] as? String }
-        XCTAssertTrue(ids.allSatisfy { $0 == "notesPlain" || isReadable($0) }, "\(ids)")
-        let top = fields.filter { $0["section"] == nil }
-        XCTAssertEqual(top.map { $0["label"] as? String }, ["中文", "Access Key ID", "a[b]:c", "a_b__c"])        // labels stay
-        XCTAssertEqual(top.map { $0["id"] as? String }, ["__", "Access_Key_ID", "a_b__c", "a_b__c_2"])            // collision numbered
-        XCTAssertEqual(sections.compactMap { $0["id"] as? String }, ["Hosts.1", "Hosts.2", "mytokens"])
-        XCTAssertEqual(sections.compactMap { $0["label"] as? String }, ["Hosts [1]", "Hosts [2]", "mytokens"])
-        let first = fields.filter { ($0["section"] as? [String: Any])?["id"] as? String == "Hosts.1" }
-        XCTAssertEqual(first.map { $0["label"] as? String }, ["a b", "a:b", "host"])
-        XCTAssertEqual(first.map { $0["id"] as? String }, ["a_b", "a_b_2", "host"])
-        // the metadata section says which id is which
-        let meta = try XCTUnwrap(fields.first { $0["label"] as? String == "ids" && $0["section"] != nil }?["value"] as? String)
-        let map = try XCTUnwrap(JSONUtil.parse(meta) as? [String: String])
-        XCTAssertEqual(map, ["中文": "__", "Access Key ID": "Access_Key_ID", "a[b]:c": "a_b__c", "a_b__c": "a_b__c_2", "Hosts": "Hosts"])
-        try assertRoundTrip("odd")
-    }
-
-    func testIdsAreDeterministicAndFollowTheContent() throws {
-        try put("a", secret: SecretValue(fields: [("中文", "x"), ("k", "y")]))
-        XCTAssertEqual(try item("a").template(), try item("a").template())
-        XCTAssertEqual(vaultSafeId(""), "_")
-        XCTAssertEqual(vaultSafeId("Hosts [1]"), "Hosts__1_")
-    }
-
-    func testFieldsStayPlainTopLevelAndMetadataIsInItsOwnSection() throws {
-        try put("app", secret: SecretValue(fields: [("kind", "FIELD"), ("level", "FIELD2")]), kind: "static")
-        let t = try template(try item("app"))
-        let fields = try XCTUnwrap(t["fields"] as? [[String: Any]])
-        let top = fields.filter { $0["section"] == nil && $0["purpose"] == nil }
-        XCTAssertEqual(top.map { $0["label"] as? String }, ["kind", "level"])      // `op read .../kind` is the Field
-        XCTAssertTrue(top.allSatisfy { $0["type"] as? String == "CONCEALED" })
-        let meta = fields.filter { ($0["section"] as? [String: Any])?["label"] as? String == "mytokens" }
-        XCTAssertTrue(meta.allSatisfy { $0["type"] as? String == "STRING" })
-        XCTAssertEqual(Set(meta.compactMap { $0["label"] as? String }), ["service", "account", "kind", "level", "shape", "order", "ids"])
-        XCTAssertEqual(meta.first { $0["label"] as? String == "kind" }?["value"] as? String, "static")
+    func testAFieldNamedLikeTheMetadataStaysAField() throws {
+        try put("app", secret: SecretValue(fields: [("kind", "FIELD"), ("service", "S")]), kind: "static")
         let back = try decodeVaultItem(try item("app").template())
         XCTAssertEqual(back.secret.value(forField: "kind"), "FIELD")
         XCTAssertEqual(back.kind, "static")
+        XCTAssertEqual(back.service, "app")
     }
 
-    func testTheDigestTagCoversEverythingAnItemHoldsAndOldFormatItemsDiffer() throws {
-        try put("a", secret: SecretValue(single: "x"), kind: "static")
-        let base = try item("a")
-        var changed = base; changed.kind = "parent"
-        XCTAssertNotEqual(base.digest, changed.digest)
-        changed = base; changed.level = .personal
-        XCTAssertNotEqual(base.digest, changed.digest)
-        changed = base; changed.meta = #"{"a":1}"#
-        XCTAssertNotEqual(base.digest, changed.digest)
-        changed = base; changed.secret = SecretValue(fields: [("", "x")])
-        XCTAssertEqual(base.digest, changed.digest)
-        changed = base; changed.secret = SecretValue(fields: [("value", "x")])
-        XCTAssertNotEqual(base.digest, changed.digest)
-        // The digest an item written before this format carried: title, notes, fields.
-        let old: [Any] = ["a", "", [["value", "x"]]]
-        let oldDigest = SHA256Hex(try JSONSerialization.data(withJSONObject: old, options: [.sortedKeys]))
-        XCTAssertNotEqual(base.digest, oldDigest)
-    }
+    // MARK: what the layout cannot hold
 
-    // MARK: a server with op and jq only
-
-    fileprivate var programs: String {
-        URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
-            .appendingPathComponent("skills/mytokens/op").path
-    }
-
-    fileprivate func jqPath() throws -> String {
-        let home = NSHomeDirectory()
-        for dir in (ProcessInfo.processInfo.environment["PATH"] ?? "").split(separator: ":").map(String.init)
-            + ["\(home)/.local/bin", "/opt/homebrew/bin", "/usr/local/bin", "/usr/bin"] {
-            if FileManager.default.isExecutableFile(atPath: dir + "/jq") { return dir + "/jq" }
-        }
-        throw XCTSkip("jq is missing: make jq-install")
-    }
-
-    /// Runs a program of skills/mytokens/op on the item as `op item get --format json` would print it.
-    private func jq(_ program: String, _ i: VaultItem, flags: String = "-cSj", args: [String] = []) throws -> CommandResult {
-        try runProcess(try jqPath(), [flags, "-L", programs] + args + ["-f", programs + "/" + program], stdin: i.template())
-    }
-
-    fileprivate func mytokens(_ argv: [String]) -> CommandResult { runCommand(argv, deps) }
-
-    private func accountArgs(_ a: String) -> [String] { a == "default" ? [] : ["--account", a] }
-
-    private func assertSecretMatches(_ service: String, _ account: String = "default", file: StaticString = #filePath, line: UInt = #line) throws {
-        let ours = mytokens(["get", service, "--json"] + accountArgs(account))
-        XCTAssertEqual(ours.exitCode, 0, ours.stderr, file: file, line: line)
-        let theirs = try jq("secret.jq", try item(service, account))
-        XCTAssertEqual(theirs.exitCode, 0, theirs.stderr, file: file, line: line)
-        XCTAssertEqual(theirs.stdout, ours.stdout, file: file, line: line)
-    }
-
-    func testJqReadsAWholeSecretAsMytokensGetJSON() throws {
-        try put("github", secret: SecretValue(single: "ghp_ü/x\"\\"))
-        try put("aws", "prod", secret: SecretValue(fields: [("SecretAccessKey", "sk/2"), ("AccessKeyId", "AKIA1")]), level: .personal)
-        try put("cn", secret: SecretValue(fields: [("令牌", "值\n第二行 'q' $x"), ("k", "")]), description: "说明\n两行")
-        let list = try XCTUnwrap(ListValue.canonical(#"[{"user":"app","host":"db1","password":"p/1"},{"host":"db2","user":"app","password":"p2"}]"#))
-        try put("db", secret: SecretValue(fields: [("Token", "t"), ("Hosts", list), ("Other", "o")], lists: ["Hosts"]))
-        try put("tricky", secret: SecretValue(fields: [("Hosts [1]", "x"), ("kind", "FIELD"), ("order", "[]")]))
-        for (s, a) in [("github", "default"), ("aws", "prod"), ("cn", "default"), ("db", "default"), ("tricky", "default")] {
-            try assertSecretMatches(s, a)
-        }
-    }
-
-    func testJqReadsAProfileAsMytokensEnv() throws {
-        try put("glm", secret: SecretValue(fields: [("ANTHROPIC_BASE_URL", "https://x.example/api"), ("ANTHROPIC_AUTH_TOKEN", "it's a 'quote'\nand $(cmd) `x`"),
-                                                    ("A_FIRST", "z")]), kind: "profile")
-        let ours = mytokens(["env", "glm"])
-        XCTAssertEqual(ours.exitCode, 0, ours.stderr)
-        let theirs = try jq("env.jq", try item("glm"), flags: "-rj")
-        XCTAssertEqual(theirs.exitCode, 0, theirs.stderr)
-        XCTAssertEqual(theirs.stdout, ours.stdout)
-    }
-
-    func testJqRefusesToRenderANonProfileAsEnv() throws {
-        try put("github", secret: SecretValue(fields: [("a", "b")]))
-        XCTAssertNotEqual(try jq("env.jq", try item("github"), flags: "-rj").exitCode, 0)
-    }
-
-    func testJqReadsAListFieldAsMytokensGetField() throws {
-        let list = try XCTUnwrap(ListValue.canonical(#"[{"user":"app","host":"db1","password":"p/1"},{"host":"db2","user":"ü","password":"p2"}]"#))
+    func testAParentAndAListFieldAreUnwritableWithTheirFix() throws {
+        try put("cloudflare", secret: SecretValue(single: "cf"), kind: "parent", meta: ["account_id": "a"])
+        let list = try XCTUnwrap(ListValue.canonical(#"[{"host":"db1"}]"#))
         try put("db", "prod", secret: SecretValue(fields: [("Token", "t"), ("Hosts", list)], lists: ["Hosts"]))
-        for label in ["Hosts", "Token"] {
-            let ours = mytokens(["get", "db", "--account", "prod", "--field", label])
-            let theirs = try jq("field.jq", try item("db", "prod"), args: ["--arg", "label", label])
-            XCTAssertEqual(ours.exitCode, 0, ours.stderr)
-            XCTAssertEqual(theirs.stdout, ours.stdout, theirs.stderr)
+        XCTAssertEqual(try item("cloudflare").unwritable?.fix, "mytokens put cloudflare --kind static")
+        XCTAssertEqual(try item("db", "prod").unwritable?.fix, "mytokens put db --account prod --level personal")
+        XCTAssertTrue(try item("db", "prod").unwritable?.why.contains("\"Hosts\" is a list") == true)
+        try put("ok", secret: SecretValue(single: "v"))
+        XCTAssertNil(try item("ok").unwritable)
+    }
+
+    func testWhatOptokensRefusesIsNotDecoded() throws {
+        try put("a", secret: SecretValue(fields: [("k", "v")]))
+        let good = try json(try item("a").template())
+        func refused(_ edit: (inout [String: Any]) -> Void) -> String? {
+            var i = good
+            edit(&i)
+            do { _ = try decodeVaultItem(try JSONSerialization.data(withJSONObject: i)); return nil } catch { return "\(error)" }
         }
+        func editField(_ label: String, _ key: String, _ value: Any) -> (inout [String: Any]) -> Void {
+            { i in i["fields"] = (i["fields"] as! [[String: Any]]).map { f in var f = f; if f["label"] as? String == label { f[key] = value }; return f } }
+        }
+        XCTAssertNil(refused { _ in })
+        XCTAssertTrue(refused { $0["tags"] = ["mytokens"] }?.contains("no tag \"optokens\"") == true)
+        XCTAssertTrue(refused(editField("kind", "value", "parent"))?.contains("neither static nor profile") == true)
+        XCTAssertTrue(refused(editField("k", "type", "URL"))?.contains("neither CONCEALED nor STRING") == true)
+        XCTAssertTrue(refused(editField("shape", "value", "bare"))?.contains("its shape is \"bare\"") == true)
+        XCTAssertTrue(refused(editField("kind", "label", "level"))?.contains("has a field \"level\"") == true)
+        XCTAssertTrue(refused { i in
+            i["fields"] = (i["fields"] as! [[String: Any]]) + [["section": ["id": "optokens"], "type": "STRING", "label": "meta", "value": "[1]"]]
+        }?.contains("meta is not a JSON object") == true)
     }
 
-    func testJqReadsMoreThanNineRecordsInOrder() throws {
-        let records = (1...12).map { #"{"n":"\#($0)"}"# }.joined(separator: ",")
-        let list = try XCTUnwrap(ListValue.canonical("[\(records)]"))
-        try put("many", secret: SecretValue(fields: [("L", list)], lists: ["L"]))
-        let ours = mytokens(["get", "many", "--field", "L"])
-        let theirs = try jq("field.jq", try item("many"), args: ["--arg", "label", "L"])
-        XCTAssertEqual(theirs.stdout, ours.stdout, theirs.stderr)
-    }
-}
-
-private func SHA256Hex(_ data: Data) -> String {
-    SHA256.hash(data: data).prefix(16).map { String(format: "%02x", $0) }.joined()
-}
-
-// Items as a real 1Password prints them (`op item get --format json`, written to the `devbox` vault
-// by the sync's own template and read back, 2026-11-18, mytokens#10).
-extension VaultItemTests {
-    private func fixture(_ name: String) throws -> Data {
-        try Data(contentsOf: URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("Fixtures/op-item-\(name).json"))
-    }
-
-    func testARealOpItemDecodesAndJqReadsItLikeMytokens() throws {
-        let list = try decodeVaultItem(try fixture("list"))
-        XCTAssertEqual(list.service, "scratch-10-list")
-        XCTAssertEqual(list.secret.labels, ["Token", "Hosts"])
-        XCTAssertEqual(list.secret.lists, ["Hosts"])
-        XCTAssertEqual(list.secret.value(forField: "Hosts"), #"[{"host":"db1","password":"p/1","user":"app"},{"host":"db2","password":"p2","user":"u"}]"#)
-        let profile = try decodeVaultItem(try fixture("profile"))
-        XCTAssertEqual(profile.kind, "profile")
-        XCTAssertEqual(profile.description, "p")
-        XCTAssertEqual(profile.secret.labels, ["B_VAR", "A_VAR"])
-        // jq on the real item and mytokens on the decoded Secret print the same bytes.
-        try put("scratch-10-profile", secret: profile.secret, kind: "profile", description: "p")
-        let ours = mytokens(["env", "scratch-10-profile"])
-        let theirs = try runProcess(try jqPath(), ["-rj", "-L", programs, "-f", programs + "/env.jq"], stdin: try fixture("profile"))
-        XCTAssertEqual(theirs.stdout, ours.stdout, theirs.stderr)
-        try put("scratch-10-list", secret: list.secret)
-        let secret = try runProcess(try jqPath(), ["-cSj", "-L", programs, "-f", programs + "/secret.jq"], stdin: try fixture("list"))
-        XCTAssertEqual(secret.stdout, mytokens(["get", "scratch-10-list", "--json"]).stdout, secret.stderr)
+    func testTheOldLayoutIsNotOptokensAndAHandMadeItemReadsByLabel() throws {
+        let old = try Data(contentsOf: URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("Fixtures/op-item-profile.json"))
+        XCTAssertFalse(isOptokensItem(old))
+        XCTAssertThrowsError(try decodeVaultItem(old))
+        XCTAssertTrue(isOptokensItem(try fixture("fields")))
+        let foreign = try decodeForeignItem(try fixture("fields"), title: "anything")
+        XCTAssertEqual(foreign.service, "fx-fields")
+        XCTAssertEqual(foreign.account, "ci")
     }
 }

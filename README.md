@@ -350,7 +350,8 @@ pushed there. All three commands are refused on a server.
 
 ### A 1Password vault for machines without mytokens
 
-Linux boxes and CI don't run mytokens, but they can run `op`. Your own Mac can keep a 1Password
+Linux boxes and CI don't run mytokens, but they can run `op` and
+[optokens](https://github.com/sunfmin/optokens), mytokens' sibling. Your own Mac can keep a 1Password
 vault holding exactly your `server`-level secrets, through a 1Password **service account**:
 
 ```sh
@@ -362,11 +363,13 @@ mytokens onepassword keep <vault> <title> mac|1password   # settles a conflict: 
 ```
 
 The service account token (`personal` level, never synced anywhere) needs write access to the
-vault; it reaches `op` only in the child's environment. Each secret becomes one item titled
-`<service>` (`<service>.<account>` for a non-default account; Description as notes, every field concealed,
-tag `mytokens` and a digest tag). A hand-made `mytokens`-tagged item with a wanted title is taken over in
+vault; it reaches `op` only in the child's environment. Each secret becomes one item in optokens' layout, so
+`optokens get|env|list` reads it: titled `<service>` (`<service>.<account>` for a non-default account), every field
+in the section `fields` (a new one concealed; one already in the vault keeps its type), the service, account, kind,
+Description and meta in the section `optokens`, tags `optokens`, `mytokens` and a digest tag. A `parent` secret or
+one with a list field is not written: `onepassword list` says so, with the command that fixes it. A hand-made `mytokens`-tagged item with a wanted title is taken over in
 place. The vault is two-way: an item you add or change in 1Password (any category) appears in mytokens as a
-`server`-level secret on the next sync and is rewritten into mytokens' format; one that can't be mapped without loss
+`server`-level secret on the next sync and is rewritten into the vault's layout; one that can't be mapped without loss
 (two fields of one label, files) is not adopted and `onepassword list` says why. Changed on both sides (or a
 hand-made item titled like a secret mytokens did not put there) is a conflict that `onepassword list` and the
 sync show and neither side takes; the conflict line names how to end it, `mytokens onepassword keep <vault>
@@ -376,53 +379,25 @@ refused when the last sync reported no conflict on that title. (Don't `rm` one s
 Mac archives the vault item too.) A vault failing for 24 hours is
 pushed through Bark like a server. A machine reads it with its own read-only service account:
 
-An item adopted from the vault comes in as kind `static` (an item without mytokens metadata carries no kind), and a
-section field of a hand-made item becomes a top-level field: `op://<vault>/<title>/extra/api key` is read as
-`op://<vault>/<title>/api key`. To make an adopted item a Profile, change its kind in place — values, Description and
+An item adopted from the vault comes in as kind `static` (one `optokens put` made keeps its kind), and a field of
+a hand-made item moves into the section `fields`: `op://<vault>/<title>/extra/api key` is read as
+`op://<vault>/<title>/fields/api key`. To make an adopted item a Profile, change its kind in place — values, Description and
 level stay: `mytokens put <service> --kind profile` (every label must be an environment-variable name; `--kind static`
 changes it back; the next sync writes the new kind). A Parent becomes `static` the same way; only becoming a Parent
 still needs `rm` first.
 
-```sh
-op read "op://<vault>/<title>/<Label>"
-```
-
-(a lone value's label is `value`). `op://` accepts only letters, digits, space, `_`, `-`, `.` and `=`,
-so a label with `[`, `:` or CJK characters cannot be read by label; every field and list record also has an
-id made only of those characters (a Field's id is its label with each other character replaced by `_`,
-`Access Key ID` → `Access_Key_ID`, `中文` → `__`; a collision is numbered `_2`), and the `mytokens` section's `ids`
-field lists label → id:
-
-```sh
-op read "op://<vault>/<title>/<FieldId>"                  # a text Field, by its id
-op read "op://<vault>/<title>/<ListId>.<i>/<key>"         # record <i> (from 1) of a list Field
-op read "op://<vault>/<title>/mytokens/ids"               # {"<label>": "<id>", …}
-```
-
 A sync never writes an unchanged item, and holds back a write the service account's budget does not cover
 (`op service-account ratelimit`: 100 an hour per token); `onepassword list` shows it as `deferred` and the next
-run goes on. The item holds the whole secret, not only its values: the
-fields are plain top-level fields, and everything else (service, account, kind, level, meta, the fields'
-order) is in a `mytokens` section, so a server with `op` and `jq` and no mytokens reads it
-all. Its own token is `OP_SERVICE_ACCOUNT_TOKEN`. The programs are in `skills/mytokens/op/` of this
-repository, and print what mytokens prints:
+run goes on. On the other machine, with its own token in `OP_SERVICE_ACCOUNT_TOKEN`:
 
 ```sh
-P=<this repo>/skills/mytokens/op
-item() { op item get "<title>" --vault <vault> --format json; }
-item | jq -cSj -L $P -f $P/secret.jq                     # = mytokens get <service> --json
-item | jq -rj  -L $P -f $P/env.jq                        # a Profile: = mytokens env <service>
-item | jq -cSj -L $P --arg label <Label> -f $P/field.jq  # = mytokens get <service> --field <Label> (a list: its JSON array)
+optokens list                                    # every secret, with its description
+optokens get <service> [--field <Label>]         # = mytokens get
+eval "$(optokens env <service>)"                 # a Profile: = mytokens env
+op read "op://<vault>/<title>/fields/<Label>"    # one field with op alone (a lone value's label is `value`)
 ```
 
-What each item is for (its Description, as the start of the notes):
-
-```sh
-op item list --vault <v> --format json | jq -r '.[] | "\(.title)\t\(.additional_information)"'
-op item get <title> --vault <v> --fields notesPlain     # the whole Description
-```
-
-See ADR-0022.
+See ADR-0022 and ADR-0024.
 
 Production vaults are never a test target: real `op` checks write only the scratch vault
 `mytokens-scratch` (`make op-real-check`, see [`docs/agents/gate.md`](./docs/agents/gate.md)), and

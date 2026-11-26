@@ -1,0 +1,82 @@
+{
+  "title": "fx-bare-meta",
+  "category": "SECURE_NOTE",
+  "tags": [
+    "optokens"
+  ],
+  "sections": [
+    {
+      "id": "fields",
+      "label": "fields"
+    },
+    {
+      "id": "optokens",
+      "label": "optokens"
+    }
+  ],
+  "fields": [
+    {
+      "id": "fields.0",
+      "section": {
+        "id": "fields"
+      },
+      "type": "CONCEALED",
+      "label": "value",
+      "value": "v/1 'q'"
+    },
+    {
+      "id": "optokens.service",
+      "section": {
+        "id": "optokens"
+      },
+      "type": "STRING",
+      "label": "service",
+      "value": "fx-bare-meta"
+    },
+    {
+      "id": "optokens.account",
+      "section": {
+        "id": "optokens"
+      },
+      "type": "STRING",
+      "label": "account",
+      "value": "default"
+    },
+    {
+      "id": "optokens.kind",
+      "section": {
+        "id": "optokens"
+      },
+      "type": "STRING",
+      "label": "kind",
+      "value": "static"
+    },
+    {
+      "id": "optokens.shape",
+      "section": {
+        "id": "optokens"
+      },
+      "type": "STRING",
+      "label": "shape",
+      "value": "value"
+    },
+    {
+      "id": "optokens.description",
+      "section": {
+        "id": "optokens"
+      },
+      "type": "STRING",
+      "label": "description",
+      "value": "部署用\nsecond line"
+    },
+    {
+      "id": "optokens.meta",
+      "section": {
+        "id": "optokens"
+      },
+      "type": "STRING",
+      "label": "meta",
+      "value": "{\"account_id\":\"abc/1\",\"ttl\":3600}"
+    }
+  ]
+}

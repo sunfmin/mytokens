@@ -1,0 +1,64 @@
+{
+  "title": "fx-bare",
+  "category": "SECURE_NOTE",
+  "tags": [
+    "optokens"
+  ],
+  "sections": [
+    {
+      "id": "fields",
+      "label": "fields"
+    },
+    {
+      "id": "optokens",
+      "label": "optokens"
+    }
+  ],
+  "fields": [
+    {
+      "id": "fields.0",
+      "section": {
+        "id": "fields"
+      },
+      "type": "CONCEALED",
+      "label": "value",
+      "value": "v/1 'q'"
+    },
+    {
+      "id": "optokens.service",
+      "section": {
+        "id": "optokens"
+      },
+      "type": "STRING",
+      "label": "service",
+      "value": "fx-bare"
+    },
+    {
+      "id": "optokens.account",
+      "section": {
+        "id": "optokens"
+      },
+      "type": "STRING",
+      "label": "account",
+      "value": "default"
+    },
+    {
+      "id": "optokens.kind",
+      "section": {
+        "id": "optokens"
+      },
+      "type": "STRING",
+      "label": "kind",
+      "value": "static"
+    },
+    {
+      "id": "optokens.shape",
+      "section": {
+        "id": "optokens"
+      },
+      "type": "STRING",
+      "label": "shape",
+      "value": "value"
+    }
+  ]
+}

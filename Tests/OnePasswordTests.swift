@@ -154,9 +154,12 @@ final class OnePasswordTests: XCTestCase {
         let fields = try XCTUnwrap(gh["fields"] as? [[String: Any]])
         XCTAssertTrue(fields.contains { $0["type"] as? String == "CONCEALED" && $0["value"] as? String == "ghp_SECRET" })
         XCTAssertEqual(gh["category"] as? String, "SECURE_NOTE")
-        XCTAssertEqual(fields.filter { $0["purpose"] as? String == "NOTES" }.map { $0["value"] as? String }, ["CI token"])  // exactly the Description
+        XCTAssertEqual(gh["tags"] as? [String], ["optokens", "mytokens", "mytokens-digest-" + (try XCTUnwrap(try decodeVaultItem(Data(creates[1].stdin.utf8)))).digest])
+        XCTAssertFalse(fields.contains { $0["purpose"] as? String == "NOTES" })                 // the Description is in the section
+        XCTAssertEqual(fields.filter { $0["label"] as? String == "description" }.map { $0["value"] as? String }, ["CI token"])
         let aws = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(creates[0].stdin.utf8)) as? [String: Any])
-        let labels = (aws["fields"] as? [[String: Any]])?.filter { $0["section"] == nil }.compactMap { $0["label"] as? String }
+        let labels = (aws["fields"] as? [[String: Any]])?.filter { ($0["section"] as? [String: Any])?["id"] as? String == "fields" }
+            .compactMap { $0["label"] as? String }
         XCTAssertEqual(labels, ["AccessKeyId", "SecretAccessKey"])
         XCTAssertFalse(creates.contains { $0.stdin.contains("nope") || $0.stdin.contains("ops_TOKEN") })
     }
@@ -171,36 +174,34 @@ final class OnePasswordTests: XCTestCase {
         try XCTUnwrap(JSONSerialization.jsonObject(with: Data(c.stdin.utf8)) as? [String: Any])
     }
 
-    func testAListFieldIsOneSectionPerRecordAndRecordCountChangesAddOrRemoveSections() throws {
+    func testAParentAndAListFieldSecretAreNotWrittenListNamesTheFixAndTheRestSyncs() throws {
         try putToken()
-        try storeList("db", "prod", #"[{"user":"app","host":"db1","password":"p1"},{"host":"db2","user":"app","password":"p2"}]"#)
-        XCTAssertEqual(run(["onepassword", "add", "Servers"]).exitCode, 0)
+        try storeList("db", "prod", #"[{"user":"app","host":"db1","password":"p1"}]"#)
+        try laptop.upsert(service: "cloudflare", account: "default", secret: SecretValue(single: "cf"), kind: "parent", meta: ["account_id": "a"],
+                          description: nil, level: .server, marks: SyncMarks())
+        try store("github", "ci", "x")
+        // an item an older mytokens wrote for the parent stays as it is
+        try handMade("old-cf", "cloudflare", category: "SECURE_NOTE", tags: ["mytokens", "mytokens-digest-0123"], fields: [])
+        let r = run(["onepassword", "add", "Servers"])
+        XCTAssertEqual(r.stdout, """
+            not written cloudflare: it is a parent Secret, which a 1Password item cannot hold; fix: mytokens put cloudflare --kind static
+            not written db.prod: its Field "Hosts" is a list, which a 1Password item cannot hold; fix: mytokens put db --account prod --level personal
+            added github.ci
+            added Servers to the vault list
+
+            """)
+        XCTAssertEqual(try writes().map { Array($0.args.prefix(2)) }, [["item", "create"]])
+        XCTAssertFalse(try calls().contains { $0.args.contains("old-cf") })
+        let list = run(["onepassword", "list"]).stdout
+        XCTAssertTrue(list.contains("  not written cloudflare: it is a parent Secret, which a 1Password item cannot hold; fix: mytokens put cloudflare --kind static"), list)
+        XCTAssertTrue(list.contains("  not written db.prod: its Field \"Hosts\" is a list"), list)
+        // fixed: the next sync writes it over the old item
         try replay()
-        let t = try template(try XCTUnwrap(try writes().first))
-        func recordSections(_ t: [String: Any]) -> [[String: Any]] {      // the sections but the metadata one
-            (t["sections"] as? [[String: Any]] ?? []).filter { $0["label"] as? String != "mytokens" }
-        }
-        let sections = recordSections(t)
-        XCTAssertEqual(sections.map { $0["label"] as? String }, ["Hosts [1]", "Hosts [2]"])
-        let fields = try XCTUnwrap(t["fields"] as? [[String: Any]]).filter { ($0["section"] as? [String: Any])?["label"] as? String != "mytokens" }
-        XCTAssertEqual(fields.map { $0["label"] as? String }, ["host", "password", "user", "host", "password", "user"])  // key order
-        XCTAssertTrue(fields.allSatisfy { $0["type"] as? String == "CONCEALED" })
-        let second = fields.filter { ($0["section"] as? [String: Any])?["label"] as? String == "Hosts [2]" }
-        XCTAssertEqual(second.compactMap { $0["value"] as? String }, ["db2", "p2", "app"])
-        // unchanged: no write
-        let mark = try writes().count
-        XCTAssertEqual(try? syncVault("Servers", store: laptop, cli: deps.onepassword).get(), ["no changes"])
-        XCTAssertEqual(try writes().count, mark)
-        // one record fewer: one section fewer; one more: one more
-        try storeList("db", "prod", #"[{"host":"db1","password":"p1","user":"app"}]"#)
-        XCTAssertEqual(try? syncVault("Servers", store: laptop, cli: deps.onepassword).get(), ["updated db.prod"])
-        try replay()
-        let fewer = try template(try XCTUnwrap(try writes().last))
-        XCTAssertEqual(recordSections(fewer).count, 1)
-        try storeList("db", "prod", #"[{"a":"1"},{"a":"2"},{"a":"3"}]"#)
-        XCTAssertEqual(try? syncVault("Servers", store: laptop, cli: deps.onepassword).get(), ["updated db.prod"])
-        let more = try template(try XCTUnwrap(try writes().last))
-        XCTAssertEqual(recordSections(more).map { $0["label"] as? String }, ["Hosts [1]", "Hosts [2]", "Hosts [3]"])
+        try laptop.upsert(service: "cloudflare", account: "default", secret: SecretValue(single: "cf"), kind: "static", meta: ["account_id": "a"],
+                          description: nil, level: .server, marks: SyncMarks())
+        let next = try XCTUnwrap(try? syncVault("Servers", store: laptop, cli: deps.onepassword).get())
+        XCTAssertEqual(next.first, "not written db.prod: its Field \"Hosts\" is a list, which a 1Password item cannot hold; fix: mytokens put db --account prod --level personal")
+        XCTAssertEqual(next.dropFirst(), ["updated cloudflare"])
     }
 
     func testASecondSyncWithNothingChangedMakesNoWrites() throws {
@@ -288,7 +289,7 @@ final class OnePasswordTests: XCTestCase {
     func testAHandCopiedItemIsTakenOverInPlaceAndAnUnmatchedOneSurvivesTwoSyncs() throws {
         try putToken()
         try store("bark", "default", "https://bark.example/KEY")
-        vault = [["id": "hand1", "title": "bark", "tags": ["mytokens"], "category": "SECURE_NOTE"]]
+        try handMade("hand1", "bark", category: "SECURE_NOTE", tags: ["mytokens"], fields: [])
         try handMade("hand2", "unrelated", category: "SECURE_NOTE", tags: ["mytokens"], fields: [])      // holds no values
         try publishVault()
         XCTAssertEqual(try? syncVault("devbox", store: laptop, cli: deps.onepassword).get(), ["took over bark", "not adopted unrelated: it holds no values"])
@@ -308,18 +309,59 @@ final class OnePasswordTests: XCTestCase {
         XCTAssertTrue(run(["onepassword", "list"]).stdout.contains("not adopted unrelated: it holds no values"))
     }
 
-    func testAnItemWrittenInTheOldFormatCountsAsChangedAndIsRewritten() throws {
+    /// An item as an older mytokens wrote it (`op item get` of the `devbox` vault, mytokens#10): Fields
+    /// top-level, the Description in the notes, a section `mytokens`.
+    private func oldLayoutItem(_ id: String) throws -> (listed: [String: Any], json: Data) {
+        let json = try Data(contentsOf: URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("Fixtures/op-item-profile.json"))
+        let o = try XCTUnwrap(JSONSerialization.jsonObject(with: json) as? [String: Any])
+        return (["id": id, "title": o["title"]!, "tags": o["tags"]!, "category": "SECURE_NOTE", "version": 1], json)
+    }
+
+    func testAVaultInTheOldLayoutIsRewrittenOnceInOptokensLayout() throws {
         try putToken()
+        try laptop.upsert(service: "scratch-10-profile", account: "default", secret: SecretValue(fields: [("B_VAR", "it's"), ("A_VAR", "x y")]),
+                          kind: "profile", meta: nil, description: "p", level: .server, marks: SyncMarks())
         try store("github", "ci", "x")
-        // The digest the old format gave: title, notes, [label, value] pairs.
-        vault = [["id": "old1", "title": "github.ci", "tags": ["mytokens", "mytokens-digest-0123456789abcdef0123456789abcdef"], "version": 1]]
-        let same = VaultItem(service: "github", account: "ci", kind: "static", meta: nil, description: nil, level: .server,
-                             secret: SecretValue(single: "x"))
-        try same.template().write(to: URL(fileURLWithPath: dir + "/items/old1.json"))
+        let old = try oldLayoutItem("old1")
+        try old.json.write(to: URL(fileURLWithPath: dir + "/items/old1.json"))
+        vault = [old.listed]
         try publishVault()
-        XCTAssertEqual(try? syncVault("V", store: laptop, cli: deps.onepassword).get(), ["updated github.ci"])
+        let memory = VaultMemoryRef()
+        XCTAssertEqual(try? syncVault("V", store: laptop, cli: deps.onepassword, memory: memory).get(), ["updated scratch-10-profile", "added github.ci"])
+        let edit = try XCTUnwrap(try writes().first { $0.args.prefix(3) == ["item", "edit", "old1"] })
+        let t = try template(edit)
+        let fields = try XCTUnwrap(t["fields"] as? [[String: Any]])
+        XCTAssertEqual(fields.filter { $0["section"] == nil }.map { $0["label"] as? String }, ["notesPlain"])    // the old Fields are gone
+        XCTAssertEqual(fields.first { $0["purpose"] as? String == "NOTES" }?["value"] as? String, "")             // the notes emptied
+        XCTAssertEqual(t["sections"] as? [[String: String]], [["id": "fields", "label": "fields"], ["id": "optokens", "label": "optokens"]])
+        let back = try decodeVaultItem(Data(edit.stdin.utf8))
+        XCTAssertEqual(back.description, "p")
+        XCTAssertEqual(back.secret.fields.map(\.label), ["B_VAR", "A_VAR"])
         try replay()
-        XCTAssertEqual(try? syncVault("V", store: laptop, cli: deps.onepassword).get(), ["no changes"])
+        let mark = try writes().count
+        XCTAssertEqual(try? syncVault("V", store: laptop, cli: deps.onepassword, memory: memory).get(), ["no changes"])
+        XCTAssertEqual(try? syncVault("V", store: laptop, cli: deps.onepassword, memory: VaultMemoryRef()).get(), ["no changes"])
+        XCTAssertEqual(try writes().count, mark)
+    }
+
+    func testAnItemOptokensWroteIsAdoptedByItsSectionAndKeepsItsFieldTypes() throws {
+        try putToken()
+        let theirs = try Data(contentsOf: URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("Fixtures/optokens-profile-meta.json"))
+        try theirs.write(to: URL(fileURLWithPath: dir + "/items/o1.json"))
+        vault = [["id": "o1", "title": "fx-profile", "tags": ["optokens"], "category": "SECURE_NOTE", "version": 1]]
+        try publishVault()
+        XCTAssertEqual(try? syncVault("V", store: laptop, cli: deps.onepassword, now: clock).get(), ["adopted fx-profile"])
+        let (rec, value) = try XCTUnwrap(try sec("fx-profile"))
+        XCTAssertEqual(rec.kind, "profile")
+        XCTAssertEqual(rec.meta, #"{"account_id":"abc/1","n":[1,2],"zone":"b"}"#)
+        XCTAssertEqual(labels(value), ["B_VAR=it's", "A_VAR=x y"])
+        let t = try template(try XCTUnwrap(try writes().first))
+        let types = (t["fields"] as? [[String: Any]] ?? []).filter { ($0["section"] as? [String: Any])?["id"] as? String == "fields" }
+            .map { $0["type"] as? String }
+        XCTAssertEqual(types, ["STRING", "CONCEALED"])
+        XCTAssertTrue((t["tags"] as? [String])?.starts(with: ["optokens", "mytokens"]) == true)
+        try replay()
+        XCTAssertEqual(try? syncVault("V", store: laptop, cli: deps.onepassword, now: clock).get(), ["no changes"])
     }
 
     func testANonDefaultAccountIsTitledServiceDotAccountAndNeverHasASlash() throws {
@@ -349,7 +391,7 @@ final class OnePasswordTests: XCTestCase {
     }
     private func labels(_ v: SecretValue) -> [String] { v.fields.map { "\($0.label)=\($0.value)" } }
 
-    func testAHandMadeLoginIsAdoptedWholeAndRewrittenInMytokensFormatKeepingItsBuiltInIds() throws {
+    func testAHandMadeLoginIsAdoptedWholeAndRewrittenInOptokensLayoutKeepingItsBuiltInsEmptied() throws {
         try putToken()
         try handMade("h1", "stripe", category: "LOGIN", fields: [
             ["id": "username", "label": "username", "purpose": "USERNAME", "type": "STRING", "value": "me"],
@@ -368,8 +410,11 @@ final class OnePasswordTests: XCTestCase {
         let t = try template(w)
         XCTAssertNil(t["category"])
         let fields = try XCTUnwrap(t["fields"] as? [[String: Any]])
-        XCTAssertEqual(fields.filter { $0["id"] as? String == "password" }.count, 1)
-        XCTAssertTrue(fields.contains { $0["id"] as? String == "username" && $0["purpose"] as? String == "USERNAME" })
+        let builtIns = fields.filter { $0["section"] == nil }
+        XCTAssertEqual(builtIns.map { $0["id"] as? String }, ["username", "password", "notesPlain"])
+        XCTAssertTrue(builtIns.allSatisfy { $0["value"] as? String == "" })          // their values are the section's now
+        let values = fields.filter { ($0["section"] as? [String: Any])?["id"] as? String == "fields" }
+        XCTAssertEqual(values.map { "\($0["label"]!)=\($0["type"]!)" }, ["username=STRING", "password=CONCEALED", "Api Key=CONCEALED"])
         XCTAssertTrue((t["tags"] as? [String])?.contains { $0.hasPrefix("mytokens-digest-") } == true)
         // from then on it is the sync's own: a second sync changes nothing
         try replay()
@@ -389,12 +434,10 @@ final class OnePasswordTests: XCTestCase {
         try handMade("e", "doc", category: "DOCUMENT", fields: [["id": "1", "label": "x", "value": "1"]])
         let r = try XCTUnwrap(try? syncVault("V", store: laptop, cli: deps.onepassword, now: clock).get())
         XCTAssertEqual(r, ["adopted ci.prod", "not adopted clash: two fields labelled \"x\"", "not adopted doc: it holds a file",
-                           "adopted hosts", "not adopted twice: two fields labelled \"key\""])
+                           "not adopted hosts: two fields labelled \"host\"", "not adopted twice: two fields labelled \"key\""])
         let (_, a) = try XCTUnwrap(try sec("ci", "prod"))
         XCTAssertEqual(labels(a), ["token=t"])
-        let (_, h) = try XCTUnwrap(try sec("hosts"))
-        XCTAssertTrue(h.isList("host") == false && h.isList("Hosts"))
-        XCTAssertEqual(h.fields.first?.value, #"[{"host":"h1"},{"host":"h2"}]"#)
+        XCTAssertNil(try sec("hosts"))
         XCTAssertNil(try sec("twice"))
         try vaults.write(["V"])
         _ = run(["server", "sync"])

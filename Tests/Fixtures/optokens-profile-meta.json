@@ -1,0 +1,82 @@
+{
+  "category": "SECURE_NOTE",
+  "fields": [
+    {
+      "id": "fields.0",
+      "label": "B_VAR",
+      "section": {
+        "id": "fields"
+      },
+      "type": "STRING",
+      "value": "it's"
+    },
+    {
+      "id": "fields.1",
+      "label": "A_VAR",
+      "section": {
+        "id": "fields"
+      },
+      "type": "CONCEALED",
+      "value": "x y"
+    },
+    {
+      "id": "optokens.service",
+      "label": "service",
+      "section": {
+        "id": "optokens"
+      },
+      "type": "STRING",
+      "value": "fx-profile"
+    },
+    {
+      "id": "optokens.account",
+      "label": "account",
+      "section": {
+        "id": "optokens"
+      },
+      "type": "STRING",
+      "value": "default"
+    },
+    {
+      "id": "optokens.kind",
+      "label": "kind",
+      "section": {
+        "id": "optokens"
+      },
+      "type": "STRING",
+      "value": "profile"
+    },
+    {
+      "id": "optokens.shape",
+      "label": "shape",
+      "section": {
+        "id": "optokens"
+      },
+      "type": "STRING",
+      "value": "fields"
+    },
+    {
+      "id": "optokens.meta",
+      "label": "meta",
+      "section": {
+        "id": "optokens"
+      },
+      "type": "STRING",
+      "value": "{\"account_id\":\"abc/1\",\"n\":[1,2],\"zone\":\"b\"}"
+    }
+  ],
+  "sections": [
+    {
+      "id": "fields",
+      "label": "fields"
+    },
+    {
+      "id": "optokens",
+      "label": "optokens"
+    }
+  ],
+  "tags": [
+    "optokens"
+  ],
+  "title": "fx-profile"
+}

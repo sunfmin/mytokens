@@ -1,0 +1,91 @@
+{
+  "category": "SECURE_NOTE",
+  "fields": [
+    {
+      "id": "fields.0",
+      "label": "Region",
+      "section": {
+        "id": "fields"
+      },
+      "type": "STRING",
+      "value": "us-east-1"
+    },
+    {
+      "id": "fields.1",
+      "label": "Endpoint",
+      "section": {
+        "id": "fields"
+      },
+      "type": "STRING",
+      "value": "https://x.example/a"
+    },
+    {
+      "id": "fields.2",
+      "label": "Secret Key",
+      "section": {
+        "id": "fields"
+      },
+      "type": "CONCEALED",
+      "value": "sk/2"
+    },
+    {
+      "id": "optokens.service",
+      "label": "service",
+      "section": {
+        "id": "optokens"
+      },
+      "type": "STRING",
+      "value": "fx-fields"
+    },
+    {
+      "id": "optokens.account",
+      "label": "account",
+      "section": {
+        "id": "optokens"
+      },
+      "type": "STRING",
+      "value": "ci"
+    },
+    {
+      "id": "optokens.kind",
+      "label": "kind",
+      "section": {
+        "id": "optokens"
+      },
+      "type": "STRING",
+      "value": "static"
+    },
+    {
+      "id": "optokens.shape",
+      "label": "shape",
+      "section": {
+        "id": "optokens"
+      },
+      "type": "STRING",
+      "value": "fields"
+    },
+    {
+      "id": "optokens.description",
+      "label": "description",
+      "section": {
+        "id": "optokens"
+      },
+      "type": "STRING",
+      "value": "CI deploy"
+    }
+  ],
+  "sections": [
+    {
+      "id": "fields",
+      "label": "fields"
+    },
+    {
+      "id": "optokens",
+      "label": "optokens"
+    }
+  ],
+  "tags": [
+    "optokens"
+  ],
+  "title": "fx-fields.ci"
+}

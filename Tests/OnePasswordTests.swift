@@ -154,7 +154,8 @@ final class OnePasswordTests: XCTestCase {
         let fields = try XCTUnwrap(gh["fields"] as? [[String: Any]])
         XCTAssertTrue(fields.contains { $0["type"] as? String == "CONCEALED" && $0["value"] as? String == "ghp_SECRET" })
         XCTAssertEqual(gh["category"] as? String, "SECURE_NOTE")
-        XCTAssertEqual(gh["tags"] as? [String], ["optokens", "mytokens", "mytokens-digest-" + (try XCTUnwrap(try decodeVaultItem(Data(creates[1].stdin.utf8)))).digest])
+        XCTAssertEqual(gh["tags"] as? [String], ["optokens", "mytokens"])
+        XCTAssertEqual(ownDigest(gh), try decodeVaultItem(Data(creates[1].stdin.utf8)).digest)
         XCTAssertFalse(fields.contains { $0["purpose"] as? String == "NOTES" })                 // the Description is in the section
         XCTAssertEqual(fields.filter { $0["label"] as? String == "description" }.map { $0["value"] as? String }, ["CI token"])
         let aws = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(creates[0].stdin.utf8)) as? [String: Any])
@@ -299,7 +300,8 @@ final class OnePasswordTests: XCTestCase {
         let t = try template(w[0])
         XCTAssertEqual(t["title"] as? String, "bark")
         XCTAssertNil(t["category"])                                  // its own category is kept
-        XCTAssertTrue((t["tags"] as? [String])?.contains { $0.hasPrefix("mytokens-digest-") } == true)
+        XCTAssertEqual(t["tags"] as? [String], ["optokens", "mytokens"])
+        XCTAssertNotNil(ownDigest(t))
         try replay()
         XCTAssertEqual(try? syncVault("devbox", store: laptop, cli: deps.onepassword).get(), ["not adopted unrelated: it holds no values"])
         XCTAssertEqual(try writes().count, 1)
@@ -333,7 +335,10 @@ final class OnePasswordTests: XCTestCase {
         let fields = try XCTUnwrap(t["fields"] as? [[String: Any]])
         XCTAssertEqual(fields.filter { $0["section"] == nil }.map { $0["label"] as? String }, ["notesPlain"])    // the old Fields are gone
         XCTAssertEqual(fields.first { $0["purpose"] as? String == "NOTES" }?["value"] as? String, "")             // the notes emptied
-        XCTAssertEqual(t["sections"] as? [[String: String]], [["id": "fields", "label": "fields"], ["id": "optokens", "label": "optokens"]])
+        XCTAssertEqual(t["sections"] as? [[String: String]], [["id": "fields", "label": "fields"], ["id": "optokens", "label": "optokens"],
+                                                              ["id": "mytokens", "label": "mytokens"]])
+        XCTAssertEqual(t["tags"] as? [String], ["optokens", "mytokens"])        // the old digest tag is gone
+        XCTAssertEqual(ownDigest(t), try decodeVaultItem(Data(edit.stdin.utf8)).digest)
         let back = try decodeVaultItem(Data(edit.stdin.utf8))
         XCTAssertEqual(back.description, "p")
         XCTAssertEqual(back.secret.fields.map(\.label), ["B_VAR", "A_VAR"])
@@ -393,15 +398,13 @@ final class OnePasswordTests: XCTestCase {
         XCTAssertEqual(rec.description, adoptionNote(host: "1Password vault V", on: clock) + "\nCI deploy")
         XCTAssertEqual(rec.origin, "1password:V")
         XCTAssertEqual(labels(value), ["Region=us-east-1", "Secret Key=sk-throwaway"])
-        // one write, an edit of that item, which differs from what optokens wrote only by mytokens' two tags
+        // one write, an edit of that item, which differs from what optokens wrote only by mytokens' tag and digest field
         let w = try writes()
         XCTAssertEqual(w.map { Array($0.args.prefix(3)) }, [["item", "edit", "o1"]])
         var after = try template(w[0])
-        let tags = after["tags"] as? [String] ?? []
-        XCTAssertEqual(tags.count, 3)
-        XCTAssertEqual(Array(tags.prefix(2)), ["optokens", "mytokens"])
-        XCTAssertTrue(tags[2].hasPrefix(vaultDigestPrefix), "\(tags)")
-        after["tags"] = ["optokens"]
+        XCTAssertEqual(after["tags"] as? [String], ["optokens", "mytokens"])
+        XCTAssertNotNil(ownDigest(after))
+        after = withoutOwnMark(after)
         after["category"] = "SECURE_NOTE"        // an edit leaves the category as it is
         XCTAssertEqual(after as NSDictionary, theirs)
         // and optokens still reads it: its layout, its name, its Description
@@ -431,15 +434,16 @@ final class OnePasswordTests: XCTestCase {
         XCTAssertEqual(try? syncVault("V", store: laptop, cli: deps.onepassword, now: clock, memory: memory).get(),
                        ["adopted zz-fx4.ci (changed in 1Password)"])
         XCTAssertEqual(labels(try XCTUnwrap(try sec("zz-fx4", "ci")).1), ["Region=eu-west-1", "Secret Key=sk-throwaway"])
-        // its tag follows the new content, and nothing else of the item changes
+        // its digest follows the new content, and nothing else of the item changes
         let w = try writes()
         XCTAssertEqual(w.count, before + 1)
         let stored = try XCTUnwrap(try JSONSerialization.jsonObject(with: Data(contentsOf: URL(fileURLWithPath: dir + "/items/o1.json"))) as? [String: Any])
         var after = try template(w.last!)
         XCTAssertEqual((after["fields"] as? [[String: Any]])?.first { $0["label"] as? String == "Region" }?["type"] as? String, "STRING")
-        after["tags"] = nil
-        var was = stored; was["tags"] = nil; was["category"] = nil
-        XCTAssertEqual(after as NSDictionary, was as NSDictionary)
+        XCTAssertNotEqual(ownDigest(after), ownDigest(stored))
+        XCTAssertEqual(after["tags"] as? [String], stored["tags"] as? [String])
+        var was = withoutOwnMark(stored); was["category"] = nil
+        XCTAssertEqual(withoutOwnMark(after) as NSDictionary, was as NSDictionary)
         try replay()
         XCTAssertEqual(try? syncVault("V", store: laptop, cli: deps.onepassword, now: clock, memory: memory).get(), ["no changes"])
     }
@@ -513,7 +517,8 @@ final class OnePasswordTests: XCTestCase {
         XCTAssertTrue(builtIns.allSatisfy { $0["value"] as? String == "" })          // their values are the section's now
         let values = fields.filter { ($0["section"] as? [String: Any])?["id"] as? String == "fields" }
         XCTAssertEqual(values.map { "\($0["label"]!)=\($0["type"]!)" }, ["username=STRING", "password=CONCEALED", "Api Key=CONCEALED"])
-        XCTAssertTrue((t["tags"] as? [String])?.contains { $0.hasPrefix("mytokens-digest-") } == true)
+        XCTAssertEqual(t["tags"] as? [String], ["optokens", "mytokens"])
+        XCTAssertNotNil(ownDigest(t))
         // from then on it is the sync's own: a second sync changes nothing
         try replay()
         XCTAssertEqual(try? syncVault("V", store: laptop, cli: deps.onepassword, now: clock).get(), ["no changes"])
@@ -580,6 +585,32 @@ final class OnePasswordTests: XCTestCase {
         // and a change on the Mac alone goes the other way
         try store("stripe", "default", "v3", description: nil)
         XCTAssertEqual(try? syncVault("V", store: laptop, cli: deps.onepassword, now: clock, memory: memory).get(), ["updated stripe"])
+    }
+
+    /// Without this Mac's memory, the item's field `digest` alone tells which side changed (ADR-0026).
+    func testWithoutMemoryTheDigestFieldTellsWhichSideChanged() throws {
+        _ = try adoptedStripe()
+        XCTAssertEqual(try? syncVault("V", store: laptop, cli: deps.onepassword, now: clock).get(), ["no changes"])
+        try editInVault("h1", "v2")                         // changed in 1Password only
+        XCTAssertEqual(try? syncVault("V", store: laptop, cli: deps.onepassword, now: clock).get(), ["adopted stripe (changed in 1Password)"])
+        XCTAssertEqual(labels(try XCTUnwrap(try sec("stripe")).1), ["key=v2"])
+        try replay()
+        XCTAssertEqual(try? syncVault("V", store: laptop, cli: deps.onepassword, now: clock).get(), ["no changes"])
+        try store("stripe", "default", "mac", description: nil)        // changed on the Mac only
+        XCTAssertEqual(try? syncVault("V", store: laptop, cli: deps.onepassword, now: clock).get(), ["updated stripe"])
+        try replay()
+        XCTAssertEqual(try? syncVault("V", store: laptop, cli: deps.onepassword, now: clock).get(), ["no changes"])
+        let before = try writes().count
+        try store("stripe", "default", "mac2", description: nil)       // changed on both
+        let json = try String(contentsOfFile: "\(dir)/items/h1.json", encoding: .utf8)
+        try json.replacingOccurrences(of: "\"mac\"", with: "\"vault\"").write(toFile: "\(dir)/items/h1.json", atomically: true, encoding: .utf8)
+        versions["h1", default: 0] += 1
+        vault = vault.map { ($0["id"] as? String) == "h1" ? $0.merging(["version": versions["h1"]!]) { $1 } : $0 }
+        try publishVault()
+        let r = try XCTUnwrap(try? syncVault("V", store: laptop, cli: deps.onepassword, now: clock).get())
+        XCTAssertTrue(r.first?.hasPrefix("conflict stripe: changed in 1Password and on this Mac") == true, "\(r)")
+        XCTAssertEqual(try writes().count, before)
+        XCTAssertFalse(try writes().contains { $0.stdin.contains("mytokens-digest-") })
     }
 
     func testChangedOnBothSidesIsAConflictAndNeitherSideChanges() throws {

@@ -1,5 +1,24 @@
 import XCTest
 
+/// An item (a template, or what `op item get` printed) without what marks it the sync's own (ADR-0026):
+/// the tag `mytokens`, the field `digest` of the section `mytokens` and that section.
+func withoutOwnMark(_ item: [String: Any]) -> [String: Any] {
+    var item = item
+    item["tags"] = (item["tags"] as? [String])?.filter { $0 != vaultItemTag }
+    item["fields"] = (item["fields"] as? [[String: Any]])?.filter { f in
+        !((f["section"] as? [String: Any])?["id"] as? String == vaultOwnSection && f["label"] as? String == vaultDigestLabel)
+    }
+    item["sections"] = (item["sections"] as? [[String: Any]])?.filter { $0["id"] as? String != vaultOwnSection }
+    return item
+}
+
+/// The digest an item carries in its field `digest` of the section `mytokens`, if any.
+func ownDigest(_ item: [String: Any]) -> String? {
+    (item["fields"] as? [[String: Any]])?.first { f in
+        (f["section"] as? [String: Any])?["id"] as? String == vaultOwnSection && f["label"] as? String == vaultDigestLabel
+    }?["value"] as? String
+}
+
 // A `server`-level Secret ⇄ a 1Password vault item in optokens' layout (ADR-0024): the item the sync
 // writes is the one optokens writes for the same Secret, and decodes back to that Secret.
 final class VaultItemTests: XCTestCase {
@@ -52,12 +71,49 @@ final class VaultItemTests: XCTestCase {
         try Data(contentsOf: URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("Fixtures/optokens-\(name).json"))
     }
 
-    /// An item with every `id` dropped, and the tags mytokens adds beside optokens' own.
+    /// An item with every `id` dropped, and without what mytokens adds beside optokens' own.
     private func comparable(_ data: Data) throws -> NSDictionary {
-        var item = try json(data)
-        item["fields"] = try fields(data).map { f -> [String: Any] in var f = f; f["id"] = nil; return f }
-        item["tags"] = (item["tags"] as? [String])?.filter { $0 != vaultItemTag && !$0.hasPrefix(vaultDigestPrefix) }
+        var item = withoutOwnMark(try json(data))
+        item["fields"] = (item["fields"] as? [[String: Any]])?.map { f -> [String: Any] in var f = f; f["id"] = nil; return f }
         return item as NSDictionary
+    }
+
+    // MARK: what marks an item the sync's own (ADR-0026)
+
+    func testTheSyncsItemCarriesItsDigestInAFieldNotATag() throws {
+        try put("app", secret: SecretValue(fields: [("Region", "eu"), ("digest", "a Field of that label")]))
+        let t = try json(try item("app").template())
+        XCTAssertEqual(t["tags"] as? [String], ["optokens", "mytokens"])
+        XCTAssertEqual(ownDigest(t), try item("app").digest)
+        let own = try fields(try item("app").template()).filter { ($0["section"] as? [String: Any])?["id"] as? String == "mytokens" }
+        XCTAssertEqual(own.map { "\($0["label"]!)=\($0["type"]!)" }, ["digest=STRING"])
+        XCTAssertTrue((t["sections"] as? [[String: String]])?.contains(["id": "mytokens", "label": "mytokens"]) == true)
+        // the digest is not the Secret's: it decodes back to the same Secret, and a Field named so stays a Field
+        assertSame(try decodeVaultItem(try item("app").template()), try item("app"))
+        XCTAssertEqual(vaultWrittenDigest(try item("app").template()), try item("app").digest)
+    }
+
+    func testARewriteKeepsOtherTagsAndDropsAnOldDigestTag() throws {
+        try put("app", secret: SecretValue(single: "v"))
+        var stored = try json(try item("app").template())
+        stored["tags"] = ["team", "mytokens", "mytokens-digest-0123", "optokens"]
+        stored["fields"] = (stored["fields"] as! [[String: Any]]).map { f in
+            var f = f; if f["label"] as? String == "digest" { f["value"] = "stale" }; return f
+        }
+        let storedData = try JSONSerialization.data(withJSONObject: stored)
+        for t in [try json(try item("app").template(forEdit: true, over: storedData)),
+                  try json(try XCTUnwrap(vaultOwnTemplate(storedData, digest: try item("app").digest)))] {
+            XCTAssertEqual(t["tags"] as? [String], ["optokens", "mytokens", "team"])
+            XCTAssertEqual(ownDigest(t), try item("app").digest)
+            XCTAssertEqual((t["fields"] as? [[String: Any]])?.filter { $0["label"] as? String == "digest" }.count, 1)
+            XCTAssertEqual((t["sections"] as? [[String: Any]])?.filter { $0["id"] as? String == "mytokens" }.count, 1)
+        }
+        // an item an older mytokens wrote says its digest by its tag
+        var old = stored
+        old["fields"] = (stored["fields"] as! [[String: Any]]).filter { $0["label"] as? String != "digest" }
+        XCTAssertEqual(vaultWrittenDigest(try JSONSerialization.data(withJSONObject: old)), "0123")
+        old["tags"] = ["optokens", "mytokens"]
+        XCTAssertNil(vaultWrittenDigest(try JSONSerialization.data(withJSONObject: old)))
     }
 
     /// The fixtures are what optokens 0.1.6 handed `op item create` (an `op` stand-in on PATH recorded its

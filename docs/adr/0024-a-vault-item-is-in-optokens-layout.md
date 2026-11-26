@@ -17,8 +17,9 @@ Two formats in one vault meant `optokens` could not read what mytokens wrote.
 - **One layout.** The sync writes each `server`-level Secret as the item `optokens put` writes for the
   same Secret (optokens#16, #17, #18):
   - title `<service>`, or `<service>.<account>` when the account is not `default`;
-  - category Secure Note, tag `optokens`, and beside it mytokens' own tags `mytokens` and
-    `mytokens-digest-<hash>`, by which the sync knows its items (ADR-0022);
+  - category Secure Note, tag `optokens`, and beside it mytokens' own tag `mytokens` and the section
+    `mytokens` with the field `digest`, by which the sync knows its items (ADR-0026; it was a tag
+    `mytokens-digest-<hash>`, ADR-0022);
   - every Field a field of the section `fields`, in the Secret's Field order; a lone value is one
     field `value`. No `order` or `ids` metadata;
   - the section `optokens`: `service`, `account`, `kind` (`static` | `profile`), `shape` (`value` |
@@ -37,7 +38,7 @@ Two formats in one vault meant `optokens` could not read what mytokens wrote.
   static`) and a Secret with a list Field (fix: `mytokens put <svc> --level personal`). The sync says
   `not written <title>: <why>; fix: <command>`, `onepassword list` shows the line, and an item already
   in the vault under that title is left as it is. The rest of the vault syncs.
-- **The migration is a rewrite.** The layout's format version (`mytokens-vault-4`) is in the digest,
+- **The migration is a rewrite.** The layout's format version (`mytokens-vault-4`; `-5` since ADR-0026) is in the digest,
   so every item an older mapping wrote reads as changed and the next sync rewrites it once, over the
   item as it is: the old top-level Fields and the `mytokens` section go, the notes are emptied (they
   were the Description), and a Login's built-in `username` and `password`, which cannot be removed, are

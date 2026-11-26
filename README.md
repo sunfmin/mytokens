@@ -380,7 +380,8 @@ An item adopted from the vault comes in as kind `static` (an item without mytoke
 section field of a hand-made item becomes a top-level field: `op://<vault>/<title>/extra/api key` is read as
 `op://<vault>/<title>/api key`. To make an adopted item a Profile, change its kind in place — values, Description and
 level stay: `mytokens put <service> --kind profile` (every label must be an environment-variable name; `--kind static`
-changes it back; the next sync writes the new kind). Only a Parent still needs `rm` first.
+changes it back; the next sync writes the new kind). A Parent becomes `static` the same way; only becoming a Parent
+still needs `rm` first.
 
 ```sh
 op read "op://<vault>/<title>/<Label>"

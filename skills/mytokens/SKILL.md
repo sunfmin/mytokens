@@ -134,7 +134,7 @@ Secret that deletes as a unit.
   Labels are comma-separated; every named field is required; `--show` reveals non-secret fields
   (identifiers) so the user can verify a paste — everything else is masked. Naming both fields
   in one `put` rotates them atomically. `--kind parent` is single-value and can't take `--fields`.
-- **Change the kind** of an existing Secret in place: `mytokens put <service> --kind profile|static` keeps values, Description and level (a Profile needs every label to be an env-var name; a Parent needs `rm` first). An item adopted from a 1Password vault comes in as `static` with a hand-made item's section fields moved to the top level (`op://<vault>/<title>/api key`, not `.../extra/api key`); make it a Profile this way.
+- **Change the kind** of an existing Secret in place: `mytokens put <service> --kind profile|static` keeps values, Description and level (a Profile needs every label to be an env-var name; a Parent can become `static` this way, but becoming a Parent needs `rm` first). An item adopted from a 1Password vault comes in as `static` with a hand-made item's section fields moved to the top level (`op://<vault>/<title>/api key`, not `.../extra/api key`); make it a Profile this way.
 - **Update one field** without touching the rest (ADR-0009): `mytokens put aws --fields "Secret Access Key"`
   re-pops just that field; the Access Key ID is left as-is. Non-secret parts can go via
   `--set` instead of the popup, e.g. `mytokens put db --set "Username=svc_ci"`.

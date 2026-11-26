@@ -1,5 +1,8 @@
 # A 1Password vault is one more Sync target, two-way, for machines that are not Macs running mytokens
 
+The item mapping below (one item per Secret's fields, the Description, the `mytokens` section, the
+`op://` ids, the `jq` programs) is superseded by ADR-0024: an item is in optokens' layout.
+
 `mytokens onepassword add <vault>` makes a 1Password vault hold exactly this Mac's `server`-level
 Secrets, one item each, written with a 1Password **service account**. Background Sync keeps it
 current. A Linux box or a CI job reads it with its own read-only service account. It is **two-way**
@@ -29,7 +32,7 @@ as a Server — every `server`-level Secret goes to every target (ADR-0012).
   gives it `server` level. It reaches `op` only as `OP_SERVICE_ACCOUNT_TOKEN` in the `op` child's
   environment, never argv, a file or output. Without it the sync fails at "read the service
   account token" and prints the `put` line to run.
-- **One item per Secret**, title `<service>` (`<service>.<account>` when the account is not `default`; never a `/`,
+- **One item per Secret** (layout superseded by ADR-0024), title `<service>` (`<service>.<account>` when the account is not `default`; never a `/`,
   which `op://` cannot address), category Secure Note (`op item list --format json` shows the start of its notes as `additional_information`; an API Credential shows null), tag `mytokens`,
   and a tag `mytokens-digest-<hash>` of what the item holds. The Description is the notes. Every
   Field is a **concealed** top-level field, labelled by the Field's label (a bare value: `value`). The
@@ -50,7 +53,7 @@ as a Server — every `server`-level Secret goes to every target (ADR-0012).
   vault's status lives in the same per-Mac state under `1password:<vault>`; a vault failing 24
   hours is pushed through Bark like a host. A `put`/`rm` of a `server`-level Secret kicks the
   agent, which covers vaults too.
-- **The item holds the whole Secret, losslessly** (mytokens#10: a server reads its Secrets from the
+- **The item holds the whole Secret, losslessly** (superseded by ADR-0024; mytokens#10: a server reads its Secrets from the
   vault with `op` alone, so nothing a Secret is may be lost). One mapping, Secret ⇄ item:
   - **Description** → the notes (`notesPlain`); none ⇄ no notes.
   - **Text Field** → a top-level concealed field labelled by the Field; a lone unlabelled value → `value`.
@@ -68,13 +71,8 @@ as a Server — every `server`-level Secret goes to every target (ADR-0012).
   - `decodeVaultItem` (item JSON → Secret) is the inverse of the template; round trips are tested for
     each shape. The digest tag is taken over the whole item and a format version, so an item written
     by an earlier mapping counts as changed and the next sync rewrites it.
-- **A server reads with `op` alone**, with its own read-only service account (`OP_SERVICE_ACCOUNT_TOKEN`),
-  and the `jq` programs in `skills/mytokens/op/` (they `include "mytokens"`, so run with `jq -L <dir>`):
-  `secret.jq` → the same bytes as `mytokens get <service> --json`; `env.jq` → as `mytokens env
-  <service>` (a Profile); `field.jq --arg label <Label>` → as `mytokens get <service> --field <Label>`
-  (a list Field is its JSON array). The tests run each against encoded items and compare byte for byte
-  with mytokens' own output; `jq` is installed pinned into `$HOME/.local/bin` when the host has none
-  (`make jq-install`). One text Field: `op read "op://<vault>/<title>/<Label>"`.
+- **A machine that is not a Mac reads the vault** with its own read-only service account, through
+  optokens (ADR-0024); one Field: `op read "op://<vault>/<title>/fields/<Label>"`.
 
 - **Two-way (mytokens#13).** Felix, 2026-11-18: 「做成一个同步。如果有人在 op 上面加了的话，也同步进 my tokens。」
   The terms are a Server's (ADR-0012, ADR-0018); every item the sync reads is a `server`-level Secret, and what
@@ -82,16 +80,16 @@ as a Server — every `server`-level Secret goes to every target (ADR-0012).
   - **Adopt.** An item without a digest tag (not made by mytokens) whose title names no Secret on this Mac is
     stored as a `server`-level Secret, whole, with origin mark `1password:<vault>`, its Description
     `adopted from 1Password vault <v> on <date>` followed by the item's notes; then the item is rewritten
-    into mytokens' format (`op item edit`, with tags — a JSON without `tags` wipes them) so it is the sync's own and
-    its `op://<vault>/<title>/<Label>` paths are unchanged. A Login's `username` and `password` fields keep their ids
-    (they cannot be removed, a second `password` would appear). An adoption cut short (Secret stored, item not
+    into the vault's layout (`op item edit`, with tags — a JSON without `tags` wipes them) so it is the sync's own
+    (ADR-0024: its Fields move into the section `fields`; a Login's `username` and `password` fields, which cannot be
+    removed, keep their ids, emptied). An adoption cut short (Secret stored, item not
     rewritten) is finished next sync: the Secret's origin is this vault.
   - **Decoding a hand-made item** (`decodeHandMadeItem`, any category): the title is `<service>.<account>` when it
     has exactly one dot, else the whole title is the service and the account `default` (service names contain
     dots, so a title with several dots cannot be split); notes → Description; every non-empty field → a Field
-    labelled as in 1Password, concealed or not (empty and null built-ins skipped); sections `<Label> [<i>]` → a
-    list Field. Not adopted, reported by name and reason in `onepassword list` (and in the sync's lines): two
-    fields of one label, files or a Document, a list and a field of one label, a field with no label, no values.
+    labelled as in 1Password, concealed or not (empty and null built-ins skipped). Not adopted, reported by name
+    and reason in `onepassword list` (and in the sync's lines): two fields of one label, files or a Document, a
+    field with no label, no values. An item optokens wrote is read in its layout instead (ADR-0024).
     Login `urls` and tags are not kept.
   - **Changes flow back.** The sync remembers, per Mac, for each item it owns: the `version` `op item list`
     showed after it last wrote or adopted it, and the digest of what it then held (`VaultMemory`, in the vault's
@@ -100,7 +98,7 @@ as a Server — every `server`-level Secret goes to every target (ADR-0012).
     once and compared: same content as the Secret → in sync; Secret unchanged since the last write → the
     change is Adopted (and the item's tag rewritten); item unchanged → the Mac's change is written; both
     changed → **conflict**, neither side changes, shown by `onepassword list` until the human resolves it.
-    Fields added in 1Password after the metadata's `order` are kept after the others. An owned item that can no
+    A field added in 1Password to the section `fields` is a Field. An owned item that can no
     longer be read back (metadata deleted) is rewritten from the Secret: the Mac is the home.
   - **Deletions.** A Secret removed or lowered to `personal` → its item archived. An item deleted in the vault
     whose Secret is `server`-level → written again. 1Password lists a new item only ~10 s after `create`, so a
@@ -134,7 +132,7 @@ as a Server — every `server`-level Secret goes to every target (ADR-0012).
 - The vault holds every `server`-level value in clear to whoever the vault is shared with: that
   is the point, and the human chooses the vault.
 - `op` must be on the personal Mac's PATH (the agent's PATH has Homebrew's).
-- Checked against real 1Password (mytokens#12, op 2.42.0, vault devbox): with the JSON piped on stdin and **no** `--template`, `op item create` and `op item edit` write bare-value, labelled, list-field and profile items, and `op read` and `skills/mytokens/op/*.jq` read them back. mytokens#10's check of `--template /dev/stdin` was wrong: op 2.42 refuses it with a pipe ("cannot create|edit an item from template and stdin at the same time"). op takes the stdin template only from a pipe, not a `<` file redirect. An `item edit` sent within seconds of the create can get a transient 409 from the server.
+- Checked against real 1Password (mytokens#12, op 2.42.0, vault devbox): with the JSON piped on stdin and **no** `--template`, `op item create` and `op item edit` write bare-value, labelled, list-field and profile items, and `op read` and the `jq` programs of that mapping read them back. mytokens#10's check of `--template /dev/stdin` was wrong: op 2.42 refuses it with a pipe ("cannot create|edit an item from template and stdin at the same time"). op takes the stdin template only from a pipe, not a `<` file redirect. An `item edit` sent within seconds of the create can get a transient 409 from the server.
 - **Not yet checked against real 1Password (mytokens#13):** the two-way sync (Adopt, changes flowing back, conflicts) is tested only against a fake `op`. The real `devbox` run in the acceptance list was NOT done (the owner forbade running the sync against devbox after a test of mine archived production items). The owner must do it with `zz-` items made and removed with `op` directly. Facts measured by the control session are built in: edit JSON must carry `tags`, a Login's `username`/`password` ids are reused, `version` from `item list` detects changes, a new item is listed only ~10 s after `create`.
 
 - **Readable by `op://` for every label and list record; the write budget (mytokens#14).** Measured against real
@@ -148,7 +146,7 @@ as a Server — every `server`-level Secret goes to every target (ADR-0012).
     `_2`, `_3`; a list Field's id is made so and its record sections are `<ListId>.<i>`, a record field's id
     its key made safe the same way, numbered within the section. Read: `op://<vault>/<title>/<FieldId>` and
     `op://<vault>/<title>/<ListId>.<i>/<key>`. The `mytokens` section's `ids` field (a JSON object, label →
-    id) says which is which. The jq programs read labels and are unchanged. The mapping format is
+    id) said which is which (superseded by ADR-0024: `op://<vault>/<title>/fields/<Label>`). The mapping format was
     `mytokens-vault-3`, so every item is rewritten once (about one write per Secret; the first sync of
     `devbox`, ~25 Secrets, fits the 100 writes an hour).
   - **The create lag.** `create` answers with the id at once, `op item list` lists the item ~10 s later. The

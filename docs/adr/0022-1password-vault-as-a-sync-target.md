@@ -82,7 +82,7 @@ as a Server — every `server`-level Secret goes to every target (ADR-0012).
     `adopted from 1Password vault <v> on <date>` followed by the item's notes; then the item is rewritten
     into the vault's layout (`op item edit`, with tags — a JSON without `tags` wipes them) so it is the sync's own
     (ADR-0024: its Fields move into the section `fields`; a Login's `username` and `password` fields, which cannot be
-    removed, keep their ids, emptied). An adoption cut short (Secret stored, item not
+    removed, keep their ids, emptied). An item `optokens put` made only gains the tags (ADR-0025). An adoption cut short (Secret stored, item not
     rewritten) is finished next sync: the Secret's origin is this vault.
   - **Decoding a hand-made item** (`decodeHandMadeItem`, any category): the title is `<service>.<account>` when it
     has exactly one dot, else the whole title is the service and the account `default` (service names contain

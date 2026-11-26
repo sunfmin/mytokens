@@ -76,13 +76,15 @@ func vaultOriginKey(_ vault: String) -> String { "1password:\(vault)" }
 /// What this Mac remembers of one vault between syncs (kept in the vault's status, per Mac).
 /// `items`: for each item the sync owns, by id, the `version` 1Password listed after the sync last
 /// wrote or adopted it (nil when the write did not say) and the digest of what it then held; a
-/// listed version that differs means someone changed it in 1Password. `created` and `createdIds`:
+/// listed version that differs means someone changed it in 1Password. `mac`: the digest of this Mac's
+/// Secret then, when it is not the item's (an optokens item Adopted by its tags alone, ADR-0025: the
+/// Secret's Description carries the adoption note, the item's does not). `created` and `createdIds`:
 /// when each title was created and the id `create` answered with, because 1Password lists a new item
 /// only ~10 s later: a sync inside that window treats the title as held (it must not create it twice)
 /// and keeps what it knows of the id until the item is listed. (`createdIds` is optional: state
 /// written before it existed still reads.)
 struct VaultMemory: Codable, Equatable {
-    struct Item: Codable, Equatable { var version: Int?; var digest: String }
+    struct Item: Codable, Equatable { var version: Int?; var digest: String; var mac: String? = nil }
     var items: [String: Item] = [:]
     var created: [String: Double] = [:]
     var createdIds: [String: String]? = nil
@@ -187,7 +189,7 @@ private func wantedVaultItems(_ store: SecretStore, _ target: SyncTarget) -> Res
 ///   differs) while the Secret is unchanged is Adopted into the Secret; changed on both sides, it is a
 ///   **conflict** and neither side changes. Only the Mac changed: written to the vault.
 /// - An item the sync did not make whose title names no Secret is Adopted: stored as a `server`-level
-///   Secret and rewritten in the vault's layout (ADR-0024; one optokens wrote is read by its section). One that cannot be mapped without loss is reported.
+///   Secret and rewritten in the vault's layout (ADR-0024); one optokens wrote is read by its section and only tagged (ADR-0025). One that cannot be mapped without loss is reported.
 ///   One whose title names a Secret here that the sync does not own is a conflict — except a
 ///   `mytokens`-tagged item with a wanted title, taken over in place (the hand copies of 2026-11-07).
 /// - An item deleted in the vault whose Secret is `server`-level is written again.
@@ -294,6 +296,28 @@ func syncVault(_ vault: String, store: SecretStore, cli: OnePasswordCLI, holding
             guard try canWrite() else { lines.append("deferred \(title): \(deferral)"); return .deferred }
             return .version(try edit(item, vi, stored: stored))
         }
+        /// Makes `item` the sync's own now that this Mac holds `vi`, `stored` being the item as read, and says
+        /// `line`. An item in optokens' layout and of its title that holds what `vi` holds, up to the Description
+        /// (an adoption's note is the Mac's alone), only gains the tags, so optokens reads it unchanged
+        /// (ADR-0025); any other is rewritten from `vi`. false: the budget did not cover it (a line says so).
+        func own(_ item: ListedItem, _ vi: VaultItem, stored: Data, _ line: String) throws -> Bool {
+            if var seen = try? decodeVaultItem(stored), seen.title == item.title {
+                let itemDigest = seen.digest
+                seen.description = vi.description
+                if seen.digest == vi.digest, let retag = vaultRetagTemplate(stored, digest: itemDigest) {
+                    guard try canWrite() else { lines.append("deferred \(item.title): \(deferral)"); return false }
+                    let v = written(try op("write the vault", ["item", "edit", item.id, "--vault", vault, "--format", "json"],
+                                           stdin: retag)).version
+                    known[item.id] = VaultMemory.Item(version: v, digest: itemDigest, mac: itemDigest == vi.digest ? nil : vi.digest)
+                    lines.append(line)
+                    return true
+                }
+            }
+            guard case .version(let v) = try tryEdit(item, vi, item.title, stored: stored) else { return false }
+            known[item.id] = VaultMemory.Item(version: v, digest: vi.digest)
+            lines.append(line)
+            return true
+        }
 
         for item in mine {
             if unwritable[item.title] != nil {
@@ -315,7 +339,8 @@ func syncVault(_ vault: String, store: SecretStore, cli: OnePasswordCLI, holding
             held.insert(item.title)
             let tagged = item.digest!
             let memo = memory.value.items[item.id]
-            let last = memo?.digest ?? tagged
+            let last = memo?.digest ?? tagged      // what the item held at the last sync
+            let lastMac = memo?.mac ?? last         // what this Mac's Secret held then
             let sameVersion = memo?.version != nil && memo?.version == item.version
             let wantDigest = want.digest
             func record(_ version: Int?, _ digest: String) { known[item.id] = VaultMemory.Item(version: version, digest: digest) }
@@ -326,8 +351,13 @@ func syncVault(_ vault: String, store: SecretStore, cli: OnePasswordCLI, holding
                 case .deferred: if let memo { known[item.id] = memo }
                 }
             }
+            /// Stores `seen` as the Secret and makes the item, as `stored` holds it, the sync's own.
+            func adopt(_ seen: VaultItem, _ line: String, _ stored: Data) throws {
+                try adoptIntoSecret(seen, marks: byTitle[item.title]?.marks ?? SyncMarks())
+                if try !own(item, seen, stored: stored, line), let memo { known[item.id] = memo }
+            }
             if sameVersion {                       // nothing changed in 1Password: no read
-                if wantDigest == last { record(item.version, last) } else { try write(want, "updated \(item.title)") }
+                if wantDigest == lastMac { known[item.id] = memo } else { try write(want, "updated \(item.title)") }
                 continue
             }
             let stored = try fetch(item)
@@ -338,18 +368,20 @@ func syncVault(_ vault: String, store: SecretStore, cli: OnePasswordCLI, holding
                 continue
             }
             if seen.digest == wantDigest {          // same content on both sides
-                if tagged != wantDigest { try write(want, "updated \(item.title)", over: stored) }
-                else { record(item.version, wantDigest) }
-            } else if wantDigest == last {          // changed in 1Password only: Adopt it
-                try adoptIntoSecret(seen, marks: byTitle[item.title]?.marks ?? SyncMarks())
-                try write(seen, "adopted \(item.title) (changed in 1Password)", over: stored)
+                if tagged != wantDigest {
+                    if try !own(item, want, stored: stored, "updated \(item.title)"), let memo { known[item.id] = memo }
+                } else { record(item.version, wantDigest) }
+            } else if seen.digest == last && wantDigest == lastMac {
+                // neither side's Secret changed (only what it does not hold, as the notes)
+                known[item.id] = VaultMemory.Item(version: item.version, digest: last, mac: memo?.mac)
+            } else if wantDigest == lastMac {       // changed in 1Password only: Adopt it
+                try adopt(seen, "adopted \(item.title) (changed in 1Password)", stored)
             } else if seen.digest == last {         // changed on the Mac only
                 try write(want, "updated \(item.title)", over: stored)
             } else if keep == VaultKeep(title: item.title, side: .mac) {
                 try write(want, "\(vaultKeptPrefix)this Mac's \(item.title) (written over 1Password's)", over: stored)
             } else if keep == VaultKeep(title: item.title, side: .onePassword) {
-                try adoptIntoSecret(seen, marks: byTitle[item.title]?.marks ?? SyncMarks())
-                try write(seen, "\(vaultKeptPrefix)1Password's \(item.title) (adopted over this Mac's)", over: stored)
+                try adopt(seen, "\(vaultKeptPrefix)1Password's \(item.title) (adopted over this Mac's)", stored)
             } else {
                 lines.append("conflict \(item.title): changed in 1Password and on this Mac since the last sync; neither changed; "
                              + vaultKeepHint(vault, item.title))
@@ -380,10 +412,7 @@ func syncVault(_ vault: String, store: SecretStore, cli: OnePasswordCLI, holding
                         held.insert(t)
                         let vi = VaultItem(service: rec.service, account: rec.account, kind: rec.kind, meta: rec.meta,
                                            description: rec.description, secret: s)
-                        if case .version(let v) = try tryEdit(item, vi, t) {
-                            known[item.id] = VaultMemory.Item(version: v, digest: vi.digest)
-                            lines.append("adopted \(t)")
-                        }
+                        _ = try own(item, vi, stored: try fetch(item), "adopted \(t)")
                     } else if keep?.title == t, keep?.side == .mac {
                         // the Mac's Secret wins: a server-level one is written over the item, any other has it archived
                         held.insert(t)
@@ -409,10 +438,7 @@ func syncVault(_ vault: String, store: SecretStore, cli: OnePasswordCLI, holding
                         var vi = decoded
                         vi.service = rec.service; vi.account = rec.account
                         try adoptIntoSecret(vi, marks: SyncMarks(origin: originKey))
-                        if case .version(let v) = try tryEdit(item, vi, t, stored: stored) {
-                            known[item.id] = VaultMemory.Item(version: v, digest: vi.digest)
-                            lines.append("\(vaultKeptPrefix)1Password's \(t) (adopted over this Mac's)")
-                        }
+                        _ = try own(item, vi, stored: stored, "\(vaultKeptPrefix)1Password's \(t) (adopted over this Mac's)")
                     } else {
                         held.insert(t)      // neither changed: no second item of the title is created either
                         lines.append("conflict \(t): a Secret of that name is on this Mac and the sync does not own it; neither changed; "
@@ -431,10 +457,7 @@ func syncVault(_ vault: String, store: SecretStore, cli: OnePasswordCLI, holding
                 vi.description = decoded.description.map { "\(note)\n\($0)" } ?? note
                 try adoptIntoSecret(vi, marks: SyncMarks(origin: originKey))
                 // stored here either way: a deferred rewrite is finished by the next run (the cut-short case above)
-                if case .version(let v) = try tryEdit(item, vi, t, stored: stored) {
-                    known[item.id] = VaultMemory.Item(version: v, digest: vi.digest)
-                    lines.append("adopted \(t)")
-                }
+                _ = try own(item, vi, stored: stored, "adopted \(t)")
             }
         }
 

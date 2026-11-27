@@ -2,6 +2,13 @@
   "category": "SECURE_NOTE",
   "fields": [
     {
+      "id": "notesPlain",
+      "label": "notesPlain",
+      "purpose": "NOTES",
+      "type": "STRING",
+      "value": ""
+    },
+    {
       "id": "fields.0",
       "label": "B_VAR",
       "section": {
@@ -16,7 +23,7 @@
       "section": {
         "id": "fields"
       },
-      "type": "CONCEALED",
+      "type": "STRING",
       "value": "x y"
     },
     {

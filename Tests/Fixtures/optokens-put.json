@@ -2,6 +2,13 @@
   "category": "SECURE_NOTE",
   "fields": [
     {
+      "id": "notesPlain",
+      "label": "notesPlain",
+      "purpose": "NOTES",
+      "type": "STRING",
+      "value": "CI deploy"
+    },
+    {
       "id": "fields.0",
       "label": "Region",
       "section": {
@@ -54,15 +61,6 @@
       },
       "type": "STRING",
       "value": "fields"
-    },
-    {
-      "id": "optokens.description",
-      "label": "description",
-      "section": {
-        "id": "optokens"
-      },
-      "type": "STRING",
-      "value": "CI deploy"
     },
     {
       "id": "optokens.meta",

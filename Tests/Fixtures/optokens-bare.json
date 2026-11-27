@@ -16,6 +16,13 @@
   ],
   "fields": [
     {
+      "id": "notesPlain",
+      "label": "notesPlain",
+      "purpose": "NOTES",
+      "type": "STRING",
+      "value": ""
+    },
+    {
       "id": "fields.0",
       "section": {
         "id": "fields"

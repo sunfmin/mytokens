@@ -365,8 +365,8 @@ mytokens onepassword keep <vault> <title> mac|1password   # settles a conflict: 
 The service account token (`personal` level, never synced anywhere) needs write access to the
 vault; it reaches `op` only in the child's environment. Each secret becomes one item in optokens' layout, so
 `optokens get|env|list` reads it: titled `<service>` (`<service>.<account>` for a non-default account), every field
-in the section `fields` (a new one concealed; one already in the vault keeps its type), the service, account, kind,
-Description and meta in the section `optokens`, tags `optokens` and `mytokens`, and a digest in the section `mytokens`. A `parent` secret or
+in the section `fields` (a new one concealed; one already in the vault keeps its type), the service, account, kind
+and meta in the section `optokens`, the description as the item's notes (shown under its title in 1Password's list), tags `optokens` and `mytokens`, and a digest in the section `mytokens`. A `parent` secret or
 one with a list field is not written: `onepassword list` says so, with the command that fixes it. A hand-made `mytokens`-tagged item with a wanted title is taken over in
 place. The vault is two-way: an item you add or change in 1Password (any category) appears in mytokens as a
 `server`-level secret on the next sync and is rewritten into the vault's layout (one `optokens put` made only gains

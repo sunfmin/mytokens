@@ -116,7 +116,7 @@ final class VaultItemTests: XCTestCase {
         XCTAssertNil(vaultWrittenDigest(try JSONSerialization.data(withJSONObject: old)))
     }
 
-    /// The fixtures are what optokens 0.1.6 handed `op item create` (an `op` stand-in on PATH recorded its
+    /// The fixtures are what optokens 0.1.8 handed `op item create` (an `op` stand-in on PATH recorded its
     /// stdin) after `optokens put` of the same Secret; the bare ones are built by optokens' `item::template`
     /// rules (a bare `put` takes its value on a one-time link only). The sync writes each new Field
     /// CONCEALED; a Field optokens took from `--set` is STRING, and a rewrite over it keeps that.
@@ -206,18 +206,40 @@ final class VaultItemTests: XCTestCase {
         try assertRoundTrip("guild-hub.mac-studio", "ci.2")
     }
 
-    func testADescriptionWithNewlinesAndCJKIsInTheSectionNotTheNotes() throws {
+    func testADescriptionWithNewlinesAndCJKIsTheNotesNotASectionField() throws {
         try put("cn", secret: SecretValue(fields: [("令牌", "值\n第二行"), ("k", "v")]), description: "部署用令牌\nsecond line: “quotes” & emoji 🔑")
         try assertRoundTrip("cn")
         let t = try item("cn").template()
-        XCTAssertFalse(try fields(t).contains { $0["purpose"] as? String == "NOTES" })
-        XCTAssertEqual(try fields(t).first { $0["label"] as? String == "description" }?["value"] as? String,
-                       "部署用令牌\nsecond line: “quotes” & emoji 🔑")
+        XCTAssertEqual(try fields(t).filter { $0["purpose"] as? String == "NOTES" }.map { $0["value"] as? String },
+                       ["部署用令牌\nsecond line: “quotes” & emoji 🔑"])
+        XCTAssertFalse(try fields(t).contains { $0["label"] as? String == "description" })
     }
 
-    func testNoDescriptionRoundTripsAsNone() throws {
+    func testNoDescriptionRoundTripsAsNoneWithEmptyNotes() throws {
         try put("nodesc", secret: SecretValue(single: "x"))
         XCTAssertNil(try decodeVaultItem(try item("nodesc").template()).description)
+        XCTAssertEqual(try fields(try item("nodesc").template()).filter { $0["purpose"] as? String == "NOTES" }.map { $0["value"] as? String }, [""])
+    }
+
+    /// The layout before ADR-0027 (optokens 0.1.7, mytokens-vault-5) kept the Description in the section: it is read
+    /// from there when not empty, else from the notes, as optokens reads it; a rewrite over it moves it into the notes.
+    func testThePreviousLayoutsSectionDescriptionIsReadAndMovedIntoTheNotes() throws {
+        let previous = try fixture("0.1.7-put")
+        XCTAssertEqual(try decodeVaultItem(previous).description, "CI deploy")
+        var withNotes = try json(previous)
+        withNotes["fields"] = (withNotes["fields"] as! [[String: Any]]) + [["id": "notesPlain", "purpose": "NOTES", "type": "STRING", "value": "typed"]]
+        XCTAssertEqual(try decodeVaultItem(try JSONSerialization.data(withJSONObject: withNotes)).description, "CI deploy")
+        var emptied = try json(previous)
+        emptied["fields"] = (emptied["fields"] as! [[String: Any]]).map { f in
+            var f = f; if f["label"] as? String == "description" { f["value"] = "" }; return f
+        } + [["id": "notesPlain", "purpose": "NOTES", "type": "STRING", "value": "typed"]]
+        XCTAssertEqual(try decodeVaultItem(try JSONSerialization.data(withJSONObject: emptied)).description, "typed")
+        // made the sync's own in place: the same item optokens 0.1.8 writes for that Secret
+        let decoded = try decodeVaultItem(previous)
+        let retagged = try XCTUnwrap(vaultOwnTemplate(previous, digest: decoded.digest))
+        var mine = try comparable(retagged) as! [String: Any]; mine["category"] = "SECURE_NOTE"
+        XCTAssertEqual(mine as NSDictionary, try comparable(try fixture("put")))
+        XCTAssertEqual(try comparable(decoded.template(over: previous)), try comparable(try fixture("put")))
     }
 
     func testAFieldNamedLikeTheMetadataStaysAField() throws {

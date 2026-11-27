@@ -110,8 +110,8 @@ _Avoid_: fleet, inventory, known hosts (that is ssh's file).
 A target of Sync for machines that are not Macs running mytokens: a 1Password vault named by
 `mytokens onepassword add <vault>`, made to hold exactly the `server`-level Secrets, one item each
 in **optokens' layout**, so `optokens get|env|list` reads it on any machine (ADR-0024): titled `<service>`, or
-`<service>.<account>` for a non-default account; every Field in the section `fields`, the name, kind, shape,
-Description and Meta in the section `optokens`; tags `optokens` and `mytokens`, and the field `digest` of a section
+`<service>.<account>` for a non-default account; every Field in the section `fields`, the name, kind, shape
+and Meta in the section `optokens`, the Description as the item's notes (ADR-0027); tags `optokens` and `mytokens`, and the field `digest` of a section
 `mytokens` that marks it as the sync's own (ADR-0026). A `parent` Secret or one with a list Field is not written (`onepassword list` says the fix).
 It is written with a 1Password service account whose token is the personal-level Secret `1password-service-account`.
 Two-way: an item added or changed in 1Password is **Adopted** into mytokens on the next sync, and the vault is the

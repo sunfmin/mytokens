@@ -1,5 +1,8 @@
 # A 1Password vault item is in optokens' layout
 
+Its placement of the Description (the section `optokens`, the notes emptied) is superseded by ADR-0027: the
+Description is the item's notes.
+
 Supersedes the item mapping of ADR-0022 (1Password vault) and ADR-0020 (a list Field as sections),
 and their `jq` programs. The rest of ADR-0022 (which Secrets, ownership by tag, two-way sync,
 conflicts, the write budget) stands.

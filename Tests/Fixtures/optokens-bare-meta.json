@@ -16,6 +16,13 @@
   ],
   "fields": [
     {
+      "id": "notesPlain",
+      "label": "notesPlain",
+      "purpose": "NOTES",
+      "type": "STRING",
+      "value": "部署用\nsecond line"
+    },
+    {
       "id": "fields.0",
       "section": {
         "id": "fields"
@@ -59,15 +66,6 @@
       "type": "STRING",
       "label": "shape",
       "value": "value"
-    },
-    {
-      "id": "optokens.description",
-      "section": {
-        "id": "optokens"
-      },
-      "type": "STRING",
-      "label": "description",
-      "value": "部署用\nsecond line"
     },
     {
       "id": "optokens.meta",

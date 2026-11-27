@@ -1,7 +1,7 @@
 import CryptoKit
 import Foundation
 
-// A `server`-level Secret as a 1Password vault item, and back (ADR-0024): the item optokens writes
+// A `server`-level Secret as a 1Password vault item, and back (ADR-0024, ADR-0027): the item optokens writes
 // for the same Secret (`optokens help secrets`), so `optokens get|env|list` on any machine reads what
 // the sync wrote, and the vault holds one format. `decodeVaultItem` is the inverse of `template`.
 //
@@ -9,8 +9,9 @@ import Foundation
 //   category, tags   Secure Note; `optokens`, beside mytokens' own `mytokens` (and any other tag the item had)
 //   each Field       a field of the section `fields`, in the Secret's order (a lone value: one field `value`),
 //                    CONCEALED, or the type the stored item already gives that label
+//   notes            the Description, whole; empty when the Secret has none (ADR-0027)
 //   the rest         the section `optokens`: service, account, kind, shape (`value` | `fields`),
-//                    description and meta (compact JSON) when the Secret has them
+//                    and meta (compact JSON) when the Secret has Meta
 //   the section `mytokens`  one STRING field `digest`: what the sync last wrote (ADR-0026), not the Secret's
 //
 // The layout holds what optokens holds: a `static` or `profile` Secret of text Fields. A `parent`
@@ -33,10 +34,12 @@ let vaultDigestLabel = "digest"
 private let vaultLegacyDigestPrefix = "mytokens-digest-"
 /// Changing the layout changes this, so every item written by an older layout reads as changed
 /// and the next sync rewrites it once.
-private let vaultFormat = "mytokens-vault-5"
+private let vaultFormat = "mytokens-vault-6"
 
 private let concealed = "CONCEALED", plain = "STRING"
+/// `description`: where the layout before ADR-0027 kept the Description; read, never written.
 private let metadataLabels = ["service", "account", "kind", "shape", "description", "meta"]
+private let notesPurpose = "NOTES", notesId = "notesPlain"
 
 /// The title of a Secret's vault item: `<service>`, or `<service>.<account>` for a non-default
 /// account. No `/`, so `op://<vault>/<title>/fields/<Label>` resolves (a `/` in a title does not).
@@ -72,8 +75,8 @@ struct VaultItem {
     /// The item as the `op item` template wants it. `stored`, the item as `op item get` printed it,
     /// gives each Field it already has its type, and a category's own built-in fields (a Login's
     /// `username` and `password`, which cannot be removed) are kept by id, emptied: their values
-    /// are now the section's. Notes are left as they are on an item already in this layout; on any
-    /// other they were the Description (the old layout, a hand-made item) and are emptied.
+    /// are now the section's. The notes are the Description (ADR-0027), first, as optokens writes them,
+    /// under the id the stored item gives them.
     private func content(forEdit: Bool, stored: [String: Any]?) -> [String: Any] {
         let storedFields = (stored?["fields"] as? [[String: Any]]) ?? []
         let sectionLabels = Dictionary(((stored?["sections"] as? [[String: Any]]) ?? []).compactMap { s -> (String, String)? in
@@ -102,24 +105,16 @@ struct VaultItem {
         }
         var metadata: [(String, String)] = [("service", service), ("account", account), ("kind", kind),
                                             ("shape", secret.isLabelled ? "fields" : vaultBareFieldLabel)]
-        if let description, !description.isEmpty { metadata.append(("description", description)) }
         if let meta { metadata.append(("meta", meta)) }
         fields += metadata.map { field(vaultMetadataSection, $0.0, plain, $0.0, $0.1) }
-        if stored != nil {
-            let inLayout = storedFields.contains { section($0) == vaultMetadataSection && $0["label"] as? String == "service" }
-            for f in storedFields where section(f) == nil {
-                guard let purpose = f["purpose"] as? String else { continue }
-                if purpose == "NOTES" {
-                    if inLayout { fields.append(f) } else {
-                        fields.append(["id": f["id"] ?? "notesPlain", "type": plain, "purpose": purpose,
-                                       "label": f["label"] ?? "notesPlain", "value": ""])
-                    }
-                } else {
-                    var builtIn = f
-                    builtIn["value"] = ""
-                    fields.append(builtIn)
-                }
-            }
+        let storedNotes = storedFields.first { section($0) == nil && $0["purpose"] as? String == notesPurpose }
+        fields.insert(["id": storedNotes?["id"] ?? notesId, "type": plain, "purpose": notesPurpose,
+                       "label": storedNotes?["label"] ?? notesId, "value": description ?? ""], at: 0)
+        for f in storedFields where section(f) == nil {
+            guard let purpose = f["purpose"] as? String, purpose != notesPurpose else { continue }
+            var builtIn = f
+            builtIn["value"] = ""
+            fields.append(builtIn)
         }
         var item: [String: Any] = ["title": title, "fields": fields,
                                    "sections": [["id": vaultValuesSection, "label": vaultValuesSection],
@@ -170,12 +165,24 @@ private func owned(_ item: [String: Any], digest: String) -> [String: Any] {
 
 /// The `op item edit` template (on stdin) that makes `stored` (as `op item get` printed it) the sync's own
 /// holding what `digest` names, and changes nothing else (see `owned`): its title, its other sections and
-/// every other field (notes, types, ids) are sent back as they are, so optokens reads the item unchanged.
-/// nil when `stored` is not an item.
+/// every other field (types, ids) are sent back as they are, so optokens reads the item unchanged. One that
+/// keeps its Description in the section `optokens` (the layout before ADR-0027) has it moved into the notes,
+/// as optokens' next `put` would. nil when `stored` is not an item.
 func vaultOwnTemplate(_ stored: Data, digest: String) -> Data? {
     guard let root = try? jsonObject(stored) else { return nil }
     var item: [String: Any] = [:]
     for key in ["title", "sections", "fields", "tags"] { item[key] = root[key] }
+    let placed = sectionedFields(root)
+    if let old = placed.first(where: { $0.section == vaultMetadataSection && $0.field["label"] as? String == "description" }) {
+        let description = (old.field["value"] as? String) ?? ""
+        var fields = placed.filter { !($0.section == vaultMetadataSection && $0.field["label"] as? String == "description") }.map(\.field)
+        if let i = fields.firstIndex(where: { $0["section"] == nil && $0["purpose"] as? String == notesPurpose }) {
+            if !description.isEmpty { fields[i]["value"] = description }
+        } else {
+            fields.insert(["id": notesId, "type": plain, "purpose": notesPurpose, "label": notesId, "value": description], at: 0)
+        }
+        item["fields"] = fields
+    }
     return try? JSONSerialization.data(withJSONObject: owned(item, digest: digest), options: [.sortedKeys, .withoutEscapingSlashes])
 }
 
@@ -225,17 +232,22 @@ func isOptokensItem(_ json: Data) -> Bool {
 
 /// `op item get --format json` (or a template) of an item in optokens' layout → the Secret it holds:
 /// the inverse of `VaultItem.template`. What optokens refuses, this throws on; the name is read from
-/// the section `optokens`, never from the title. Notes and other sections are not the Secret's.
+/// the section `optokens`, never from the title. The Description is the notes, or, on an item in the
+/// layout before ADR-0027, the section's `description` when not empty (as optokens reads it). Other
+/// sections are not the Secret's.
 func decodeVaultItem(_ json: Data) throws -> VaultItem {
     func bad(_ why: String) -> VaultDecodeError { VaultDecodeError(description: why) }
     let root = try jsonObject(json)
     guard ((root["tags"] as? [String]) ?? []).contains(vaultOptokensTag) else { throw bad("it has no tag \"\(vaultOptokensTag)\"") }
     var values: [(label: String, value: String)] = []
     var metadata: [String: String] = [:]
+    var notes = ""
     for (f, section) in sectionedFields(root) {
         let label = (f["label"] as? String) ?? ""
         let value = (f["value"] as? String) ?? ""          // op leaves `value` out of an empty field
-        if section == vaultValuesSection {
+        if section == nil && f["purpose"] as? String == notesPurpose {
+            notes = value
+        } else if section == vaultValuesSection {
             guard let type = f["type"] as? String, type == concealed || type == plain else {
                 throw bad("its field \"\(label)\" in the section \"\(vaultValuesSection)\" is neither \(concealed) nor \(plain)")
             }
@@ -269,8 +281,9 @@ func decodeVaultItem(_ json: Data) throws -> VaultItem {
     case let shape:
         throw bad("its shape is \"\(shape)\", neither \"\(vaultBareFieldLabel)\" nor \"fields\"")
     }
+    let description = [metadata["description"] ?? "", notes].first { !$0.isEmpty }
     return VaultItem(service: try need("service"), account: try need("account"), kind: kind, meta: metadata["meta"],
-                     description: metadata["description"], secret: secret)
+                     description: description, secret: secret)
 }
 
 /// An item someone made in 1Password (any category) → the Secret it would be: title → service
@@ -288,7 +301,7 @@ func decodeHandMadeItem(_ json: Data, title: String) throws -> VaultItem {
     for (f, section) in sectionedFields(root) {
         let value = (f["value"] as? String) ?? ""
         let label = (f["label"] as? String) ?? ""
-        if f["purpose"] as? String == "NOTES" { notes = value.isEmpty ? nil : value; continue }
+        if f["purpose"] as? String == notesPurpose { notes = value.isEmpty ? nil : value; continue }
         if section == "" || value.isEmpty || (section == vaultOwnSection && label == vaultDigestLabel) { continue }
         if label.isEmpty { throw bad("a field of the section \"\(section ?? "")\" has no label") }
         if fields.contains(where: { $0.label == label }) { throw bad("two fields labelled \"\(label)\"") }

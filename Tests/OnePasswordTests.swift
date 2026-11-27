@@ -156,8 +156,8 @@ final class OnePasswordTests: XCTestCase {
         XCTAssertEqual(gh["category"] as? String, "SECURE_NOTE")
         XCTAssertEqual(gh["tags"] as? [String], ["optokens", "mytokens"])
         XCTAssertEqual(ownDigest(gh), try decodeVaultItem(Data(creates[1].stdin.utf8)).digest)
-        XCTAssertFalse(fields.contains { $0["purpose"] as? String == "NOTES" })                 // the Description is in the section
-        XCTAssertEqual(fields.filter { $0["label"] as? String == "description" }.map { $0["value"] as? String }, ["CI token"])
+        XCTAssertEqual(fields.filter { $0["purpose"] as? String == "NOTES" }.map { $0["value"] as? String }, ["CI token"])  // the Description is the notes
+        XCTAssertFalse(fields.contains { $0["label"] as? String == "description" })
         let aws = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(creates[0].stdin.utf8)) as? [String: Any])
         let labels = (aws["fields"] as? [[String: Any]])?.filter { ($0["section"] as? [String: Any])?["id"] as? String == "fields" }
             .compactMap { $0["label"] as? String }
@@ -334,7 +334,7 @@ final class OnePasswordTests: XCTestCase {
         let t = try template(edit)
         let fields = try XCTUnwrap(t["fields"] as? [[String: Any]])
         XCTAssertEqual(fields.filter { $0["section"] == nil }.map { $0["label"] as? String }, ["notesPlain"])    // the old Fields are gone
-        XCTAssertEqual(fields.first { $0["purpose"] as? String == "NOTES" }?["value"] as? String, "")             // the notes emptied
+        XCTAssertEqual(fields.first { $0["purpose"] as? String == "NOTES" }?["value"] as? String, "p")            // the notes are the Description
         XCTAssertEqual(t["sections"] as? [[String: String]], [["id": "fields", "label": "fields"], ["id": "optokens", "label": "optokens"],
                                                               ["id": "mytokens", "label": "mytokens"]])
         XCTAssertEqual(t["tags"] as? [String], ["optokens", "mytokens"])        // the old digest tag is gone
@@ -352,7 +352,7 @@ final class OnePasswordTests: XCTestCase {
     // An item an agent stored with `optokens put` (ADR-0025): adopted whole, then made the sync's own
     // by its tags alone, so optokens reads it unchanged; later `optokens put`s flow back the same way.
 
-    /// `Tests/Fixtures/optokens-put.json` is what optokens 0.1.7 handed `op item create` for
+    /// `Tests/Fixtures/optokens-put.json` is what optokens 0.1.8 handed `op item create` for
     /// `printf sk-throwaway | optokens put zz-fx4 --account ci --set Region=us-east-1 --field-from-stdin "Secret Key"
     /// --description "CI deploy" --meta '{"a":1}'` (an `op` stand-in on PATH recorded its stdin).
     private func optokensPut(listed: Bool = false) throws -> VaultMemoryRef {
@@ -372,7 +372,7 @@ final class OnePasswordTests: XCTestCase {
     }
 
     /// What `optokens put zz-fx4 --account ci --set Region=<region>` does to the item: that Field changes, its
-    /// tags (mytokens' among them), sections and other fields are kept (optokens 0.1.7, through the same stand-in).
+    /// tags (mytokens' among them), sections and other fields are kept (optokens 0.1.8, through the same stand-in).
     private func optokensSetRegion(_ region: String) throws {
         var item = try XCTUnwrap(try JSONSerialization.jsonObject(with: Data(contentsOf: URL(fileURLWithPath: dir + "/items/o1.json"))) as? [String: Any])
         item["fields"] = (item["fields"] as? [[String: Any]] ?? []).map { f in
@@ -448,6 +448,93 @@ final class OnePasswordTests: XCTestCase {
         XCTAssertEqual(try? syncVault("V", store: laptop, cli: deps.onepassword, now: clock, memory: memory).get(), ["no changes"])
     }
 
+    // MARK: the Description is the notes (ADR-0027)
+
+    /// The sync's own item for zz-fx4.ci as mytokens-vault-5 wrote it: optokens 0.1.7's layout (the Description in the
+    /// section `optokens`, no notes), tagged and with a digest field, the Mac holding the same Secret.
+    private func previousLayoutItem() throws {
+        try putToken()
+        try laptop.upsert(service: "zz-fx4", account: "ci", secret: SecretValue(fields: [("Region", "us-east-1"), ("Secret Key", "sk-throwaway")]),
+                          kind: "static", meta: ["a": 1], description: "CI deploy", level: .server, marks: SyncMarks())
+        var item = try XCTUnwrap(try JSONSerialization.jsonObject(with: Data(contentsOf: URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+            .appendingPathComponent("Fixtures/optokens-0.1.7-put.json"))) as? [String: Any])
+        item["tags"] = ["optokens", "mytokens"]
+        item["fields"] = (item["fields"] as! [[String: Any]]) + [["id": "mytokens.digest", "section": ["id": "mytokens", "label": "mytokens"],
+                                                                  "type": "STRING", "label": "digest", "value": "0123456789abcdef"]]
+        item["sections"] = (item["sections"] as! [[String: Any]]) + [["id": "mytokens", "label": "mytokens"]]
+        try JSONSerialization.data(withJSONObject: item).write(to: URL(fileURLWithPath: dir + "/items/o1.json"))
+        versions["o1"] = 1
+        vault = [["id": "o1", "title": "zz-fx4.ci", "tags": ["optokens", "mytokens"], "category": "SECURE_NOTE", "version": 1]]
+        try publishVault()
+    }
+
+    private func notes(_ item: [String: Any]) -> [String] {
+        ((item["fields"] as? [[String: Any]]) ?? []).filter { $0["purpose"] as? String == "NOTES" }.map { ($0["value"] as? String) ?? "" }
+    }
+
+    private func sectionDescription(_ item: [String: Any]) -> Bool {
+        ((item["fields"] as? [[String: Any]]) ?? []).contains {
+            ($0["section"] as? [String: Any])?["id"] as? String == "optokens" && $0["label"] as? String == "description"
+        }
+    }
+
+    func testAPreviousLayoutItemIsRewrittenOnceWithItsDescriptionInTheNotes() throws {
+        // remembered (as every Background Sync is) or not, the item is rewritten once and then left alone
+        for remembered in [true, false] {
+            try setUpWithError()
+            try previousLayoutItem()
+            let memory = VaultMemoryRef()
+            if remembered { memory.value.items["o1"] = VaultMemory.Item(version: 1, digest: "0123456789abcdef") }
+            XCTAssertEqual(try? syncVault("V", store: laptop, cli: deps.onepassword, memory: memory).get(), ["updated zz-fx4.ci"], "\(remembered)")
+            let w = try writes()
+            XCTAssertEqual(w.map { Array($0.args.prefix(3)) }, [["item", "edit", "o1"]], "\(remembered)")
+            let t = try template(w[0])
+            XCTAssertEqual(notes(t), ["CI deploy"], "\(remembered)")
+            XCTAssertFalse(sectionDescription(t), "\(remembered)")
+            XCTAssertEqual(try decodeVaultItem(Data(w[0].stdin.utf8)).description, "CI deploy")
+            try replay()
+            XCTAssertEqual(try? syncVault("V", store: laptop, cli: deps.onepassword, memory: memory).get(), ["no changes"], "\(remembered)")
+            XCTAssertEqual(try? syncVault("V", store: laptop, cli: deps.onepassword, memory: VaultMemoryRef()).get(), ["no changes"], "\(remembered)")
+            XCTAssertEqual(try writes().count, 1, "\(remembered)")
+            tearDown()
+        }
+    }
+
+    /// What editing the notes of the item in 1Password does: its notes change, and so does its version.
+    private func editNotes(_ text: String) throws {
+        var item = try XCTUnwrap(try JSONSerialization.jsonObject(with: Data(contentsOf: URL(fileURLWithPath: dir + "/items/o1.json"))) as? [String: Any])
+        item["fields"] = (item["fields"] as? [[String: Any]] ?? []).map { f in
+            var f = f
+            if f["purpose"] as? String == "NOTES" { f["value"] = text }
+            return f
+        }
+        try JSONSerialization.data(withJSONObject: item).write(to: URL(fileURLWithPath: dir + "/items/o1.json"))
+        versions["o1", default: 0] += 1
+        vault = vault.map { ($0["id"] as? String) == "o1" ? $0.merging(["version": versions["o1"]!]) { $1 } : $0 }
+        try publishVault()
+    }
+
+    func testADescriptionEditedInTheNotesIsAdoptedAndOneChangedOnBothSidesIsAConflict() throws {
+        try previousLayoutItem()
+        let memory = VaultMemoryRef()
+        _ = try? syncVault("V", store: laptop, cli: deps.onepassword, memory: memory).get()
+        try replay()
+        try editNotes("CI deploy, rotated monthly")
+        XCTAssertEqual(try? syncVault("V", store: laptop, cli: deps.onepassword, memory: memory).get(), ["adopted zz-fx4.ci (changed in 1Password)"])
+        XCTAssertEqual(try XCTUnwrap(try sec("zz-fx4", "ci")).0.description, "CI deploy, rotated monthly")
+        try replay()
+        XCTAssertEqual(try? syncVault("V", store: laptop, cli: deps.onepassword, memory: memory).get(), ["no changes"])
+        // both sides change it
+        try editNotes("from 1Password")
+        try laptop.upsert(service: "zz-fx4", account: "ci", secret: SecretValue(fields: [("Region", "us-east-1"), ("Secret Key", "sk-throwaway")]),
+                          kind: "static", meta: ["a": 1], description: "from the Mac", level: .server, marks: SyncMarks())
+        let before = try writes().count
+        let r = try XCTUnwrap(try? syncVault("V", store: laptop, cli: deps.onepassword, memory: memory).get())
+        XCTAssertTrue(r.first?.hasPrefix("conflict zz-fx4.ci: changed in 1Password and on this Mac") == true, "\(r)")
+        XCTAssertEqual(try writes().count, before)
+        XCTAssertEqual(try XCTUnwrap(try sec("zz-fx4", "ci")).0.description, "from the Mac")
+    }
+
     func testAnOptokensPutAndAMacChangeToOneItemAreAConflictThatKeepSettles() throws {
         _ = try optokensPut(listed: true)
         try replay()
@@ -513,8 +600,8 @@ final class OnePasswordTests: XCTestCase {
         XCTAssertNil(t["category"])
         let fields = try XCTUnwrap(t["fields"] as? [[String: Any]])
         let builtIns = fields.filter { $0["section"] == nil }
-        XCTAssertEqual(builtIns.map { $0["id"] as? String }, ["username", "password", "notesPlain"])
-        XCTAssertTrue(builtIns.allSatisfy { $0["value"] as? String == "" })          // their values are the section's now
+        XCTAssertEqual(builtIns.map { $0["id"] as? String }, ["notesPlain", "username", "password"])
+        XCTAssertEqual(builtIns.map { $0["value"] as? String }, [r.description, "", ""])   // the notes are the Description; the rest the section's now
         let values = fields.filter { ($0["section"] as? [String: Any])?["id"] as? String == "fields" }
         XCTAssertEqual(values.map { "\($0["label"]!)=\($0["type"]!)" }, ["username=STRING", "password=CONCEALED", "Api Key=CONCEALED"])
         XCTAssertEqual(t["tags"] as? [String], ["optokens", "mytokens"])
